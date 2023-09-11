@@ -1,2 +1,2 @@
 # JavaFX
-Aplikasi Java (berbasis Fx)
+Aplikasi JavaFx (Base Desktop)
