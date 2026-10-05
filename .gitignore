@@ -1,0 +1,2 @@
+test-pretest-online/public_html/uploads/questions/*
+!test-pretest-online/public_html/uploads/questions/.gitkeep
