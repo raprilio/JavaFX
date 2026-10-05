@@ -1,0 +1,18 @@
+# Public branding assets (logo, favicon, background). Only images may be served; scripts never run here.
+<IfModule mod_authz_core.c>
+    Require all denied
+    <FilesMatch "(?i)\.(jpe?g|png|webp)$">
+        Require all granted
+    </FilesMatch>
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order deny,allow
+    Deny from all
+    <FilesMatch "(?i)\.(jpe?g|png|webp)$">
+        Allow from all
+    </FilesMatch>
+</IfModule>
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set Cache-Control "public, max-age=2592000"
+</IfModule>

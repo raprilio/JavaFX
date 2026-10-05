@@ -1,0 +1,67 @@
+# =====================================================================
+#  SmartNotes — Apache / LiteSpeed configuration (shared hosting)
+# =====================================================================
+Options -Indexes -MultiViews
+DirectoryIndex index.php index.html
+AddDefaultCharset UTF-8
+
+AddType application/javascript .js .mjs
+AddType font/woff2 .woff2
+AddType image/svg+xml .svg
+AddType image/webp .webp
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # --- Force HTTPS (recommended; microphone recording requires HTTPS) ---
+    # RewriteCond %{HTTPS} !=on
+    # RewriteCond %{HTTP:X-Forwarded-Proto} !https
+    # RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+    # --- Never expose private folders / files ---
+    RewriteRule ^(app|storage)(/|$) - [F,L,NC]
+    RewriteRule ^uploads/(?!branding/) - [F,L,NC]
+    RewriteRule (^|/)\.(?!well-known/) - [F,L]
+</IfModule>
+
+# Block sensitive file types everywhere
+<FilesMatch "(?i)\.(sql|gz|log|md|lock|ini|sh|bak|swp|dist|env|yml|yaml|json)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set X-Frame-Options "SAMEORIGIN"
+    <FilesMatch "(?i)\.(js|css|woff2|png|jpe?g|webp|svg|ico)$">
+        Header set Cache-Control "public, max-age=2592000"
+    </FilesMatch>
+</IfModule>
+
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/plain text/css application/javascript application/json image/svg+xml
+</IfModule>
+
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType text/css "access plus 30 days"
+    ExpiresByType application/javascript "access plus 30 days"
+    ExpiresByType font/woff2 "access plus 1 year"
+    ExpiresByType image/png "access plus 30 days"
+    ExpiresByType image/webp "access plus 30 days"
+    ExpiresByType image/jpeg "access plus 30 days"
+</IfModule>
+
+# PHP limits for Apache mod_php hosts (PHP-FPM / LiteSpeed hosts read .user.ini instead).
+<IfModule mod_php.c>
+    php_value upload_max_filesize 32M
+    php_value post_max_size 40M
+    php_value max_execution_time 120
+    php_value memory_limit 256M
+</IfModule>

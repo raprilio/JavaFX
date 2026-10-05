@@ -1,0 +1,19 @@
+# Local configuration (contains credentials & APP key)
+public_html/app/config.php
+
+# User content & runtime data (keep the guard files)
+public_html/uploads/*
+!public_html/uploads/.htaccess
+!public_html/uploads/index.html
+!public_html/uploads/branding/
+public_html/uploads/branding/*
+!public_html/uploads/branding/.htaccess
+!public_html/uploads/branding/index.html
+public_html/storage/*/*
+!public_html/storage/*/.htaccess
+!public_html/storage/*/index.html
+
+# Development tooling
+build/node_modules/
+build/package-lock.json
+.DS_Store

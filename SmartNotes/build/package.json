@@ -1,0 +1,16 @@
+{
+  "name": "smartnotes-build",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Development-only tooling for SmartNotes. Production needs no Node.js: the built files in public_html/assets/dist are committed.",
+  "type": "module",
+  "scripts": {
+    "icons": "node icons.mjs",
+    "build": "node icons.mjs && node build.mjs",
+    "watch": "node build.mjs --watch"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "lucide": "^1.52.0"
+  }
+}
