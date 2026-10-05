@@ -33,7 +33,7 @@ require __DIR__ . '/includes/header.php';
 
         <div class="score-ring" style="--val: <?= e((string) min(100, max(0, $r['score']))) ?>; --clr: <?= $clr ?>">
             <div class="inner">
-                <div class="num" data-count="<?= e((string) $r['score']) ?>"><?= e(fmt_num($r['score'], 1)) ?></div>
+                <div class="num" data-count="<?= e((string) $r['score']) ?>" data-dec="1"><?= e(fmt_num($r['score'], 1)) ?></div>
                 <div class="of">/ 100</div>
             </div>
         </div>
@@ -53,6 +53,9 @@ require __DIR__ . '/includes/header.php';
         <p class="small text-muted">Dikirim: <?= e(fmt_date($attempt['submitted_at'])) ?></p>
 
         <div class="d-flex gap-2 justify-content-center flex-wrap mt-4">
+            <?php if ($passed && $r['pending_review'] === 0 && setting_on('certificate_enabled')): ?>
+                <a href="<?= e(url('user/certificate.php?attempt=' . (int) $attempt['id'])) ?>" class="btn btn-soft px-4"><i class="bi bi-award me-1"></i>Sertifikat</a>
+            <?php endif; ?>
             <?php if (exam_user_can_view_review($exam)): ?>
                 <a href="<?= e(url('user/review.php?attempt=' . (int) $attempt['id'])) ?>" class="btn btn-gold px-4"><i class="bi bi-book me-1"></i>Lihat Pembahasan</a>
             <?php endif; ?>

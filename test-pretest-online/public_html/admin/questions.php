@@ -18,10 +18,13 @@ require dirname(__DIR__) . '/includes/header.php';
                     <?php foreach (QUESTION_TYPES as $t): ?><option value="<?= $t ?>"><?= e(question_type_label($t)) ?></option><?php endforeach; ?>
                 </select>
                 <select class="form-select w-auto" id="fDiff"><option value="">Semua level</option><option value="easy">Mudah</option><option value="medium">Sedang</option><option value="hard">Sulit</option></select>
-                <button class="btn btn-primary ms-auto" id="btnNew"><i class="bi bi-plus-lg me-1"></i>Soal Baru</button>
+                <div class="ms-auto d-flex gap-2">
+                    <button class="btn btn-light" data-bs-toggle="modal" data-bs-target="#importModal"><i class="bi bi-upload"></i> <span class="d-none d-sm-inline">Import CSV</span></button>
+                    <button class="btn btn-primary" id="btnNew"><i class="bi bi-plus-lg me-1"></i>Soal Baru</button>
+                </div>
             </div>
             <div class="table-responsive">
-                <table class="table table-x">
+                <table class="table table-x table-stack">
                     <thead><tr><th style="width:50%">Pertanyaan</th><th>Tipe</th><th>Kategori</th><th>Level</th><th class="text-end">Point</th><th class="text-end">Aksi</th></tr></thead>
                     <tbody id="qBody"></tbody>
                 </table>
@@ -71,6 +74,34 @@ require dirname(__DIR__) . '/includes/header.php';
                 </div>
             </div>
             <div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Batal</button><button class="btn btn-primary px-4">Simpan Soal</button></div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal import -->
+<div class="modal fade" id="importModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <form class="modal-content" id="importForm">
+            <div class="modal-header"><h5 class="modal-title">Import Soal dari CSV</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <p class="small text-muted mb-2">Susun soal di Excel lalu simpan sebagai <strong>CSV</strong> (pemisah koma atau titik koma). Kategori baru dibuat otomatis.</p>
+                <div class="table-responsive mb-3">
+                    <table class="table table-sm small mb-0">
+                        <thead><tr><th>question_type</th><th>correct</th></tr></thead>
+                        <tbody>
+                            <tr><td><code>mc</code> Multiple Choice</td><td>satu huruf: <code>C</code></td></tr>
+                            <tr><td><code>ma</code> Multiple Answer</td><td>beberapa huruf: <code>A,B,D</code></td></tr>
+                            <tr><td><code>tf</code> True / False</td><td><code>Benar</code> atau <code>Salah</code></td></tr>
+                            <tr><td><code>short</code> Short Answer</td><td>jawaban diterima, pisahkan dengan <code>|</code></td></tr>
+                            <tr><td><code>essay</code> Essay</td><td>kosongkan (dinilai manual)</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <a class="small d-inline-block mb-3" href="<?= e(url('admin/questions-template.php')) ?>"><i class="bi bi-download"></i> Download template CSV (berisi contoh soal Dukcapil)</a>
+                <input type="file" class="form-control" name="file" accept=".csv,text/csv" required>
+                <div id="importResult" class="mt-3 small"></div>
+            </div>
+            <div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Tutup</button><button class="btn btn-primary">Import</button></div>
         </form>
     </div>
 </div>

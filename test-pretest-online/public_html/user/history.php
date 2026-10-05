@@ -26,7 +26,7 @@ require dirname(__DIR__) . '/includes/header.php';
 <div class="row g-3">
     <?php foreach ($history as $h): ?>
         <div class="col-md-6 col-xl-4 fade-in">
-            <div class="card-x exam-card hover-lift">
+            <div class="card-x exam-card hover-lift <?= $h['type'] === 'test' ? 'is-test' : '' ?>">
                 <div class="d-flex justify-content-between align-items-center">
                     <span class="badge-type <?= $h['type'] === 'test' ? 'badge-test' : 'badge-pretest' ?>"><?= e(type_label($h['type'])) ?></span>
                     <small class="text-muted"><i class="bi bi-clock me-1"></i><?= e(fmt_date($h['submitted_at'])) ?></small>
@@ -45,6 +45,9 @@ require dirname(__DIR__) . '/includes/header.php';
                         <a href="<?= e(url('pretest-result.php?attempt=' . (int) $h['id'])) ?>" class="btn btn-soft btn-sm flex-fill">Detail Hasil</a>
                         <?php if ((int) $h['review_available'] === 1): ?>
                             <a href="<?= e(url('user/review.php?attempt=' . (int) $h['id'])) ?>" class="btn btn-light btn-sm flex-fill">Pembahasan</a>
+                        <?php endif; ?>
+                        <?php if ((int) $h['passed'] === 1 && (int) $h['pending_review'] === 0 && setting_on('certificate_enabled')): ?>
+                            <a href="<?= e(url('user/certificate.php?attempt=' . (int) $h['id'])) ?>" class="btn btn-light btn-sm" title="Sertifikat"><i class="bi bi-award"></i></a>
                         <?php endif; ?>
                     </div>
                 <?php else: ?>

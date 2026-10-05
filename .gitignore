@@ -1,3 +1,5 @@
 test-pretest-online/public_html/uploads/questions/*
 !test-pretest-online/public_html/uploads/questions/.gitkeep
 *.zip
+test-pretest-online/public_html/uploads/branding/*
+!test-pretest-online/public_html/uploads/branding/.gitkeep

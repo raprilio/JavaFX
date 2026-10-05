@@ -44,6 +44,10 @@ if ($attempt && attempt_is_expired($attempt)) {
  *  MODE 1: Instruksi (belum ada attempt aktif)
  * ==================================================================== */
 if (!$attempt) {
+    if (!exam_type_enabled($exam['type'])) {
+        flash('warning', ($exam['type'] === 'test' ? 'Test' : 'Pre-Test') . ' sedang dinonaktifkan oleh administrator.');
+        redirect('dashboard.php');
+    }
     $list = array_values(array_filter(user_exam_list($me), fn ($x) => (int) $x['id'] === $examId));
     $info = $list[0] ?? null;
     $pageTitle = $exam['title'];
@@ -112,6 +116,8 @@ $boot = [
     'examType'  => $exam['type'],
     'remaining' => attempt_remaining_seconds($attempt),
     'questions' => $questions,
+    'antiCheat' => setting_on('anti_cheat'),
+    'tabSwitches' => (int) ($attempt['tab_switches'] ?? 0),
 ];
 
 $pageTitle = $exam['title'];
@@ -120,47 +126,75 @@ require __DIR__ . '/includes/header.php';
 ?>
 <div class="exam-topbar">
     <div class="container-xl d-flex align-items-center gap-3">
-        <img src="<?= e(url('assets/images/logo.svg')) ?>" width="30" height="30" alt="" class="d-none d-sm-block">
+        <img src="<?= e(app_logo_url()) ?>" width="34" height="34" alt="" class="brand-logo d-none d-sm-block">
         <div class="min-w-0">
             <div class="title text-truncate"><?= e($exam['title']) ?></div>
-            <small style="color:#9fb0d6"><?= e(type_label($exam['type'])) ?> · <?= e($me['name']) ?></small>
+            <small class="text-white-50 text-truncate d-block"><?= e(type_label($exam['type'])) ?> · <?= e($me['name']) ?></small>
         </div>
-        <div class="ms-auto timer" id="timer" title="Sisa waktu"><i class="bi bi-stopwatch"></i><span>--:--</span></div>
+        <button class="btn btn-icon btn-ghost-light ms-auto" data-theme-toggle title="Mode gelap/terang" aria-label="Ganti tema"><i class="bi bi-moon-stars"></i></button>
+        <div class="timer" id="timer" title="Sisa waktu"><i class="bi bi-stopwatch"></i><span>--:--</span></div>
     </div>
 </div>
 <div class="exam-progress"><div id="progressBar" style="width:0"></div></div>
 
-<div class="container-xl py-4">
+<div class="container-xl py-4 exam-main">
+    <?php if (setting_on('anti_cheat')): ?>
+        <div class="alert soft-alert alert-warning small py-2 d-flex align-items-center gap-2"><i class="bi bi-shield-exclamation"></i>Mode pengawasan aktif — berpindah tab / aplikasi akan tercatat dan dilaporkan ke administrator.</div>
+    <?php endif; ?>
     <div class="row g-4">
         <div class="col-lg-8">
             <div class="card-x question-card" id="questionCard">
                 <div class="text-center text-muted py-5"><div class="spinner-border"></div></div>
             </div>
-            <div class="d-flex align-items-center gap-2 mt-3 flex-wrap">
-                <button class="btn btn-light" id="btnPrev"><i class="bi bi-chevron-left"></i> Sebelumnya</button>
-                <button class="btn btn-light" id="btnFlag"><i class="bi bi-flag"></i> <span>Tandai</span></button>
-                <span class="save-status ms-auto me-2" id="saveStatus"></span>
-                <button class="btn btn-primary" id="btnNext">Berikutnya <i class="bi bi-chevron-right"></i></button>
+            <div class="d-none d-lg-flex align-items-center gap-2 mt-3 flex-wrap">
+                <button class="btn btn-light" data-prev><i class="bi bi-chevron-left"></i> Sebelumnya</button>
+                <button class="btn btn-light" data-flag><i class="bi bi-flag"></i> <span>Tandai</span></button>
+                <span class="save-status ms-auto me-2" data-save-status></span>
+                <button class="btn btn-primary" data-next>Berikutnya <i class="bi bi-chevron-right"></i></button>
             </div>
         </div>
-        <div class="col-lg-4">
-            <div class="card-x" style="position:sticky;top:90px">
+        <div class="col-lg-4 d-none d-lg-block">
+            <div class="card-x" style="position:sticky;top:96px">
                 <div class="card-x-header">
                     <h3>Navigasi Soal</h3>
-                    <span class="ms-auto small text-muted"><strong id="answeredCount">0</strong>/<?= count($questions) ?> terjawab</span>
+                    <span class="ms-auto small text-muted"><strong data-answered>0</strong>/<?= count($questions) ?> terjawab</span>
                 </div>
                 <div class="card-x-body">
-                    <div class="q-nav" id="qNav"></div>
+                    <div class="q-nav" data-qnav></div>
                     <div class="d-flex flex-wrap gap-3 small text-muted mt-3">
-                        <span><span class="legend-dot" style="background:var(--green-soft);border-color:#9fdcc1"></span>Terjawab</span>
-                        <span><span class="legend-dot" style="box-shadow:inset 0 -3px 0 var(--amber)"></span>Ditandai</span>
-                        <span><span class="legend-dot" style="background:var(--blue);border-color:var(--blue)"></span>Aktif</span>
+                        <span><span class="legend-dot answered"></span>Terjawab</span>
+                        <span><span class="legend-dot flagged"></span>Ditandai</span>
+                        <span><span class="legend-dot current"></span>Aktif</span>
                     </div>
                     <hr>
-                    <button class="btn btn-gold w-100 btn-lg" id="btnSubmit"><i class="bi bi-send me-1"></i>Submit <?= $exam['type'] === 'test' ? 'Test' : 'Pre-Test' ?></button>
+                    <button class="btn btn-gold w-100 btn-lg" data-submit><i class="bi bi-send me-1"></i>Submit <?= $exam['type'] === 'test' ? 'Test' : 'Pre-Test' ?></button>
                 </div>
             </div>
         </div>
+    </div>
+</div>
+
+<!-- Bar bawah (mobile) -->
+<div class="exam-mobile-bar d-lg-none">
+    <div class="d-flex align-items-center justify-content-between mb-2 px-1">
+        <span class="save-status" data-save-status></span>
+        <span class="small text-muted"><strong data-answered>0</strong>/<?= count($questions) ?> terjawab</span>
+    </div>
+    <div class="d-flex gap-2">
+        <button class="btn btn-light flex-fill" data-prev aria-label="Sebelumnya"><i class="bi bi-chevron-left"></i></button>
+        <button class="btn btn-light flex-fill" data-flag aria-label="Tandai"><i class="bi bi-flag"></i></button>
+        <button class="btn btn-soft flex-fill" data-bs-toggle="offcanvas" data-bs-target="#navSheet" aria-label="Daftar soal"><i class="bi bi-grid-3x3-gap"></i></button>
+        <button class="btn btn-primary flex-fill" data-next aria-label="Berikutnya"><i class="bi bi-chevron-right"></i></button>
+    </div>
+</div>
+<div class="offcanvas offcanvas-bottom nav-sheet" tabindex="-1" id="navSheet">
+    <div class="offcanvas-header">
+        <h5 class="offcanvas-title fw-bold">Daftar Soal</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+    </div>
+    <div class="offcanvas-body pt-0">
+        <div class="q-nav" data-qnav></div>
+        <button class="btn btn-gold w-100 btn-lg mt-4" data-submit><i class="bi bi-send me-1"></i>Submit <?= $exam['type'] === 'test' ? 'Test' : 'Pre-Test' ?></button>
     </div>
 </div>
 
@@ -169,7 +203,7 @@ require __DIR__ . '/includes/header.php';
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-body text-center p-4">
-                <div class="stat-icon ic-gold mx-auto mb-3" style="width:64px;height:64px;border-radius:18px;display:grid;place-items:center;font-size:1.7rem"><i class="bi bi-send-check"></i></div>
+                <div class="icon-bubble ic-gold mx-auto mb-3"><i class="bi bi-send-check"></i></div>
                 <h5 class="fw-bold">Apakah Anda yakin ingin mengirim jawaban?</h5>
                 <p class="text-muted mb-2">Setelah dikirim, jawaban tidak dapat diubah.</p>
                 <p class="small mb-0" id="submitUnanswered"></p>
@@ -177,6 +211,22 @@ require __DIR__ . '/includes/header.php';
             <div class="modal-footer justify-content-center border-0 pt-0 pb-4">
                 <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal">Kembali</button>
                 <button type="button" class="btn btn-primary px-4" id="btnConfirmSubmit">Submit <?= $exam['type'] === 'test' ? 'Test' : 'Pre-Test' ?></button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Peringatan pindah tab -->
+<div class="modal fade" id="cheatModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-body text-center p-4">
+                <div class="icon-bubble ic-red mx-auto mb-3"><i class="bi bi-eye"></i></div>
+                <h5 class="fw-bold">Anda meninggalkan halaman ujian</h5>
+                <p class="text-muted mb-0">Aktivitas ini telah dicatat (<strong id="cheatCount">0</strong> kali) dan dapat dilihat administrator. Tetap berada di halaman ujian hingga selesai.</p>
+            </div>
+            <div class="modal-footer justify-content-center border-0 pt-0 pb-4">
+                <button type="button" class="btn btn-primary px-4" data-bs-dismiss="modal">Saya Mengerti</button>
             </div>
         </div>
     </div>

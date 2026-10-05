@@ -13,13 +13,13 @@
                 const ini = u.name.split(' ').slice(0, 2).map((w) => w[0]).join('').toUpperCase();
                 const me = Number(u.id) === window.ME_ID;
                 return `<tr>
-                    <td><div class="user-cell"><div class="avatar">${App.esc(ini)}</div><div class="min-w-0"><div class="fw-semibold">${App.esc(u.name)}${me ? ' <span class="badge bs-blue badge-soft">Anda</span>' : ''}</div><small class="text-muted">@${App.esc(u.username)}${u.email ? ' · ' + App.esc(u.email) : ''}</small></div></div></td>
-                    <td>${App.esc(u.department || '—')}<div class="small text-muted">${App.esc(u.position || '')}</div></td>
-                    <td>${u.role === 'admin' ? '<span class="badge-type badge-test">ADMIN</span>' : '<span class="badge-type badge-pretest">USER</span>'}</td>
-                    <td><div class="form-check form-switch mb-0"><input class="form-check-input" type="checkbox" data-toggle="${u.id}" ${u.status === 'active' ? 'checked' : ''} ${me ? 'disabled' : ''}></div></td>
-                    <td class="text-end"><a href="${App.url('admin/results.php?user_id=' + u.id)}">${u.attempts}</a></td>
-                    <td class="text-muted small">${App.date(u.last_login_at)}</td>
-                    <td class="text-end text-nowrap">
+                    <td class="td-main"><div class="user-cell"><div class="avatar">${App.esc(ini)}</div><div class="min-w-0"><div class="fw-semibold">${App.esc(u.name)}${me ? ' <span class="badge bs-blue badge-soft">Anda</span>' : ''}</div><small class="text-muted">@${App.esc(u.username)}${u.email ? ' · ' + App.esc(u.email) : ''}</small></div></div></td>
+                    <td data-label="Department">${App.esc(u.department || '—')}<div class="small text-muted">${App.esc(u.position || '')}</div></td>
+                    <td data-label="Role">${u.role === 'admin' ? '<span class="badge-type badge-test">ADMIN</span>' : '<span class="badge-type badge-pretest">USER</span>'}</td>
+                    <td data-label="Aktif"><div class="form-check form-switch mb-0"><input class="form-check-input" type="checkbox" data-toggle="${u.id}" ${u.status === 'active' ? 'checked' : ''} ${me ? 'disabled' : ''}></div></td>
+                    <td data-label="Ujian" class="text-end"><a href="${App.url('admin/results.php?user_id=' + u.id)}">${u.attempts}</a></td>
+                    <td data-label="Login terakhir" class="text-muted small">${App.date(u.last_login_at)}</td>
+                    <td class="text-end text-nowrap td-actions">
                         <button class="btn btn-soft btn-sm" data-edit="${u.id}" title="Edit"><i class="bi bi-pencil"></i></button>
                         <button class="btn btn-light btn-sm" data-reset="${u.id}" data-name="${App.esc(u.name)}" title="Reset password"><i class="bi bi-key"></i></button>
                         <button class="btn btn-soft-danger btn-sm" data-del="${u.id}" data-name="${App.esc(u.name)}" ${me ? 'disabled' : ''} title="Hapus"><i class="bi bi-trash"></i></button>

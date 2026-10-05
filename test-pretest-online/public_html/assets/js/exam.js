@@ -5,6 +5,7 @@
     if (!B) return;
 
     const $ = (s) => document.querySelector(s);
+    const $$ = (s) => document.querySelectorAll(s);
     const questions = B.questions;
     const flagKey = `exam_flags_${B.attemptId}`;
     const posKey = `exam_pos_${B.attemptId}`;
@@ -30,18 +31,23 @@
     }
 
     function renderNav() {
-        const nav = $('#qNav');
-        nav.innerHTML = '';
-        questions.forEach((q, i) => {
-            const b = document.createElement('button');
-            b.type = 'button';
-            b.textContent = i + 1;
-            b.className = [isAnswered(q) ? 'answered' : '', flags.has(q.id) ? 'flagged' : '', i === idx ? 'current' : ''].join(' ');
-            b.addEventListener('click', () => go(i));
-            nav.appendChild(b);
+        $$('[data-qnav]').forEach((nav) => {
+            nav.innerHTML = '';
+            questions.forEach((q, i) => {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.textContent = i + 1;
+                b.className = [isAnswered(q) ? 'answered' : '', flags.has(q.id) ? 'flagged' : '', i === idx ? 'current' : ''].join(' ');
+                b.addEventListener('click', () => {
+                    go(i);
+                    const sheet = bootstrap.Offcanvas.getInstance('#navSheet');
+                    if (sheet) sheet.hide();
+                });
+                nav.appendChild(b);
+            });
         });
         const answered = questions.filter(isAnswered).length;
-        $('#answeredCount').textContent = answered;
+        $$('[data-answered]').forEach((el) => { el.textContent = answered; });
         $('#progressBar').style.width = (questions.length ? (answered / questions.length) * 100 : 0) + '%';
     }
 
@@ -109,14 +115,20 @@
             });
         }
 
-        $('#btnPrev').disabled = idx === 0;
-        $('#btnNext').innerHTML = idx === questions.length - 1
-            ? 'Selesai <i class="bi bi-check2-circle"></i>'
-            : 'Berikutnya <i class="bi bi-chevron-right"></i>';
-        const fb = $('#btnFlag');
-        fb.classList.toggle('btn-warning', flags.has(q.id));
-        fb.classList.toggle('btn-light', !flags.has(q.id));
-        fb.querySelector('span').textContent = flags.has(q.id) ? 'Ditandai' : 'Tandai';
+        const last = idx === questions.length - 1;
+        $$('[data-prev]').forEach((b) => { b.disabled = idx === 0; });
+        $$('[data-next]').forEach((b) => {
+            const compact = !b.textContent.trim();
+            b.innerHTML = compact
+                ? `<i class="bi ${last ? 'bi-check2-circle' : 'bi-chevron-right'}"></i>`
+                : (last ? 'Selesai <i class="bi bi-check2-circle"></i>' : 'Berikutnya <i class="bi bi-chevron-right"></i>');
+        });
+        $$('[data-flag]').forEach((fb) => {
+            fb.classList.toggle('btn-warning', flags.has(q.id));
+            fb.classList.toggle('btn-light', !flags.has(q.id));
+            const sp = fb.querySelector('span');
+            if (sp) sp.textContent = flags.has(q.id) ? 'Ditandai' : 'Tandai';
+        });
         localStorage.setItem(posKey, String(idx));
     }
 
@@ -130,10 +142,12 @@
 
     /* ---------------- Auto-save ---------------- */
     function setStatus(kind, text) {
-        const el = $('#saveStatus');
-        el.className = `save-status ms-auto me-2 ${kind}`;
-        const icon = { ok: 'bi-check-circle-fill', err: 'bi-exclamation-triangle-fill', saving: 'bi-arrow-repeat' }[kind] || '';
-        el.innerHTML = icon ? `<i class="bi ${icon}"></i> ${App.esc(text)}` : App.esc(text);
+        const icon = { ok: 'bi-check-circle-fill', err: 'bi-exclamation-triangle-fill', saving: 'bi-arrow-repeat spin' }[kind] || '';
+        $$('[data-save-status]').forEach((el) => {
+            el.classList.remove('ok', 'err', 'saving');
+            el.classList.add(kind);
+            el.innerHTML = icon ? `<i class="bi ${icon}"></i> ${App.esc(text)}` : App.esc(text);
+        });
     }
 
     function queueSave(q) {
@@ -212,6 +226,8 @@
     /* ---------------- Submit ---------------- */
     const submitModal = new bootstrap.Modal('#submitModal');
     function openSubmit() {
+        const sheet = bootstrap.Offcanvas.getInstance('#navSheet');
+        if (sheet) sheet.hide();
         const un = questions.filter((q) => !isAnswered(q)).length;
         $('#submitUnanswered').innerHTML = un
             ? `<span class="text-danger fw-semibold"><i class="bi bi-exclamation-circle"></i> ${un} soal belum dijawab.</span>`
@@ -243,16 +259,16 @@
     }
 
     /* ---------------- Events ---------------- */
-    $('#btnPrev').addEventListener('click', () => go(idx - 1));
-    $('#btnNext').addEventListener('click', () => (idx === questions.length - 1 ? openSubmit() : go(idx + 1)));
-    $('#btnFlag').addEventListener('click', () => {
+    $$('[data-prev]').forEach((b) => b.addEventListener('click', () => go(idx - 1)));
+    $$('[data-next]').forEach((b) => b.addEventListener('click', () => (idx === questions.length - 1 ? openSubmit() : go(idx + 1))));
+    $$('[data-flag]').forEach((b) => b.addEventListener('click', () => {
         const id = questions[idx].id;
         flags.has(id) ? flags.delete(id) : flags.add(id);
         localStorage.setItem(flagKey, JSON.stringify([...flags]));
         renderQuestion(false);
         renderNav();
-    });
-    $('#btnSubmit').addEventListener('click', openSubmit);
+    }));
+    $$('[data-submit]').forEach((b) => b.addEventListener('click', openSubmit));
     $('#btnConfirmSubmit').addEventListener('click', () => doSubmit(false));
     window.addEventListener('beforeunload', (e) => {
         if (!finished && (pending.size || inflight || timers.size)) { e.preventDefault(); e.returnValue = ''; }
@@ -262,6 +278,43 @@
         if (e.key === 'ArrowRight') go(idx + 1);
         if (e.key === 'ArrowLeft') go(idx - 1);
     });
+
+    /* ---------------- Pengawasan: deteksi pindah tab ---------------- */
+    if (B.antiCheat) {
+        let lastSent = 0;
+        let away = false;
+        const report = () => {
+            if (finished || submitting || Date.now() - lastSent < 1500) return;
+            lastSent = Date.now();
+            away = true;
+            const fd = new FormData();
+            fd.append('csrf_token', document.querySelector('meta[name="csrf-token"]').content);
+            fd.append('attempt_id', B.attemptId);
+            fd.append('event', 'tab_switch');
+            fetch(App.url('api/user/event.php'), { method: 'POST', body: fd, credentials: 'same-origin', keepalive: true })
+                .then((r) => r.json()).then((j) => { if (j.ok) B.tabSwitches = j.tab_switches; }).catch(() => {});
+        };
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) report();
+            else if (away && !finished) {
+                away = false;
+                setTimeout(() => {
+                    document.getElementById('cheatCount').textContent = Math.max(1, B.tabSwitches);
+                    bootstrap.Modal.getOrCreateInstance('#cheatModal').show();
+                }, 300);
+            }
+        });
+        window.addEventListener('blur', () => { if (!document.hidden) report(); });
+        window.addEventListener('focus', () => {
+            if (away && !document.hidden && !finished) {
+                away = false;
+                setTimeout(() => {
+                    document.getElementById('cheatCount').textContent = Math.max(1, B.tabSwitches);
+                    bootstrap.Modal.getOrCreateInstance('#cheatModal').show();
+                }, 300);
+            }
+        });
+    }
 
     if (!questions.length) {
         $('#questionCard').innerHTML = '<div class="empty-state"><i class="bi bi-inbox"></i>Tidak ada soal.</div>';

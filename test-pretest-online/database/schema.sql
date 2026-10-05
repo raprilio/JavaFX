@@ -1,5 +1,6 @@
 -- =====================================================================
---  Test & Pre-Test Online — Database Schema (MySQL 5.7+ / MariaDB 10.3+)
+--  SiTes Dukcapil — Test & Pre-Test Online — Database Schema (v2)
+--  MySQL 5.7+ / MariaDB 10.3+
 --  Import file ini melalui phpMyAdmin (tab "Import") ke database kosong.
 --  Akun admin default:  username: admin   password: Admin@123
 --  (WAJIB diganti setelah login pertama)
@@ -8,6 +9,8 @@
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
+DROP TABLE IF EXISTS activity_logs;
+DROP TABLE IF EXISTS settings;
 DROP TABLE IF EXISTS exam_answers;
 DROP TABLE IF EXISTS attempt_questions;
 DROP TABLE IF EXISTS exam_attempts;
@@ -187,6 +190,7 @@ CREATE TABLE exam_attempts (
     percentage      DECIMAL(5,2) NULL,
     passed          TINYINT(1) NULL,
     status          ENUM('in_progress','submitted','auto_submitted') NOT NULL DEFAULT 'in_progress',
+    tab_switches    INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'jumlah meninggalkan halaman ujian',
     ip_address      VARCHAR(45) NULL,
     user_agent      VARCHAR(255) NULL,
     created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -237,6 +241,34 @@ CREATE TABLE exam_answers (
     KEY idx_answer_question (question_id),
     CONSTRAINT fk_answer_attempt FOREIGN KEY (attempt_id) REFERENCES exam_attempts (id) ON DELETE CASCADE,
     CONSTRAINT fk_answer_question FOREIGN KEY (question_id) REFERENCES questions (id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------
+-- settings  (branding, logo, saklar modul Pre-Test/Test, dll.)
+-- ---------------------------------------------------------------------
+CREATE TABLE settings (
+    setting_key   VARCHAR(64) NOT NULL,
+    setting_value TEXT NULL,
+    updated_at    DATETIME NULL,
+    PRIMARY KEY (setting_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO settings (setting_key, setting_value) VALUES ('schema_version', '2');
+
+-- ---------------------------------------------------------------------
+-- activity_logs  (audit trail)
+-- ---------------------------------------------------------------------
+CREATE TABLE activity_logs (
+    id          INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    user_id     INT UNSIGNED NULL,
+    action      VARCHAR(50) NOT NULL,
+    description VARCHAR(500) NULL,
+    ip_address  VARCHAR(45) NULL,
+    created_at  DATETIME NOT NULL,
+    PRIMARY KEY (id),
+    KEY idx_log_created (created_at),
+    KEY idx_log_user (user_id),
+    KEY idx_log_action (action)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------

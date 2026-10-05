@@ -9,7 +9,7 @@ finalize_expired_attempts();
 $f = admin_results_filters($_GET);
 [$rows] = admin_results_fetch($f);
 
-$headers = ['Nama', 'Username', 'Department', 'Exam', 'Type', 'Correct', 'Wrong', 'Unanswered', 'Score', 'Percentage', 'Status', 'Duration', 'Start Time', 'Submit Time'];
+$headers = ['Nama', 'Username', 'Department', 'Exam', 'Type', 'Correct', 'Wrong', 'Unanswered', 'Score', 'Percentage', 'Status', 'Pindah Tab', 'Duration', 'Start Time', 'Submit Time'];
 $data = [];
 foreach ($rows as $r) {
     $data[] = [
@@ -17,15 +17,17 @@ foreach ($rows as $r) {
         (int) $r['correct_answers'], (int) $r['wrong_answers'], (int) $r['unanswered'],
         (float) $r['score'], (float) $r['percentage'],
         (int) $r['pending_review'] > 0 ? 'Perlu penilaian' : ((int) $r['passed'] ? 'Lulus' : 'Tidak Lulus'),
+        (int) $r['tab_switches'],
         fmt_duration($r['duration'] !== null ? (int) $r['duration'] : null),
         fmt_date($r['started_at'], 'd-m-Y H:i'), fmt_date($r['submitted_at'], 'd-m-Y H:i'),
     ];
 }
 
+log_activity('export', 'Export Excel hasil ujian (' . count($data) . ' baris)');
 xlsx_download(
     'hasil-ujian-' . date('Ymd-His') . '.xlsx',
     'Hasil Ujian',
     $headers,
     $data,
-    APP_NAME . ' — Laporan Hasil Ujian (' . admin_filter_summary($f) . ') · ' . date('d-m-Y H:i')
+    app_name() . ' — ' . institution_full() . ' — Laporan Hasil Ujian (' . admin_filter_summary($f) . ') · ' . date('d-m-Y H:i')
 );

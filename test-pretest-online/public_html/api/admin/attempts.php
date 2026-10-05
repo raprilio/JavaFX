@@ -34,6 +34,7 @@ switch (admin_action()) {
         q('UPDATE exam_answers SET points = ?, is_correct = ?, graded_by = ? WHERE id = ?',
             [$points, $points > 0 ? 1 : 0, current_user()['id'], $ans['id']]);
         recalc_attempt_totals((int) $ans['attempt_id']);
+        log_activity('result', 'Menilai essay (attempt #' . $ans['attempt_id'] . ', point ' . $points . ')');
         json_out(['ok' => true, 'message' => 'Nilai disimpan.']);
 
     case 'regrade':
@@ -62,10 +63,14 @@ switch (admin_action()) {
         }
         recalc_attempt_totals($id);
         $pdo->commit();
+        log_activity('result', 'Menghitung ulang nilai attempt #' . $id);
         json_out(['ok' => true, 'message' => 'Nilai dihitung ulang.']);
 
     case 'delete':
         $n = q('DELETE FROM exam_attempts WHERE id = ?', [in_int('id')])->rowCount();
+        if ($n) {
+            log_activity('result', 'Menghapus attempt #' . in_int('id'));
+        }
         json_out(['ok' => $n > 0, 'message' => $n ? 'Attempt dihapus. Peserta dapat mengerjakan ulang.' : 'Attempt tidak ditemukan.']);
 
     default:

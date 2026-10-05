@@ -23,7 +23,7 @@ require dirname(__DIR__) . '/includes/header.php';
         </div>
     </div>
     <div class="table-responsive">
-        <table class="table table-x">
+        <table class="table table-x table-stack">
             <thead><tr><th>User</th><th>Department</th><th>Role</th><th>Status</th><th class="text-end">Ujian</th><th>Login terakhir</th><th class="text-end">Aksi</th></tr></thead>
             <tbody id="uBody"></tbody>
         </table>

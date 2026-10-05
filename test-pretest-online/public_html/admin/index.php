@@ -16,6 +16,21 @@ $tiles = [
     ['avg_pretest', 'Rata-rata Score Pre-Test', 'bi-graph-up', 'ic-red'],
 ];
 ?>
+<div class="row g-3 mb-3">
+    <?php foreach (['pretest' => ['Pre-Test', 'bi-lightbulb', 'ic-blue'], 'test' => ['Test Resmi', 'bi-patch-check', 'ic-gold']] as $t => [$label, $icon, $cls]): $on = exam_type_enabled($t); ?>
+        <div class="col-md-6">
+            <div class="module-switch <?= $on ? 'on' : '' ?>" data-module="<?= $t ?>">
+                <div class="stat-icon <?= $cls ?>" style="width:46px;height:46px;border-radius:14px;display:grid;place-items:center;font-size:1.25rem"><i class="bi <?= $icon ?>"></i></div>
+                <div class="flex-fill min-w-0">
+                    <div class="fw-bold">Modul <?= e($label) ?></div>
+                    <div class="state"><?= $on ? '● AKTIF — terlihat oleh peserta' : '● NONAKTIF — disembunyikan dari peserta' ?></div>
+                </div>
+                <div class="form-check form-switch m-0"><input class="form-check-input" type="checkbox" <?= $on ? 'checked' : '' ?> aria-label="Aktifkan <?= e($label) ?>"></div>
+            </div>
+        </div>
+    <?php endforeach; ?>
+</div>
+
 <div class="row g-3 mb-4">
     <?php foreach ($tiles as [$key, $label, $icon, $cls]): ?>
         <div class="col-6 col-md-4 col-xxl-2">

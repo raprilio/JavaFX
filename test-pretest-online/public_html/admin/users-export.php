@@ -21,6 +21,7 @@ $data = array_map(fn ($r) => [
     fmt_date($r['last_login_at'], 'd-m-Y H:i'), fmt_date($r['created_at'], 'd-m-Y H:i'),
 ], $rows);
 
+log_activity('export', 'Export Excel data user');
 xlsx_download('data-user-' . date('Ymd-His') . '.xlsx', 'Users',
     ['Nama', 'Username', 'Email', 'Department', 'Position', 'Role', 'Status', 'Jumlah Ujian', 'Login Terakhir', 'Dibuat'],
-    $data, APP_NAME . ' — Data User · ' . date('d-m-Y H:i'));
+    $data, app_name() . ' — ' . institution_full() . ' — Data User · ' . date('d-m-Y H:i'));

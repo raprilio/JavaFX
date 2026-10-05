@@ -96,7 +96,9 @@ switch ($action) {
         ensure_unique($d);
         q('INSERT INTO users (name, username, email, password, role, department, position, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
             [$d['name'], $d['username'], $d['email'], password_hash($d['password'], PASSWORD_DEFAULT), $d['role'], $d['department'], $d['position'], $d['status'], now()]);
-        json_out(['ok' => true, 'message' => 'User berhasil dibuat.', 'id' => (int) db()->lastInsertId()]);
+        $newId = (int) db()->lastInsertId();
+        log_activity('user', 'Membuat user ' . $d['username']);
+        json_out(['ok' => true, 'message' => 'User berhasil dibuat.', 'id' => $newId]);
 
     case 'update':
         $id = in_int('id');
@@ -113,6 +115,7 @@ switch ($action) {
         if ($d['password'] !== '') {
             q('UPDATE users SET password = ? WHERE id = ?', [password_hash($d['password'], PASSWORD_DEFAULT), $id]);
         }
+        log_activity('user', 'Memperbarui user ' . $d['username']);
         json_out(['ok' => true, 'message' => 'User berhasil diperbarui.']);
 
     case 'delete':
@@ -120,7 +123,9 @@ switch ($action) {
         if ($id === (int) $me['id']) {
             json_error('Anda tidak dapat menghapus akun sendiri.', 422);
         }
+        $uname = (string) q_val('SELECT username FROM users WHERE id = ?', [$id]);
         q('DELETE FROM users WHERE id = ?', [$id]);
+        log_activity('user', 'Menghapus user ' . $uname . ' beserta riwayat ujiannya');
         json_out(['ok' => true, 'message' => 'User dihapus beserta riwayat ujiannya.']);
 
     case 'reset_password':
@@ -136,6 +141,7 @@ switch ($action) {
             json_error('User tidak ditemukan.', 404);
         }
         q('UPDATE users SET password = ? WHERE id = ?', [password_hash($pw, PASSWORD_DEFAULT), $id]);
+        log_activity('user', 'Reset password user #' . $id);
         json_out(['ok' => true, 'message' => 'Password direset.', 'password' => $pw]);
 
     case 'toggle_status':
@@ -144,7 +150,9 @@ switch ($action) {
             json_error('Anda tidak dapat menonaktifkan akun sendiri.', 422);
         }
         q("UPDATE users SET status = IF(status = 'active', 'inactive', 'active') WHERE id = ?", [$id]);
-        json_out(['ok' => true, 'status' => q_val('SELECT status FROM users WHERE id = ?', [$id])]);
+        $st = (string) q_val('SELECT status FROM users WHERE id = ?', [$id]);
+        log_activity('user', ($st === 'active' ? 'Mengaktifkan' : 'Menonaktifkan') . ' user #' . $id);
+        json_out(['ok' => true, 'status' => $st]);
 
     case 'assign_exams':
         $id = in_int('user_id');
@@ -213,6 +221,7 @@ switch ($action) {
             $created++;
         }
         fclose($fh);
+        log_activity('user', "Import CSV: $created user dibuat");
         json_out(['ok' => true, 'message' => "$created user berhasil diimport.", 'created' => $created, 'skipped' => array_slice($skipped, 0, 50)]);
 
     default:

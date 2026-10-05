@@ -179,5 +179,43 @@
         b.querySelector('i')?.classList.toggle('bi-eye-slash');
     });
 
+    /* ---------- Tema gelap / terang ---------- */
+    App.theme = () => document.documentElement.getAttribute('data-bs-theme') || 'light';
+    function syncThemeIcons() {
+        const dark = App.theme() === 'dark';
+        document.querySelectorAll('[data-theme-toggle] i').forEach((i) => {
+            i.className = dark ? 'bi bi-sun' : 'bi bi-moon-stars';
+        });
+    }
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('[data-theme-toggle]')) return;
+        const next = App.theme() === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-bs-theme', next);
+        try { localStorage.setItem('theme', next); } catch (err) { /* abaikan */ }
+        syncThemeIcons();
+        document.dispatchEvent(new CustomEvent('themechange', { detail: next }));
+    });
+    syncThemeIcons();
+
+    /* ---------- Animasi angka: <span data-count="82.5" data-dec="1"> ---------- */
+    App.countUp = (el) => {
+        const target = Number(el.dataset.count);
+        if (!isFinite(target)) return;
+        const dec = Number(el.dataset.dec || 0);
+        const t0 = performance.now(), dur = 900;
+        const step = (t) => {
+            const p = Math.min(1, (t - t0) / dur), eased = 1 - Math.pow(1 - p, 3);
+            el.textContent = App.num(target * eased, dec);
+            if (p < 1) requestAnimationFrame(step); else el.textContent = App.num(target, dec);
+        };
+        requestAnimationFrame(step);
+    };
+    document.querySelectorAll('[data-count]').forEach(App.countUp);
+
+    /* ---------- PWA: cache aset statis ---------- */
+    if ('serviceWorker' in navigator && location.protocol === 'https:') {
+        window.addEventListener('load', () => { navigator.serviceWorker.register(App.url('sw.js')).catch(() => {}); });
+    }
+
     window.App = App;
 })();

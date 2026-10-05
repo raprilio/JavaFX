@@ -53,16 +53,17 @@
                 const ini = x.name.split(' ').slice(0, 2).map((w) => w[0]).join('').toUpperCase();
                 const pending = Number(x.pending_review) > 0 ? `<span class="badge badge-soft bs-amber ms-1" title="Essay belum dinilai"><i class="bi bi-hourglass-split"></i> ${x.pending_review}</span>` : '';
                 const auto = x.status === 'auto_submitted' ? '<span class="badge badge-soft bs-gray ms-1" title="Dikirim otomatis saat waktu habis"><i class="bi bi-stopwatch"></i></span>' : '';
+                const tabs = Number(x.tab_switches) > 0 ? `<span class="badge badge-soft ${Number(x.tab_switches) >= 3 ? 'bs-red' : 'bs-amber'} ms-1" title="Meninggalkan halaman ujian"><i class="bi bi-eye-slash"></i> ${x.tab_switches}</span>` : '';
                 return `<tr class="clickable" data-id="${x.id}">
-                    <td><div class="user-cell"><div class="avatar">${App.esc(ini)}</div><div class="min-w-0"><div class="fw-semibold">${App.esc(x.name)}</div><small class="text-muted">${App.esc(x.department || '@' + x.username)}</small></div></div></td>
-                    <td><div class="fw-semibold">${App.esc(x.exam_title)}</div>${App.typeBadge(x.exam_type)}</td>
-                    <td class="text-end text-success fw-semibold">${x.correct_answers}</td>
-                    <td class="text-end text-danger fw-semibold">${x.wrong_answers}</td>
-                    <td class="text-end text-muted">${x.unanswered}</td>
-                    <td class="text-end"><span class="score-pill ${App.scoreClass(x.score, x.passing_grade)}">${App.num(x.score, 1)}</span>${pending}</td>
-                    <td>${App.duration(x.duration)}${auto}</td>
-                    <td class="text-muted text-nowrap">${App.date(x.submitted_at)}</td>
-                    <td class="text-end"><i class="bi bi-chevron-right text-muted"></i></td>
+                    <td class="td-main"><div class="user-cell"><div class="avatar">${App.esc(ini)}</div><div class="min-w-0"><div class="fw-semibold">${App.esc(x.name)}</div><small class="text-muted">${App.esc(x.department || '@' + x.username)}</small></div></div></td>
+                    <td data-label="Ujian"><div class="fw-semibold">${App.esc(x.exam_title)}</div>${App.typeBadge(x.exam_type)}</td>
+                    <td data-label="Benar" class="text-end text-success fw-semibold">${x.correct_answers}</td>
+                    <td data-label="Salah" class="text-end text-danger fw-semibold">${x.wrong_answers}</td>
+                    <td data-label="Kosong" class="text-end text-muted">${x.unanswered}</td>
+                    <td data-label="Score" class="text-end"><span class="score-pill ${App.scoreClass(x.score, x.passing_grade)}">${App.num(x.score, 1)}</span>${pending}</td>
+                    <td data-label="Durasi" class="text-nowrap">${App.duration(x.duration)}${auto}${tabs}</td>
+                    <td data-label="Tanggal" class="text-muted text-nowrap">${App.date(x.submitted_at)}</td>
+                    <td class="text-end d-none d-md-table-cell"><i class="bi bi-chevron-right text-muted"></i></td>
                 </tr>`;
             }).join('');
         }
@@ -82,6 +83,7 @@
         page = 1; load();
     }));
     form.addEventListener('submit', (e) => { e.preventDefault(); page = 1; load(); });
+    document.getElementById('btnFilterToggle')?.addEventListener('click', () => form.classList.toggle('show-adv'));
     form.addEventListener('change', () => { page = 1; load(); });
     form.elements.q.addEventListener('input', App.debounce(() => { page = 1; load(); }, 350));
     document.getElementById('btnReset').addEventListener('click', () => {

@@ -23,13 +23,14 @@ $sum = [
 ];
 $filterText = admin_filter_summary($f);
 $admin = current_user();
+log_activity('export', 'Membuka laporan PDF hasil ujian (' . $total . ' baris)');
 ?>
 <!doctype html>
 <html lang="id">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Laporan Hasil Ujian · <?= e(APP_NAME) ?></title>
+<title>Laporan Hasil Ujian · <?= e(app_name()) ?></title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
     * { box-sizing: border-box; }
@@ -38,6 +39,7 @@ $admin = current_user();
     .toolbar button { border: 0; border-radius: 8px; padding: 9px 16px; font-weight: 700; cursor: pointer; font-family: inherit; }
     .btn-gold { background: #d4a72c; color: #071230; }
     .btn-light { background: #fff; color: #0b1b3f; }
+    :root{--gold:<?= e(valid_hex_color(setting('accent_color'), '#d4a72c')) ?>}
     .page { background: #fff; max-width: 1100px; margin: 24px auto; padding: 36px 40px; box-shadow: 0 10px 40px rgba(11,27,63,.12); border-radius: 12px; }
     .head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #0b1b3f; padding-bottom: 16px; margin-bottom: 18px; }
     .brand { display: flex; gap: 12px; align-items: center; }
@@ -80,8 +82,8 @@ $admin = current_user();
 <div class="page">
     <div class="head">
         <div class="brand">
-            <img src="<?= e(url('assets/images/logo.svg')) ?>" width="46" height="46" alt="">
-            <div><h1><?= e(APP_NAME) ?></h1><p><?= e(APP_TAGLINE) ?></p></div>
+            <img src="<?= e(app_logo_url()) ?>" width="58" height="58" alt="" style="object-fit:contain">
+            <div><h1><?= e(setting('institution_name')) ?></h1><p><?= e(setting('institution_region')) ?> · <?= e(app_name()) ?></p></div>
         </div>
         <div class="meta">Dicetak: <?= e(tanggal_id()) ?>, <?= date('H:i') ?><br>Oleh: <?= e($admin['name']) ?><br><strong style="color:#e04848">RAHASIA — Khusus Administrator</strong></div>
     </div>
@@ -95,10 +97,10 @@ $admin = current_user();
         <div class="card"><span>Kelulusan</span><b><?= $sum['rate'] !== null ? e(fmt_num($sum['rate'], 1)) . '%' : '—' ?></b></div>
     </div>
     <table id="tbl">
-        <thead><tr><th>#</th><th>Nama</th><th>Department</th><th>Ujian</th><th>Jenis</th><th class="r">Benar</th><th class="r">Salah</th><th class="r">Kosong</th><th class="r">Score</th><th>Status</th><th>Durasi</th><th>Submit</th></tr></thead>
+        <thead><tr><th>#</th><th>Nama</th><th>Department</th><th>Ujian</th><th>Jenis</th><th class="r">Benar</th><th class="r">Salah</th><th class="r">Kosong</th><th class="r">Score</th><th>Status</th><th class="r">Pindah Tab</th><th>Durasi</th><th>Submit</th></tr></thead>
         <tbody>
         <?php if (!$rows): ?>
-            <tr><td colspan="12" style="text-align:center;padding:30px;color:#6b7690">Tidak ada data.</td></tr>
+            <tr><td colspan="13" style="text-align:center;padding:30px;color:#6b7690">Tidak ada data.</td></tr>
         <?php endif; ?>
         <?php foreach ($rows as $i => $r): ?>
             <tr>
@@ -112,6 +114,7 @@ $admin = current_user();
                 <td class="r"><?= (int) $r['unanswered'] ?></td>
                 <td class="r"><strong><?= e(fmt_num($r['score'], 1)) ?></strong></td>
                 <td class="<?= (int) $r['passed'] ? 'pass' : 'fail' ?>"><?= (int) $r['pending_review'] > 0 ? 'Perlu penilaian' : ((int) $r['passed'] ? 'Lulus' : 'Tidak Lulus') ?></td>
+                <td class="r"><?= (int) $r['tab_switches'] ?></td>
                 <td><?= e(fmt_duration($r['duration'] !== null ? (int) $r['duration'] : null)) ?></td>
                 <td><?= e(fmt_date($r['submitted_at'])) ?></td>
             </tr>
@@ -119,7 +122,7 @@ $admin = current_user();
         </tbody>
     </table>
     <div class="sign"><div>Mengetahui,<div class="line"><?= e($admin['name']) ?></div>Administrator</div></div>
-    <div class="foot">Dokumen ini dihasilkan otomatis oleh <?= e(APP_NAME) ?> · <?= e(date('d-m-Y H:i:s')) ?></div>
+    <div class="foot">Dokumen ini dihasilkan otomatis oleh <?= e(app_name()) ?> · <?= e(date('d-m-Y H:i:s')) ?></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
@@ -131,7 +134,7 @@ document.getElementById('btnPdf').addEventListener('click', function () {
     const W = doc.internal.pageSize.getWidth();
     doc.setFillColor(11, 27, 63); doc.rect(0, 0, W, 24, 'F');
     doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(15);
-    doc.text(<?= js_json(APP_NAME . ' — Laporan Hasil Ujian') ?>, 12, 11);
+    doc.text(<?= js_json(institution_full() . ' — Laporan Hasil Ujian') ?>, 12, 11);
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
     doc.text(<?= js_json('Filter: ' . $filterText) ?>, 12, 18, { maxWidth: W - 90 });
     doc.text(<?= js_json('Dicetak ' . date('d-m-Y H:i') . ' · RAHASIA') ?>, W - 12, 11, { align: 'right' });

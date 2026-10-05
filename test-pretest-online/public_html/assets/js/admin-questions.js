@@ -18,12 +18,12 @@
             const r = await App.api('api/admin/questions.php', { params: { action: 'list', page, q: fQ.value, category_id: fCat.value, type: fType.value, difficulty: fDiff.value } });
             body.innerHTML = r.data.length ? r.data.map((q) => `
                 <tr>
-                    <td><div class="line-clamp-2 fw-semibold">${App.esc(q.question)}</div><small class="text-muted">#${q.id}${Number(q.used) ? ' · <i class="bi bi-lock"></i> dipakai' : ''}</small></td>
-                    <td><span class="badge badge-soft bs-blue">${T[q.question_type]}</span></td>
-                    <td>${App.esc(q.category || '—')}</td>
-                    <td><span class="badge badge-soft ${D[q.difficulty][1]}">${D[q.difficulty][0]}</span></td>
-                    <td class="text-end">${App.num(q.points, 2)}</td>
-                    <td class="text-end text-nowrap">
+                    <td class="td-main"><div class="line-clamp-2 fw-semibold">${App.esc(q.question)}</div><small class="text-muted">#${q.id}${Number(q.used) ? ' · <i class="bi bi-lock"></i> dipakai' : ''}</small></td>
+                    <td data-label="Tipe"><span class="badge badge-soft bs-blue">${T[q.question_type]}</span></td>
+                    <td data-label="Kategori">${App.esc(q.category || '—')}</td>
+                    <td data-label="Level"><span class="badge badge-soft ${D[q.difficulty][1]}">${D[q.difficulty][0]}</span></td>
+                    <td data-label="Point" class="text-end">${App.num(q.points, 2)}</td>
+                    <td class="text-end text-nowrap td-actions">
                         <button class="btn btn-soft btn-sm" data-edit="${q.id}"><i class="bi bi-pencil"></i></button>
                         <button class="btn btn-soft-danger btn-sm" data-del="${q.id}" ${Number(q.used) ? 'disabled title="Dipakai dalam hasil ujian"' : ''}><i class="bi bi-trash"></i></button>
                     </td>
@@ -175,6 +175,20 @@
             const r = await App.api('api/admin/questions.php', { method: 'POST', data: { action: 'category_save', ...Object.fromEntries(new FormData(catForm).entries()) } });
             App.toast(r.message); catModal.hide(); loadCats();
         } catch (err) { App.toast(err.message, 'error'); }
+    });
+
+    document.getElementById('importForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const fd = new FormData(e.target);
+        fd.set('action', 'import');
+        const out = document.getElementById('importResult');
+        out.innerHTML = '<div class="spinner-border spinner-border-sm"></div> Memproses...';
+        try {
+            const r = await App.api('api/admin/questions.php', { method: 'POST', data: fd });
+            out.innerHTML = `<div class="alert alert-success soft-alert py-2 mb-2">${App.esc(r.message)}</div>` +
+                (r.skipped.length ? `<div class="alert alert-warning soft-alert py-2 mb-0"><strong>${r.skipped.length} baris dilewati:</strong><br>${r.skipped.map(App.esc).join('<br>')}</div>` : '');
+            loadCats(); load();
+        } catch (err) { out.innerHTML = `<div class="alert alert-danger soft-alert py-2">${App.esc(err.message)}</div>`; }
     });
 
     const fQ = document.getElementById('fQ'), fCat = document.getElementById('fCat'), fType = document.getElementById('fType'), fDiff = document.getElementById('fDiff');

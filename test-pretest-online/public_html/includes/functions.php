@@ -477,3 +477,8 @@ function departments(): array
 }
 
 require_once __DIR__ . '/exam_engine.php';
+require_once __DIR__ . '/settings.php';
+
+// Muat pengaturan sejak awal (sekaligus menjalankan migrasi skema bila perlu,
+// di luar transaksi apa pun karena DDL MySQL melakukan implicit commit).
+settings_all();

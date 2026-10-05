@@ -212,6 +212,7 @@ switch ($action) {
         if (!empty($oldImage)) {
             delete_image($oldImage);
         }
+        log_activity('question', ($existing ? 'Memperbarui' : 'Membuat') . ' soal #' . $id);
         json_out(['ok' => true, 'id' => $id, 'message' => $used
             ? 'Soal diperbarui. Tipe, point, dan kunci jawaban dikunci karena soal sudah dipakai dalam ujian.'
             : 'Soal berhasil disimpan.']);
@@ -224,7 +225,126 @@ switch ($action) {
         $img = q_val('SELECT image FROM questions WHERE id = ?', [$id]);
         q('DELETE FROM questions WHERE id = ?', [$id]);
         delete_image($img ?: null);
+        log_activity('question', 'Menghapus soal #' . $id);
         json_out(['ok' => true, 'message' => 'Soal dihapus.']);
+
+    case 'import':
+        if (empty($_FILES['file']['tmp_name']) || !is_uploaded_file($_FILES['file']['tmp_name'])) {
+            json_error('File CSV belum dipilih.', 422);
+        }
+        if ($_FILES['file']['size'] > 5 * 1024 * 1024) {
+            json_error('Ukuran file maksimal 5 MB.', 422);
+        }
+        $fh = fopen($_FILES['file']['tmp_name'], 'r');
+        $first = (string) fgets($fh);
+        $delim = substr_count($first, ';') > substr_count($first, ',') ? ';' : ',';
+        rewind($fh);
+        $header = fgetcsv($fh, 0, $delim);
+        if (!$header) {
+            json_error('File CSV kosong.', 422);
+        }
+        $header = array_map(fn ($h) => strtolower(trim(preg_replace('/^\xEF\xBB\xBF/', '', (string) $h))), $header);
+        foreach (['question_type', 'question', 'correct'] as $req) {
+            if (!in_array($req, $header, true)) {
+                json_error("Kolom wajib '$req' tidak ditemukan. Gunakan template CSV.", 422);
+            }
+        }
+        $typeMap = ['mc' => 'multiple_choice', 'pg' => 'multiple_choice', 'multiple_choice' => 'multiple_choice', 'pilihan_ganda' => 'multiple_choice',
+                    'ma' => 'multiple_answer', 'multiple_answer' => 'multiple_answer', 'pilihan_ganda_kompleks' => 'multiple_answer',
+                    'tf' => 'true_false', 'true_false' => 'true_false', 'benar_salah' => 'true_false',
+                    'short' => 'short_answer', 'short_answer' => 'short_answer', 'isian' => 'short_answer',
+                    'essay' => 'essay', 'esai' => 'essay', 'uraian' => 'essay'];
+        $diffMap = ['easy' => 'easy', 'mudah' => 'easy', 'medium' => 'medium', 'sedang' => 'medium', 'hard' => 'hard', 'sulit' => 'hard'];
+        $catCache = [];
+        foreach (q_all('SELECT id, name FROM categories') as $c) {
+            $catCache[mb_strtolower($c['name'])] = (int) $c['id'];
+        }
+        $created = 0;
+        $errors = [];
+        $line = 1;
+        $pdo = db();
+        $pdo->beginTransaction();
+        while (($row = fgetcsv($fh, 0, $delim)) !== false) {
+            $line++;
+            if (count(array_filter($row, fn ($v) => trim((string) $v) !== '')) === 0) {
+                continue;
+            }
+            $r = array_combine($header, array_pad(array_slice($row, 0, count($header)), count($header), ''));
+            $r = array_map(fn ($v) => trim((string) $v), $r);
+            $type = $typeMap[strtolower(str_replace([' ', '-'], '_', $r['question_type']))] ?? null;
+            if (!$type) {
+                $errors[] = "Baris $line: question_type tidak dikenal";
+                continue;
+            }
+            if ($r['question'] === '') {
+                $errors[] = "Baris $line: pertanyaan kosong";
+                continue;
+            }
+            $opts = [];
+            foreach (['option_a', 'option_b', 'option_c', 'option_d', 'option_e', 'option_f'] as $i => $col) {
+                if (($r[$col] ?? '') !== '') {
+                    $opts[chr(65 + $i)] = $r[$col];
+                }
+            }
+            $correctRaw = strtoupper($r['correct']);
+            $options = [];
+            if ($type === 'multiple_choice' || $type === 'multiple_answer') {
+                $letters = array_values(array_unique(array_filter(preg_split('/[\s,;|]+|(?<=[A-F])(?=[A-F])/', $correctRaw) ?: [])));
+                if (count($opts) < 2) {
+                    $errors[] = "Baris $line: minimal 2 opsi (option_a, option_b, ...)";
+                    continue;
+                }
+                $bad = array_diff($letters, array_keys($opts));
+                if (!$letters || $bad || ($type === 'multiple_choice' && count($letters) !== 1)) {
+                    $errors[] = "Baris $line: kolom correct tidak valid ('" . $r['correct'] . "')";
+                    continue;
+                }
+                foreach ($opts as $L => $text) {
+                    $options[] = [$text, in_array($L, $letters, true) ? 1 : 0];
+                }
+            } elseif ($type === 'true_false') {
+                $v = strtolower($r['correct']);
+                if (in_array($v, ['benar', 'true', 'ya', '1'], true)) {
+                    $isTrue = true;
+                } elseif (in_array($v, ['salah', 'false', 'tidak', '0'], true)) {
+                    $isTrue = false;
+                } else {
+                    $errors[] = "Baris $line: correct untuk True/False harus 'Benar' atau 'Salah'";
+                    continue;
+                }
+                $options = [['Benar', $isTrue ? 1 : 0], ['Salah', $isTrue ? 0 : 1]];
+            } elseif ($type === 'short_answer') {
+                $answers = array_values(array_filter(array_map('trim', explode('|', $r['correct']))));
+                if (!$answers) {
+                    $errors[] = "Baris $line: jawaban short answer kosong (pisahkan beberapa jawaban dengan |)";
+                    continue;
+                }
+                foreach ($answers as $a) {
+                    $options[] = [$a, 1];
+                }
+            }
+            $catId = null;
+            if (($cat = $r['category'] ?? '') !== '') {
+                $key = mb_strtolower($cat);
+                if (!isset($catCache[$key])) {
+                    q('INSERT INTO categories (name, created_at) VALUES (?, ?)', [mb_substr($cat, 0, 100), now()]);
+                    $catCache[$key] = (int) $pdo->lastInsertId();
+                }
+                $catId = $catCache[$key];
+            }
+            $points = is_numeric(str_replace(',', '.', $r['points'] ?? '')) ? max(0.25, (float) str_replace(',', '.', $r['points'])) : 1.0;
+            q('INSERT INTO questions (category_id, question, question_type, difficulty, points, explanation, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                [$catId, $r['question'], $type, $diffMap[strtolower($r['difficulty'] ?? '')] ?? 'medium', $points, ($r['explanation'] ?? '') ?: null, current_user()['id'], now()]);
+            $qid = (int) $pdo->lastInsertId();
+            foreach ($options as $i => [$text, $ok]) {
+                q('INSERT INTO question_options (question_id, option_text, is_correct, sort_order, created_at) VALUES (?, ?, ?, ?, ?)', [$qid, mb_substr($text, 0, 5000), $ok, $i, now()]);
+            }
+            $created++;
+        }
+        fclose($fh);
+        $pdo->commit();
+        log_activity('question', "Import CSV: $created soal dibuat");
+        json_out(['ok' => true, 'created' => $created, 'skipped' => array_slice($errors, 0, 50), 'message' => "$created soal berhasil diimport."]);
 
     case 'category_save':
         $id = in_int('id');

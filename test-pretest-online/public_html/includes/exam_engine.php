@@ -114,12 +114,18 @@ function user_is_assigned(array $user, int $examId): bool
  */
 function user_exam_list(array $user): array
 {
+    // Modul yang dinonaktifkan admin tidak pernah ditampilkan ke peserta
+    $types = enabled_exam_types();
+    if (!$types) {
+        return [];
+    }
     $exams = q_all(
         "SELECT e.id, e.title, e.description, e.type, e.duration, e.max_attempts,
                 e.start_date, e.end_date, e.status, e.question_count,
                 (SELECT COUNT(*) FROM exam_questions eq WHERE eq.exam_id = e.id) AS pool_count
            FROM exams e
           WHERE e.status = 'published'
+            AND e.type IN (" . in_placeholders($types) . ")
             AND (
                 NOT EXISTS (SELECT 1 FROM exam_assignments a WHERE a.exam_id = e.id)
                 OR EXISTS (SELECT 1 FROM exam_assignments a
@@ -127,7 +133,7 @@ function user_exam_list(array $user): array
                               AND (a.user_id = ? OR (a.department IS NOT NULL AND a.department = ?)))
             )
           ORDER BY e.type = 'test', e.start_date IS NULL, e.start_date, e.id DESC",
-        [$user['id'], (string) ($user['department'] ?? '')]
+        array_merge($types, [$user['id'], (string) ($user['department'] ?? '')])
     );
     if (!$exams) {
         return [];
@@ -184,6 +190,9 @@ function start_attempt(array $user, int $examId): int
         $exam = q_row('SELECT * FROM exams WHERE id = ?', [$examId]);
         if (!$exam || !exam_is_open($exam)) {
             throw new RuntimeException('Ujian tidak tersedia atau di luar jadwal.');
+        }
+        if (!exam_type_enabled($exam['type'])) {
+            throw new RuntimeException(($exam['type'] === 'test' ? 'Test' : 'Pre-Test') . ' sedang dinonaktifkan oleh administrator.');
         }
         if (!user_is_assigned($user, $examId)) {
             throw new RuntimeException('Anda tidak terdaftar pada ujian ini.');
@@ -261,6 +270,7 @@ function start_attempt(array $user, int $examId): int
         }
 
         $pdo->commit();
+        log_activity('exam_start', 'Memulai ' . type_label($exam['type']) . ': ' . $exam['title'], (int) $user['id']);
         return $attemptId;
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) {
@@ -588,6 +598,9 @@ function finalize_attempt(int $attemptId, string $status = 'submitted'): bool
         if ($ownTx) {
             $pdo->commit();
         }
+        $title = (string) q_val('SELECT title FROM exams WHERE id = ?', [$attempt['exam_id']]);
+        log_activity($status === 'auto_submitted' ? 'exam_auto_submit' : 'exam_submit',
+            ($status === 'auto_submitted' ? 'Waktu habis, dikirim otomatis: ' : 'Mengirim jawaban: ') . $title, (int) $attempt['user_id']);
         return true;
     } catch (Throwable $e) {
         if ($ownTx && $pdo->inTransaction()) {
@@ -643,6 +656,7 @@ function user_history(int $userId, int $limit = 0): array
                    CASE WHEN $visible THEN a.wrong_answers END   AS wrong_answers,
                    CASE WHEN $visible THEN a.unanswered END      AS unanswered,
                    CASE WHEN $visible THEN a.passed END          AS passed,
+                   CASE WHEN $visible THEN a.pending_review END  AS pending_review,
                    CASE WHEN $visible THEN e.passing_grade END   AS passing_grade,
                    CASE WHEN $visible AND e.show_correct_answer = 1 THEN 1 ELSE 0 END AS review_available
               FROM exam_attempts a JOIN exams e ON e.id = a.exam_id

@@ -32,6 +32,9 @@ require dirname(__DIR__) . '/includes/header.php';
     <a href="<?= e(url('admin/results.php')) ?>" class="btn btn-light btn-sm"><i class="bi bi-arrow-left"></i> Kembali</a>
     <div class="ms-auto d-flex gap-2 flex-wrap">
         <button class="btn btn-light btn-sm" onclick="window.print()"><i class="bi bi-printer"></i> Cetak</button>
+        <?php if ($a['exam_type'] === 'pretest' && $passed && (int) $a['pending_review'] === 0 && setting_on('certificate_enabled') && exam_user_can_view_score(q_row('SELECT type, show_result FROM exams WHERE id = ?', [$a['exam_id']]) ?? [])): ?>
+            <a class="btn btn-light btn-sm" href="<?= e(url('user/certificate.php?attempt=' . $id)) ?>" target="_blank"><i class="bi bi-award"></i> Sertifikat</a>
+        <?php endif; ?>
         <?php if ($a['status'] !== 'in_progress'): ?>
             <button class="btn btn-soft btn-sm" data-action="regrade"><i class="bi bi-arrow-repeat"></i> Hitung Ulang</button>
         <?php endif; ?>
@@ -77,6 +80,7 @@ require dirname(__DIR__) . '/includes/header.php';
                             <dt>Durasi</dt><dd><?= $a['duration'] !== null ? e(fmt_duration((int) $a['duration'])) : '—' ?> <small class="text-muted">/ <?= (int) $a['exam_duration'] ?>m</small></dd>
                             <dt>Point</dt><dd><?= e(fmt_num($a['total_points'], 2)) ?> / <?= e(fmt_num($a['max_points'], 2)) ?></dd>
                             <dt>IP Address</dt><dd><?= e($a['ip_address'] ?: '—') ?></dd>
+                            <dt>Pindah tab</dt><dd><?php $ts = (int) $a['tab_switches']; ?><span class="badge badge-soft <?= $ts === 0 ? 'bs-green' : ($ts >= 3 ? 'bs-red' : 'bs-amber') ?>"><i class="bi <?= $ts ? 'bi-eye-slash' : 'bi-shield-check' ?>"></i> <?= $ts ?> kali</span></dd>
                         </dl>
                     </div>
                 </div>

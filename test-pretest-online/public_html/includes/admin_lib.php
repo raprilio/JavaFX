@@ -71,7 +71,7 @@ function admin_results_fetch(array $f, int $page = 0, int $perPage = 25): array
     $order = RESULT_SORTS[$f['sort']] . ' ' . $f['dir'] . ', a.id DESC';
     $sql = "SELECT a.id, a.user_id, a.exam_id, a.started_at, a.submitted_at, a.duration, a.status,
                    a.total_questions, a.correct_answers, a.wrong_answers, a.unanswered, a.pending_review,
-                   a.total_points, a.max_points, a.score, a.percentage, a.passed,
+                   a.total_points, a.max_points, a.score, a.percentage, a.passed, a.tab_switches,
                    u.name, u.username, u.department, u.position,
                    e.title AS exam_title, e.type AS exam_type, e.passing_grade
               $from ORDER BY $order";

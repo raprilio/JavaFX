@@ -82,6 +82,7 @@ switch ($action) {
                 array_merge(array_values($d), [current_user()['id'], now()]));
             $id = (int) db()->lastInsertId();
         }
+        log_activity('exam', 'Menyimpan ujian "' . $d['title'] . '" (' . type_label($d['type']) . ', ' . $d['status'] . ')');
         json_out(['ok' => true, 'id' => $id, 'message' => 'Pengaturan ujian disimpan.'
             . ($d['type'] === 'test' ? ' (Test: hasil otomatis disembunyikan dari peserta.)' : '')]);
 
@@ -99,6 +100,7 @@ switch ($action) {
             $ins->execute([$id, $i + 1, $qid]);
         }
         $pdo->commit();
+        log_activity('exam', 'Menetapkan ' . count($qids) . ' soal ke ujian #' . $id);
         json_out(['ok' => true, 'message' => count($qids) . ' soal ditetapkan ke ujian.']);
 
     case 'set_assignments':
@@ -118,6 +120,7 @@ switch ($action) {
             q('INSERT INTO exam_assignments (exam_id, department, created_at) VALUES (?, ?, ?)', [$id, $dep, now()]);
         }
         $pdo->commit();
+        log_activity('exam', 'Memperbarui assignment ujian #' . $id);
         json_out(['ok' => true, 'message' => ($users || $depts) ? 'Assignment disimpan.' : 'Assignment dikosongkan — ujian terbuka untuk semua peserta.']);
 
     case 'set_status':
@@ -126,7 +129,30 @@ switch ($action) {
             json_error('Status tidak valid.', 422);
         }
         q('UPDATE exams SET status = ? WHERE id = ?', [$status, in_int('id')]);
+        log_activity('exam', 'Status ujian #' . in_int('id') . ' → ' . $status);
         json_out(['ok' => true, 'message' => 'Status ujian diperbarui.']);
+
+    case 'duplicate':
+        $src = q_row('SELECT * FROM exams WHERE id = ?', [in_int('id')]);
+        if (!$src) {
+            json_error('Ujian tidak ditemukan.', 404);
+        }
+        $pdo = db();
+        $pdo->beginTransaction();
+        $copy = $src;
+        unset($copy['id'], $copy['created_at'], $copy['updated_at']);
+        $copy['title'] = mb_substr($src['title'] . ' (Salinan)', 0, 200);
+        $copy['status'] = 'draft';
+        $copy['created_by'] = current_user()['id'];
+        $copy['created_at'] = now();
+        $cols = array_keys($copy);
+        q('INSERT INTO exams (' . implode(', ', $cols) . ') VALUES (' . in_placeholders($cols) . ')', array_values($copy));
+        $newId = (int) $pdo->lastInsertId();
+        q('INSERT INTO exam_questions (exam_id, question_id, question_order) SELECT ?, question_id, question_order FROM exam_questions WHERE exam_id = ?', [$newId, $src['id']]);
+        q('INSERT INTO exam_assignments (exam_id, user_id, department, created_at) SELECT ?, user_id, department, ? FROM exam_assignments WHERE exam_id = ?', [$newId, now(), $src['id']]);
+        $pdo->commit();
+        log_activity('exam', 'Menduplikasi ujian "' . $src['title'] . '"');
+        json_out(['ok' => true, 'id' => $newId, 'message' => 'Ujian diduplikasi sebagai draft.']);
 
     case 'delete':
         $id = in_int('id');
@@ -134,6 +160,7 @@ switch ($action) {
             json_error('Ujian sudah memiliki hasil peserta. Ubah status menjadi "Closed" alih-alih menghapus.', 409);
         }
         q('DELETE FROM exams WHERE id = ?', [$id]);
+        log_activity('exam', 'Menghapus ujian #' . $id);
         json_out(['ok' => true, 'message' => 'Ujian dihapus.']);
 
     default:

@@ -33,10 +33,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 }
                 q('DELETE FROM login_attempts WHERE ip_address = ?', [$ip]);
                 login_user($user);
+                log_activity('login', 'Login berhasil (' . ($user['role'] === 'admin' ? 'administrator' : 'peserta') . ')', (int) $user['id']);
                 redirect($user['role'] === 'admin' ? 'admin/index.php' : 'dashboard.php');
             }
         } else {
             q('INSERT INTO login_attempts (ip_address, username, attempted_at) VALUES (?, ?, ?)', [$ip, mb_substr($login, 0, 150), now()]);
+            log_activity('login_failed', 'Login gagal untuk "' . mb_substr($login, 0, 60) . '"', $user ? (int) $user['id'] : null);
             // Bersihkan log lama sesekali
             if (random_int(1, 50) === 1) {
                 q('DELETE FROM login_attempts WHERE attempted_at < ?', [date('Y-m-d H:i:s', time() - 86400)]);
@@ -48,27 +50,35 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
 $pageTitle = 'Login';
 $layout = 'auth';
+$logoUrl = app_logo_url();
 require __DIR__ . '/includes/header.php';
 ?>
 <div class="auth-wrap">
     <section class="auth-side">
-        <div class="brand"><img src="<?= e(url('assets/images/logo.svg')) ?>" width="40" height="40" alt=""><span><?= e(APP_NAME) ?><small><?= e(APP_TAGLINE) ?></small></span></div>
-        <div>
-            <h1>Ukur kemampuan.<br><span>Buktikan kompetensi.</span></h1>
-            <p class="mb-4" style="color:#c7d0e6;max-width:440px">Platform ujian online untuk Pre-Test dan Test resmi — cepat, aman, dan tersimpan langsung ke database.</p>
-            <div class="feature"><i class="bi bi-lightning-charge"></i><div><strong class="text-white d-block">Auto-save jawaban</strong>Setiap jawaban tersimpan otomatis ke server.</div></div>
-            <div class="feature"><i class="bi bi-shield-lock"></i><div><strong class="text-white d-block">Aman & terkontrol</strong>Timer diverifikasi server, hasil Test hanya untuk administrator.</div></div>
-            <div class="feature"><i class="bi bi-bar-chart-line"></i><div><strong class="text-white d-block">Analitik lengkap</strong>Statistik, ranking, dan export Excel / PDF.</div></div>
+        <div class="brand">
+            <img src="<?= e($logoUrl) ?>" width="48" height="48" alt="" class="brand-logo">
+            <span><?= e(app_name()) ?><small class="d-block"><?= e(institution_full()) ?></small></span>
         </div>
-        <small style="color:#6f80aa">© <?= date('Y') ?> <?= e(APP_NAME) ?></small>
+        <div>
+            <span class="badge rounded-pill mb-3" style="background:rgba(255,255,255,.1);color:var(--gold);font-weight:600;padding:.5rem .9rem"><i class="bi bi-patch-check me-1"></i><?= e(app_tagline()) ?></span>
+            <h1>Uji pengetahuan.<br><span>Tingkatkan pelayanan.</span></h1>
+            <p class="mb-4" style="color:#c7d0e6;max-width:460px"><?= e(setting('login_message')) ?></p>
+            <div class="feature"><i class="bi bi-cloud-check"></i><div><strong class="text-white d-block">Jawaban tersimpan otomatis</strong>Setiap jawaban langsung disimpan ke server — aman dari putus koneksi.</div></div>
+            <div class="feature"><i class="bi bi-shield-lock"></i><div><strong class="text-white d-block">Aman & terawasi</strong>Timer diverifikasi server, hasil Test resmi hanya untuk administrator.</div></div>
+            <div class="feature"><i class="bi bi-graph-up-arrow"></i><div><strong class="text-white d-block">Analitik kompetensi</strong>Statistik per bidang, ranking, serta laporan Excel & PDF.</div></div>
+        </div>
+        <small style="color:#6f80aa">© <?= date('Y') ?> <?= e(institution_full()) ?></small>
     </section>
     <section class="auth-form">
+        <button class="btn btn-icon btn-light auth-theme" data-theme-toggle aria-label="Ganti tema"><i class="bi bi-moon-stars"></i></button>
         <div class="inner fade-in">
-            <div class="d-lg-none text-center mb-4">
-                <img src="<?= e(url('assets/images/logo.svg')) ?>" width="56" height="56" alt="">
+            <div class="text-center mb-4">
+                <img src="<?= e($logoUrl) ?>" class="auth-logo mb-3" alt="Logo">
+                <div class="small-caps"><?= e(setting('institution_name')) ?></div>
+                <?php if (setting('institution_region') !== ''): ?><div class="small text-muted"><?= e(setting('institution_region')) ?></div><?php endif; ?>
             </div>
-            <h2 class="fw-800 mb-1">Selamat datang 👋</h2>
-            <p class="text-muted mb-4">Masuk untuk melanjutkan ke akun Anda.</p>
+            <h2 class="fw-800 mb-1 text-center">Masuk ke <?= e(app_name()) ?></h2>
+            <p class="text-muted mb-4 text-center">Gunakan akun yang diberikan administrator.</p>
 
             <?php foreach (take_flash() as $f): ?>
                 <div class="alert alert-<?= e($f['type']) ?> soft-alert py-2"><?= e($f['message']) ?></div>
@@ -77,13 +87,13 @@ require __DIR__ . '/includes/header.php';
                 <div class="alert alert-danger soft-alert py-2"><i class="bi bi-exclamation-circle me-1"></i><?= e($error) ?></div>
             <?php endif; ?>
 
-            <form method="post" autocomplete="on" novalidate>
+            <form method="post" autocomplete="on" novalidate id="loginForm">
                 <?= csrf_field() ?>
                 <div class="mb-3">
                     <label class="form-label" for="login">Username atau Email</label>
                     <div class="input-icon">
                         <i class="bi bi-person"></i>
-                        <input type="text" class="form-control form-control-lg" id="login" name="login" value="<?= e($login) ?>" required autofocus>
+                        <input type="text" class="form-control form-control-lg" id="login" name="login" value="<?= e($login) ?>" required autofocus autocapitalize="none">
                     </div>
                 </div>
                 <div class="mb-4">
@@ -91,13 +101,24 @@ require __DIR__ . '/includes/header.php';
                     <div class="input-icon position-relative">
                         <i class="bi bi-lock"></i>
                         <input type="password" class="form-control form-control-lg pe-5" id="password" name="password" required>
-                        <button type="button" class="btn btn-sm position-absolute top-50 end-0 translate-middle-y me-1 text-muted" data-toggle-password="#password" aria-label="Tampilkan password"><i class="bi bi-eye"></i></button>
+                        <button type="button" class="btn btn-sm position-absolute top-50 end-0 translate-middle-y me-1 text-muted border-0" data-toggle-password="#password" aria-label="Tampilkan password"><i class="bi bi-eye"></i></button>
                     </div>
+                    <div class="small text-warning mt-2 d-none" id="capsWarn"><i class="bi bi-capslock"></i> Caps Lock aktif</div>
                 </div>
-                <button class="btn btn-primary btn-lg w-100" type="submit">Masuk <i class="bi bi-arrow-right ms-1"></i></button>
+                <button class="btn btn-primary btn-lg w-100" type="submit" id="btnLogin">Masuk <i class="bi bi-arrow-right ms-1"></i></button>
             </form>
-            <p class="text-muted small text-center mt-4 mb-0">Lupa password? Hubungi administrator untuk reset.</p>
+            <p class="text-muted small text-center mt-4 mb-0"><i class="bi bi-info-circle"></i> Lupa password? Hubungi administrator untuk reset.</p>
         </div>
     </section>
 </div>
+<script>
+document.getElementById('password').addEventListener('keyup', function (e) {
+    document.getElementById('capsWarn').classList.toggle('d-none', !(e.getModifierState && e.getModifierState('CapsLock')));
+});
+document.getElementById('loginForm').addEventListener('submit', function () {
+    var b = document.getElementById('btnLogin');
+    b.disabled = true;
+    b.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Memproses...';
+});
+</script>
 <?php require __DIR__ . '/includes/footer.php'; ?>

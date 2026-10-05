@@ -20,41 +20,42 @@ $sel = fn (string $k, string $v) => get_str($k) === $v ? 'selected' : '';
 </div>
 
 <div class="card-x">
-    <form class="card-x-header filter-bar" id="filterForm" autocomplete="off">
+    <form class="card-x-header filter-bar filter-collapsible" id="filterForm" autocomplete="off">
         <div class="row g-2 w-100 align-items-end">
-            <div class="col-12 col-md-4 col-xl-3">
-                <div class="input-icon"><i class="bi bi-search"></i><input class="form-control" name="q" placeholder="Cari nama, username, ujian..." value="<?= e(get_str('q')) ?>"></div>
+            <div class="col-12 col-md-4 col-xl-3 d-flex gap-2">
+                <div class="input-icon flex-fill"><i class="bi bi-search"></i><input class="form-control" name="q" placeholder="Cari nama, username, ujian..." value="<?= e(get_str('q')) ?>"></div>
+                <button type="button" class="btn btn-light d-md-none" id="btnFilterToggle" aria-label="Filter"><i class="bi bi-sliders"></i></button>
             </div>
-            <div class="col-6 col-md-4 col-xl-2">
+            <div class="filter-adv col-6 col-md-4 col-xl-2">
                 <select class="form-select" name="type">
                     <option value="">Semua jenis</option>
                     <option value="test" <?= $sel('type', 'test') ?>>Test</option>
                     <option value="pretest" <?= $sel('type', 'pretest') ?>>Pre-Test</option>
                 </select>
             </div>
-            <div class="col-6 col-md-4 col-xl-3">
+            <div class="filter-adv col-6 col-md-4 col-xl-3">
                 <select class="form-select" name="exam_id">
                     <option value="">Semua ujian</option>
                     <?php foreach ($exams as $x): ?><option value="<?= (int) $x['id'] ?>" <?= $sel('exam_id', (string) $x['id']) ?>>[<?= e(type_label($x['type'])) ?>] <?= e($x['title']) ?></option><?php endforeach; ?>
                 </select>
             </div>
-            <div class="col-6 col-md-4 col-xl-2">
+            <div class="filter-adv col-6 col-md-4 col-xl-2">
                 <select class="form-select" name="user_id">
                     <option value="">Semua peserta</option>
                     <?php foreach ($users as $u): ?><option value="<?= (int) $u['id'] ?>" <?= $sel('user_id', (string) $u['id']) ?>><?= e($u['name']) ?></option><?php endforeach; ?>
                 </select>
             </div>
-            <div class="col-6 col-md-4 col-xl-2">
+            <div class="filter-adv col-6 col-md-4 col-xl-2">
                 <select class="form-select" name="department">
                     <option value="">Semua department</option>
                     <?php foreach ($depts as $d): ?><option <?= $sel('department', $d) ?>><?= e($d) ?></option><?php endforeach; ?>
                 </select>
             </div>
-            <div class="col-6 col-md-3 col-xl-2"><label class="small text-muted">Dari tanggal</label><input type="date" class="form-control" name="date_from" value="<?= e(get_str('date_from')) ?>"></div>
-            <div class="col-6 col-md-3 col-xl-2"><label class="small text-muted">Sampai tanggal</label><input type="date" class="form-control" name="date_to" value="<?= e(get_str('date_to')) ?>"></div>
-            <div class="col-3 col-md-2 col-xl-1"><label class="small text-muted">Score min</label><input type="number" min="0" max="100" class="form-control" name="score_min" value="<?= e(get_str('score_min')) ?>"></div>
-            <div class="col-3 col-md-2 col-xl-1"><label class="small text-muted">Score max</label><input type="number" min="0" max="100" class="form-control" name="score_max" value="<?= e(get_str('score_max')) ?>"></div>
-            <div class="col-6 col-md-2 col-xl-2">
+            <div class="filter-adv col-6 col-md-3 col-xl-2"><label class="small text-muted">Dari tanggal</label><input type="date" class="form-control" name="date_from" value="<?= e(get_str('date_from')) ?>"></div>
+            <div class="filter-adv col-6 col-md-3 col-xl-2"><label class="small text-muted">Sampai tanggal</label><input type="date" class="form-control" name="date_to" value="<?= e(get_str('date_to')) ?>"></div>
+            <div class="filter-adv col-3 col-md-2 col-xl-1"><label class="small text-muted">Score min</label><input type="number" min="0" max="100" class="form-control" name="score_min" value="<?= e(get_str('score_min')) ?>"></div>
+            <div class="filter-adv col-3 col-md-2 col-xl-1"><label class="small text-muted">Score max</label><input type="number" min="0" max="100" class="form-control" name="score_max" value="<?= e(get_str('score_max')) ?>"></div>
+            <div class="filter-adv col-6 col-md-2 col-xl-2">
                 <label class="small text-muted">Hasil</label>
                 <select class="form-select" name="result">
                     <option value="">Semua</option>
@@ -73,7 +74,7 @@ $sel = fn (string $k, string $v) => get_str($k) === $v ? 'selected' : '';
         <input type="hidden" name="dir" value="<?= e(get_str('dir', 'desc')) ?>">
     </form>
     <div class="table-responsive">
-        <table class="table table-x" id="resultsTable">
+        <table class="table table-x table-stack" id="resultsTable">
             <thead>
             <tr>
                 <th class="sortable" data-sort="name">User</th>
