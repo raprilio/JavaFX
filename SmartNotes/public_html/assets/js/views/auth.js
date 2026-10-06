@@ -14,7 +14,7 @@ function layout(inner) {
     <section class="auth-art ${b.background_url ? 'has-bg' : ''}" ${b.background_url ? raw(`style="background-image:url('${b.background_url}')"`) : ''}>
       <span class="auth-orb" style="width:340px;height:340px;right:-80px;top:-60px"></span>
       <span class="auth-orb" style="width:220px;height:220px;left:30%;bottom:8%;animation-delay:-3s"></span>
-      <a class="brand" href="#/login">${b.logo_url ? html`<img class="brand-logo" src="${b.logo_url}" alt="">` : html`<span class="brand-mark">${icon('notebook-pen')}</span>`}<span>${b.app_name}</span></a>
+      <a class="brand" href="#/login">${b.logo_url ? html`<img class="brand-logo" src="${b.logo_url}" alt="${b.app_name}">` : html`<span class="brand-mark">${icon('notebook-pen')}</span>`}${!b.logo_url || b.logo_display !== 'logo' ? html`<span>${b.app_name}</span>` : ''}</a>
       <div>
         <h2>Your notes, tasks and plans — beautifully in one place.</h2>
         <p>${b.app_tagline || 'Capture ideas, organise work and never miss a meeting.'}</p>
@@ -23,7 +23,7 @@ function layout(inner) {
       <small style="opacity:.6">© ${new Date().getFullYear()} ${b.app_name}</small>
     </section>
     <section class="auth-panel"><div class="auth-box">
-      <div class="auth-mobile-brand">${b.logo_url ? html`<img class="brand-logo" src="${b.logo_url}" alt="">` : html`<span class="brand"><span class="brand-mark">${icon('notebook-pen')}</span>${b.app_name}</span>`}</div>
+      <div class="auth-mobile-brand">${b.logo_url ? html`<span class="brand"><img class="brand-logo" src="${b.logo_url}" alt="${b.app_name}">${b.logo_display !== 'logo' ? b.app_name : ''}</span>` : html`<span class="brand"><span class="brand-mark">${icon('notebook-pen')}</span>${b.app_name}</span>`}</div>
       ${inner}
     </div></section>
   </div>`;
@@ -61,6 +61,42 @@ const VIEWS = {
       <button class="btn primary lg block" type="submit">Reset password</button>
     </form><p class="small mt-3" style="text-align:center"><a href="#/login">${icon('arrow-left', 'sm')} Back to sign in</a></p>`,
 };
+
+/** Shown when an admin created/reset the account: the user must choose their own password first. */
+export function renderPasswordGate(root) {
+  setTitle('Set your password');
+  applyAll();
+  root.innerHTML = String(layout(html`<h1>Choose your own password</h1>
+    <p class="sub">Hi ${state.user.name.split(' ')[0]}, your account was set up by an administrator. For security, set a personal password before continuing.</p>
+    <form data-form="gate" novalidate>
+      ${pw('current_password', 'Temporary password', 'autocomplete="current-password" required autofocus')}
+      ${pw('password', 'New password', 'autocomplete="new-password" required')}
+      ${pw('password_confirm', 'Confirm new password', 'autocomplete="new-password" required')}
+      <p class="hint small subtle" style="margin-top:-6px">At least 8 characters with letters and numbers, different from the temporary password.</p>
+      <button class="btn primary lg block mt-2" type="submit">Save & continue</button>
+    </form><p class="small mt-3" style="text-align:center"><a href="#" data-logout>Sign out</a></p>`));
+  const form = root.querySelector('form');
+  root.addEventListener('click', (e) => {
+    const t = e.target.closest('[data-toggle-pw]');
+    if (t) { const inp = t.previousElementSibling; inp.type = inp.type === 'password' ? 'text' : 'password'; }
+    if (e.target.closest('[data-logout]')) { e.preventDefault(); emit('logout'); }
+  });
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const d = formData(form);
+    if (d.password !== d.password_confirm) { showFieldErrors(form, { password_confirm: 1 }); return toast('Passwords do not match', 'error'); }
+    await withLoading(form.querySelector('[type=submit]'), async () => {
+      try {
+        await api.post('profile/password', d);
+        const r = await api.get('app');
+        setCsrf(r.csrf);
+        applyBootstrap(r);
+        toast('Password saved — welcome!', 'success');
+        emit('login');
+      } catch (err) { showFieldErrors(form, err.errors || {}); toast(err.message, 'error'); }
+    });
+  });
+}
 
 export default {
   async render(root, { meta, query }) {

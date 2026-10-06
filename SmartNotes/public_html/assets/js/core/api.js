@@ -52,6 +52,7 @@ async function request(method, route, { query, body, form, signal, retry = true 
   if (!res.ok || !json || json.ok === false) {
     const msg = json?.message || `Request failed (${res.status})`;
     if (res.status === 401) emit('unauthorized');
+    if (res.status === 403 && json?.errors?.password_change_required) emit('password-required');
     throw new ApiError(msg, res.status, json?.errors || {});
   }
   return json.data !== undefined ? json.data : json;

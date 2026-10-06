@@ -2,7 +2,7 @@
 import { html, icon, fileBadge, fmtBytes, timeAgo, h, raw } from '../core/dom.js';
 import { api } from '../core/api.js';
 import { toast, toastError, confirm, menu } from '../core/ui.js';
-import { openImageViewer } from './imageViewer.js';
+import { openFilePreview } from './filePreview.js';
 
 export function uploadFile(file, fields = {}, onProgress) {
   const fd = new FormData();
@@ -84,10 +84,7 @@ export function mountAttachments(container, { parent, parentId, items = [], titl
       } catch (err) { toastError(err); }
     } else if (row && !e.target.closest('a,button')) {
       const f = files.find((x) => x.id === +row.dataset.id);
-      if (f?.kind === 'image') {
-        const imgs = files.filter((x) => x.kind === 'image');
-        openImageViewer(imgs, imgs.indexOf(f));
-      } else if (f) window.open(f.url, '_blank', 'noopener');
+      if (f) openFilePreview(f, files);
     }
   });
   container.addEventListener('dragover', (e) => { if (e.dataTransfer?.types?.includes('Files')) { e.preventDefault(); container.querySelector('.dropzone')?.classList.add('over'); } });

@@ -9,14 +9,14 @@ import { applyThemeMode } from './theme.js';
 
 const TYPE_META = {
   note: ['notebook-pen', 'Notes'], task: ['square-check-big', 'Tasks'], meeting: ['users', 'Meetings'], event: ['calendar-days', 'Calendar'],
-  mindmap: ['network', 'Mind maps'], flowchart: ['workflow', 'Flowcharts'], audio: ['mic', 'Audio notes'], file: ['paperclip', 'Files'],
+  mindmap: ['network', 'Mind maps'], flowchart: ['workflow', 'Flowcharts'], audio: ['mic', 'Audio notes'], file: ['hard-drive', 'Drive'],
 };
 
 function commands() {
   const nav = [
     ['Dashboard', 'layout-dashboard', '/'], ['Notes', 'notebook-pen', '/notes'], ['Tasks', 'square-check-big', '/tasks'], ['Calendar', 'calendar-days', '/calendar'],
     ['Meetings', 'users', '/meetings'], ['Mind maps', 'network', '/mindmaps'], ['Flowcharts', 'workflow', '/flowcharts'], ['Audio notes', 'mic', '/audio'],
-    ['Files', 'folder-open', '/files'], ['Trash', 'trash-2', '/trash'], ['Settings', 'settings', '/settings'], ['Advanced search', 'search', '/search'],
+    ['Drive', 'hard-drive', '/drive'], ['Trash', 'trash-2', '/trash'], ['Settings', 'settings', '/settings'], ['Advanced search', 'search', '/search'],
   ].map(([label, ic, path]) => ({ label: `Go to ${label}`, icon: ic, run: () => navigate(path), group: 'Navigate' }));
   const create = CREATE_ITEMS.map((c) => ({ label: c.label === 'Task' ? 'New task' : c.label === 'Schedule' ? 'New schedule' : c.label === 'Audio note' ? 'Record audio note' : c.label.startsWith('New') ? c.label : `New ${c.label.toLowerCase()}`, icon: c.icon, run: c.run, group: 'Create' }));
   create.push({ label: 'New meeting', icon: 'users', run: () => newMeeting(), group: 'Create' });

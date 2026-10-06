@@ -25,14 +25,64 @@ final class FilesController
             'thumb_url' => $r['file_kind'] === 'image' ? "api/index.php?route=files/$id/" . ($r['thumb_path'] ? 'thumb' : 'raw') . "&v=$v" : null,
             'download_url' => "api/index.php?route=files/$id/download",
             'note_title' => $r['note_title'] ?? null,
+            'folder_id' => isset($r['folder_id']) ? (int) $r['folder_id'] ?: null : null,
+            'description' => $r['description'] ?? null,
+            'is_starred' => (bool) ($r['is_starred'] ?? false),
+            'last_opened_at' => $r['last_opened_at'] ?? null,
+            'updated_at' => $r['updated_at'],
+            'tags' => $r['tags'] ?? [],
+            'preview' => self::previewType($r['mime_type'], $r['file_kind']),
             'v' => $v,
         ];
+    }
+
+    /** How the browser can preview this file: image | pdf | audio | text | none. */
+    public static function previewType(string $mime, string $kind): string
+    {
+        return match (true) {
+            $kind === 'image' => 'image',
+            $mime === 'application/pdf' => 'pdf',
+            $kind === 'audio' => 'audio',
+            in_array($mime, ['text/plain', 'text/csv'], true) => 'text',
+            default => 'none',
+        };
+    }
+
+    /** Present a list of rows including their tags. */
+    public static function presentMany(array $rows): array
+    {
+        $tags = TagsController::forItems('file', array_map('intval', array_column($rows, 'id')));
+        return array_map(static function ($r) use ($tags) {
+            $r['tags'] = $tags[(int) $r['id']] ?? [];
+            return self::present($r);
+        }, $rows);
+    }
+
+    public static function presentOne(int $id): array
+    {
+        return self::presentMany([DB::one('SELECT * FROM note_attachments WHERE id = ?', [$id])])[0];
+    }
+
+    /**
+     * A file is readable by its owner, and by users a note containing it is shared with.
+     */
+    private static function readable(int $id, int $userId): array
+    {
+        $r = DB::one('SELECT * FROM note_attachments WHERE id = ?', [$id]);
+        if ($r && (int) $r['user_id'] === $userId) {
+            return $r;
+        }
+        if ($r && !$r['deleted_at'] && $r['note_id']
+            && DB::val('SELECT s.id FROM note_shares s JOIN notes n ON n.id = s.note_id AND n.deleted_at IS NULL WHERE s.note_id = ? AND s.user_id = ?', [$r['note_id'], $userId])) {
+            return $r;
+        }
+        throw new HttpException('File not found.', 404);
     }
 
     public static function forParent(string $parent, int $parentId, int $userId): array
     {
         $col = ['note' => 'note_id', 'task' => 'task_id', 'meeting' => 'meeting_id'][$parent];
-        return array_map([self::class, 'present'], DB::all(
+        return self::presentMany(DB::all(
             "SELECT * FROM note_attachments WHERE $col = ? AND user_id = ? AND deleted_at IS NULL ORDER BY id",
             [$parentId, $userId]
         ));
@@ -92,7 +142,7 @@ final class FilesController
         );
         $sum = DB::one('SELECT COUNT(*) c, COALESCE(SUM(file_size), 0) s FROM note_attachments WHERE user_id = ? AND deleted_at IS NULL', [$u['id']]);
         Http::ok([
-            'items' => array_map([self::class, 'present'], $rows),
+            'items' => self::presentMany($rows),
             'total' => $total, 'page' => $page, 'per_page' => $perPage,
             'summary' => ['count' => (int) $sum['c'], 'size' => (int) $sum['s']],
         ]);
@@ -105,6 +155,7 @@ final class FilesController
             throw new HttpException('No file uploaded. The file may exceed the server limit (' . ini_get('post_max_size') . ').', 422);
         }
         $parents = self::parents($u['id'], $_POST);
+        $folderId = DriveController::ownedFolder(V::id($_POST['folder_id'] ?? null), $u['id']);
         $kinds = match ($_POST['accept'] ?? '') {
             'image' => ['image'],
             default => ['image', 'audio', 'document', 'archive'],
@@ -122,33 +173,48 @@ final class FilesController
             'file_hash' => $meta['file_hash'],
             'width' => $meta['width'],
             'height' => $meta['height'],
+            'folder_id' => $folderId,
+            'description' => V::str($_POST['description'] ?? null, 2000),
         ]));
+        if (!empty($_POST['tags'])) {
+            TagsController::sync('file', $id, $u['id'], explode(',', (string) $_POST['tags']));
+        }
         if (!empty($parents['note_id'])) {
             DB::run('UPDATE notes SET updated_at = NOW() WHERE id = ?', [$parents['note_id']]);
             NotesController::refreshType((int) $parents['note_id'], $u['id']);
         }
         Activity::log('file.upload', 'file', $id, $meta['original_name']);
-        Http::ok(self::present(DB::one('SELECT * FROM note_attachments WHERE id = ?', [$id])));
+        Http::ok(self::presentOne($id));
+    }
+
+    public static function show(int $id): void
+    {
+        $u = Auth::require();
+        $r = self::readable($id, $u['id']);
+        Http::ok(self::presentOne((int) $r['id']));
     }
 
     public static function raw(int $id): void
     {
         $u = Auth::require();
-        $r = self::owned($id, $u['id'], true);
+        $r = self::readable($id, $u['id']);
+        if ((int) $r['user_id'] === $u['id'] && !isset($_SERVER['HTTP_RANGE'])) {
+            DB::run('UPDATE note_attachments SET last_opened_at = NOW(), updated_at = updated_at WHERE id = ?', [$id]);
+        }
         Uploader::serve($r['file_path'], $r['mime_type'], $r['original_name']);
     }
 
     public static function thumb(int $id): void
     {
         $u = Auth::require();
-        $r = self::owned($id, $u['id'], true);
+        $r = self::readable($id, $u['id']);
         Uploader::serve($r['thumb_path'] ?: $r['file_path'], $r['mime_type'], 'thumb-' . $r['original_name']);
     }
 
     public static function download(int $id): void
     {
         $u = Auth::require();
-        $r = self::owned($id, $u['id'], true);
+        $r = self::readable($id, $u['id']);
         Uploader::serve($r['file_path'], $r['mime_type'], $r['original_name'], false);
     }
 
@@ -165,8 +231,21 @@ final class FilesController
             }
             $data['original_name'] = $name;
         }
+        if (Http::has('folder_id')) {
+            $data['folder_id'] = DriveController::ownedFolder(V::id(Http::input('folder_id')), $u['id']);
+        }
+        if (Http::has('description')) {
+            $data['description'] = V::str(Http::input('description'), 2000);
+        }
+        if (Http::has('is_starred')) {
+            $data['is_starred'] = V::bool(Http::input('is_starred'));
+        }
         DB::update('note_attachments', $data, 'id = ? AND user_id = ?', [$id, $u['id']]);
-        Http::ok(self::present(DB::one('SELECT * FROM note_attachments WHERE id = ?', [$id])));
+        if (Http::has('tags')) {
+            TagsController::sync('file', $id, $u['id'], Http::input('tags'));
+            DB::run('UPDATE note_attachments SET updated_at = NOW() WHERE id = ?', [$id]);
+        }
+        Http::ok(self::presentOne($id));
     }
 
     public static function rotate(int $id): void
@@ -191,6 +270,6 @@ final class FilesController
             Uploader::reencode($abs, Uploader::absolute($r['thumb_path']), $ext, 480);
         }
         DB::update('note_attachments', ['width' => $res[0], 'height' => $res[1], 'file_size' => filesize($abs), 'updated_at' => now()], 'id = ?', [$id]);
-        Http::ok(self::present(DB::one('SELECT * FROM note_attachments WHERE id = ?', [$id])));
+        Http::ok(self::presentOne($id));
     }
 }

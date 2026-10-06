@@ -174,7 +174,13 @@ File backup disimpan di `storage/backups/` (tidak bisa diakses publik). Simpan s
 
 1. Backup database & uploads dari Admin.
 2. Upload ulang semua file **kecuali** `app/config.php`, `uploads/`, dan `storage/`.
-3. Jika ada perubahan skema di rilis baru, jalankan SQL migrasi yang disertakan di catatan rilis.
+3. Buka aplikasi. Perubahan skema dijalankan **otomatis** oleh migrator saat request pertama (tidak perlu phpMyAdmin). Versi skema tersimpan di tabel `settings` (`schema_version`).
+
+**Upgrade v1.0 → v1.1** (Drive, catatan berbagi, kontrol akun, tata letak logo):
+- Pastikan folder `assets/vendor/pdfjs/` ikut ter-upload (viewer PDF).
+- Semua user akan diminta login ulang satu kali.
+- User lama **tidak** dipaksa ganti password; paksaan hanya berlaku untuk akun yang dibuat/di-reset admin setelah upgrade (bisa dimatikan per user lewat checkbox di form user).
+- Atur ukuran logo di **Admin → Branding → Logo layout**.
 
 ---
 
@@ -190,4 +196,6 @@ File backup disimpan di `storage/backups/` (tidak bisa diakses publik). Simpan s
 | Rekam audio tidak tersedia | Akses lewat **HTTPS** dan izinkan mikrofon di browser. |
 | Reminder tidak terkirim | Cek SMTP (Send test e-mail), pasang cron (bagian 6), cek E-mail log & “Last run” scheduler. Pastikan user mengaktifkan reminder di Settings → Notifications/Email dan task punya due date + reminder. |
 | Gmail menolak login | Gunakan **App Password**, bukan password akun. |
+| PDF tidak tampil di Drive | Pastikan `assets/vendor/pdfjs/` ter-upload lengkap dan server mengirim `.mjs` sebagai JavaScript (`AddType application/javascript .mjs` — sudah ada di `.htaccess`). |
+| User terus diminta ganti password | Akun dibuat admin dengan opsi *Require password change*. User harus memasukkan password sementara lalu password baru yang berbeda. |
 | Lupa password admin | Gunakan *Forgot password* (butuh SMTP) atau set ulang hash di phpMyAdmin (lihat bagian 4, instalasi manual). |

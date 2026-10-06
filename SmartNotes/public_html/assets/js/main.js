@@ -7,7 +7,14 @@ import { renderShell, setActive, setContentMode, shell, stopNotifications, rende
 import { html, icon } from './core/dom.js';
 import { toast, setTitle, closePopover } from './core/ui.js';
 
-const root = document.getElementById('app');
+let root = document.getElementById('app');
+/** Swap #app for a clean element so listeners from a previous screen never stack up. */
+function freshRoot() {
+  const r = root.cloneNode(false);
+  root.replaceWith(r);
+  root = r;
+  return r;
+}
 
 // ------------------------------------------------------------------ routes
 const PUBLIC = { public: true };
@@ -27,7 +34,8 @@ route('/mindmaps/:id', () => import('./views/mindmap.js'), { flush: true });
 route('/flowcharts', () => import('./views/flowcharts.js'));
 route('/flowcharts/:id', () => import('./views/flowchart.js'), { flush: true });
 route('/audio', () => import('./views/audio.js'));
-route('/files', () => import('./views/files.js'));
+route('/drive', () => import('./views/drive.js'));
+route('/files', () => import('./views/drive.js'));
 route('/search', () => import('./views/search.js'));
 route('/trash', () => import('./views/trash.js'));
 route('/settings', () => import('./views/settings.js'));
@@ -56,13 +64,20 @@ async function mount(m, { path, query }) {
     stopNotifications();
     const mod = await m.loader();
     if (token !== renderToken) return;
-    const cleanup = await mod.default.render(root, { params: m.params, query, meta: m.meta });
+    const cleanup = await mod.default.render(freshRoot(), { params: m.params, query, meta: m.meta });
     setCurrent({ cleanup });
     return;
   }
   if (!state.user) {
     sessionStorageSafe('set', 'sn_after_login', location.hash);
     return navigate('/login', { replace: true });
+  }
+  if (state.user.must_change_password) {
+    shellMounted = false;
+    stopNotifications();
+    const { renderPasswordGate } = await import('./views/auth.js');
+    if (token === renderToken) renderPasswordGate(freshRoot());
+    return;
   }
   ensureShell();
   setActive(path);
@@ -95,7 +110,7 @@ async function mount(m, { path, query }) {
 
 function ensureShell() {
   if (shellMounted) return;
-  renderShell(root);
+  renderShell(freshRoot());
   applyAll();
   shellMounted = true;
 }
@@ -140,6 +155,11 @@ on('login', () => {
 });
 
 on('settings:changed', () => applyAll());
+on('password-required', () => {
+  if (!state.user || state.user.must_change_password) return;
+  state.user.must_change_password = true;
+  navigate('/', { replace: true });
+});
 on('branding:changed', () => { applyAll(); renderSidebar(); });
 
 // ------------------------------------------------------------------ boot

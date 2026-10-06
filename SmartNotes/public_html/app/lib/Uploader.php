@@ -257,7 +257,10 @@ final class Uploader
             ob_end_clean();
         }
         header('X-Content-Type-Options: nosniff');
-        header("Content-Security-Policy: default-src 'none'; img-src 'self'; media-src 'self'; style-src 'unsafe-inline'; sandbox");
+        // PDFs must not be sandboxed or the browser's built-in viewer refuses to render them.
+        header($mime === 'application/pdf'
+            ? "Content-Security-Policy: frame-ancestors 'self'"
+            : "Content-Security-Policy: default-src 'none'; img-src 'self'; media-src 'self'; style-src 'unsafe-inline'; sandbox");
         header('Cache-Control: private, max-age=86400');
         header('ETag: ' . $etag);
         header('Accept-Ranges: bytes');

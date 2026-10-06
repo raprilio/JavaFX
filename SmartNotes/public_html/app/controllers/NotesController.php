@@ -11,11 +11,17 @@ final class NotesController
     public static function index(): void
     {
         $u = Auth::require();
-        $filter = V::enum(Http::query('filter'), ['all', 'pinned', 'favorite', 'archived', 'trash', 'recent'], 'all');
+        $filter = V::enum(Http::query('filter'), ['all', 'pinned', 'favorite', 'archived', 'trash', 'recent', 'shared', 'shared_by_me'], 'all');
+        if ($filter === 'shared') {
+            self::sharedWithMe($u['id']);
+        }
         $where = ['n.user_id = ?'];
         $params = [$u['id']];
 
-        if ($filter === 'trash') {
+        if ($filter === 'shared_by_me') {
+            $where[] = 'n.deleted_at IS NULL';
+            $where[] = 'EXISTS (SELECT 1 FROM note_shares s WHERE s.note_id = n.id)';
+        } elseif ($filter === 'trash') {
             $where[] = 'n.deleted_at IS NOT NULL';
         } else {
             $where[] = 'n.deleted_at IS NULL';
@@ -71,7 +77,8 @@ final class NotesController
                     n.created_at, n.updated_at, n.last_opened_at, n.deleted_at,
                     (SELECT a.id FROM note_attachments a WHERE a.note_id = n.id AND a.file_kind = 'image' AND a.deleted_at IS NULL ORDER BY a.id LIMIT 1) AS cover_id,
                     (SELECT COUNT(*) FROM note_attachments a WHERE a.note_id = n.id AND a.deleted_at IS NULL) AS attachment_count,
-                    (SELECT COUNT(*) FROM audio_notes au WHERE au.note_id = n.id AND au.deleted_at IS NULL) AS audio_count
+                    (SELECT COUNT(*) FROM audio_notes au WHERE au.note_id = n.id AND au.deleted_at IS NULL) AS audio_count,
+                    (SELECT COUNT(*) FROM note_shares s WHERE s.note_id = n.id) AS share_count
              FROM notes n WHERE $whereSql ORDER BY $order LIMIT $perPage OFFSET " . (($page - 1) * $perPage),
             $params
         );
@@ -85,12 +92,12 @@ final class NotesController
 
     private static function cast(array $r): array
     {
-        foreach (['id', 'category_id', 'checklist_total', 'checklist_done', 'cover_id', 'attachment_count', 'audio_count'] as $k) {
+        foreach (['id', 'category_id', 'checklist_total', 'checklist_done', 'cover_id', 'attachment_count', 'audio_count', 'share_count', 'owner_id'] as $k) {
             if (array_key_exists($k, $r) && $r[$k] !== null) {
                 $r[$k] = (int) $r[$k];
             }
         }
-        foreach (['is_pinned', 'is_favorite', 'is_archived'] as $k) {
+        foreach (['is_pinned', 'is_favorite', 'is_archived', 'share_pinned'] as $k) {
             if (array_key_exists($k, $r)) {
                 $r[$k] = (bool) $r[$k];
             }
@@ -107,23 +114,97 @@ final class NotesController
         return $n;
     }
 
-    public static function payload(int $id, int $userId): array
+    /**
+     * Resolve the current user's access to a note.
+     * @return array{0: array, 1: string} [note row, 'owner'|'edit'|'view']
+     */
+    public static function access(int $id, int $userId, bool $ownerMayBeTrashed = false): array
     {
-        $n = self::cast(self::find($id, $userId, true));
+        $n = DB::one('SELECT * FROM notes WHERE id = ?', [$id]);
+        if ($n && (int) $n['user_id'] === $userId) {
+            if ($n['deleted_at'] && !$ownerMayBeTrashed) {
+                throw new HttpException('Note not found.', 404);
+            }
+            return [$n, 'owner'];
+        }
+        if ($n && !$n['deleted_at']) {
+            $perm = DB::val('SELECT permission FROM note_shares WHERE note_id = ? AND user_id = ?', [$id, $userId]);
+            if ($perm) {
+                return [$n, (string) $perm];
+            }
+        }
+        throw new HttpException('Note not found.', 404);
+    }
+
+    public static function payload(int $id, int $viewerId): array
+    {
+        [$row, $role] = self::access($id, $viewerId, true);
+        $ownerId = (int) $row['user_id'];
+        $n = self::cast($row);
         unset($n['user_id']);
+        $n['access'] = $role;
         $n['tags'] = TagsController::forItems('note', [$id])[$id] ?? [];
-        $n['attachments'] = FilesController::forParent('note', $id, $userId);
-        $n['audio'] = AudioController::forNote($id, $userId);
-        $n['tasks'] = DB::all("SELECT id, title, status, priority, due_date FROM tasks WHERE note_id = ? AND user_id = ? AND deleted_at IS NULL ORDER BY id", [$id, $userId]);
+        $n['attachments'] = FilesController::forParent('note', $id, $ownerId);
+        $n['audio'] = AudioController::forNote($id, $ownerId);
+        $n['tasks'] = $role === 'owner'
+            ? DB::all("SELECT id, title, status, priority, due_date FROM tasks WHERE note_id = ? AND user_id = ? AND deleted_at IS NULL ORDER BY id", [$id, $ownerId])
+            : [];
+        $n['owner'] = DB::one('SELECT id, name, email FROM users WHERE id = ?', [$ownerId]);
+        $n['updated_by_name'] = $row['updated_by'] ? DB::val('SELECT name FROM users WHERE id = ?', [$row['updated_by']]) : null;
+        if ($role === 'owner') {
+            $n['shares'] = SharesController::listFor($id);
+        } else {
+            $n['share_pinned'] = (bool) DB::val('SELECT is_pinned FROM note_shares WHERE note_id = ? AND user_id = ?', [$id, $viewerId]);
+            $n['is_pinned'] = $n['share_pinned'];
+            $n['is_favorite'] = false;
+            $n['category_id'] = null;
+        }
         return $n;
     }
 
     public static function show(int $id): void
     {
         $u = Auth::require();
-        self::find($id, $u['id'], true);
-        DB::run('UPDATE notes SET last_opened_at = NOW(), updated_at = updated_at WHERE id = ?', [$id]);
+        [, $role] = self::access($id, $u['id'], true);
+        if ($role === 'owner') {
+            DB::run('UPDATE notes SET last_opened_at = NOW(), updated_at = updated_at WHERE id = ?', [$id]);
+        } else {
+            DB::run('UPDATE note_shares SET last_opened_at = NOW() WHERE note_id = ? AND user_id = ?', [$id, $u['id']]);
+        }
         Http::ok(self::payload($id, $u['id']));
+    }
+
+    /** Notes other users shared with me (pinned first). */
+    private static function sharedWithMe(int $uid): never
+    {
+        $params = [$uid];
+        $extra = '';
+        if ($q = V::str(Http::query('q'), 100)) {
+            $like = '%' . addcslashes($q, '%_\\') . '%';
+            $extra = ' AND (n.title LIKE ? OR n.content_text LIKE ?)';
+            array_push($params, $like, $like);
+        }
+        $rows = DB::all(
+            "SELECT n.id, n.title, LEFT(n.content_text, 260) AS excerpt, n.note_type, n.color, n.background, n.checklist_total, n.checklist_done,
+                    n.created_at, n.updated_at, s.last_opened_at, s.permission, s.is_pinned AS share_pinned, n.user_id AS owner_id, o.name AS owner_name,
+                    (SELECT a.id FROM note_attachments a WHERE a.note_id = n.id AND a.file_kind = 'image' AND a.deleted_at IS NULL ORDER BY a.id LIMIT 1) AS cover_id,
+                    (SELECT COUNT(*) FROM note_attachments a WHERE a.note_id = n.id AND a.deleted_at IS NULL) AS attachment_count,
+                    (SELECT COUNT(*) FROM audio_notes au WHERE au.note_id = n.id AND au.deleted_at IS NULL) AS audio_count
+             FROM note_shares s JOIN notes n ON n.id = s.note_id AND n.deleted_at IS NULL JOIN users o ON o.id = n.user_id
+             WHERE s.user_id = ?$extra ORDER BY s.is_pinned DESC, n.updated_at DESC LIMIT 500",
+            $params
+        );
+        $tags = TagsController::forItems('note', array_column($rows, 'id'));
+        foreach ($rows as &$r) {
+            $r = self::cast($r);
+            $r['tags'] = $tags[$r['id']] ?? [];
+            $r['is_pinned'] = $r['share_pinned'];
+            $r['is_favorite'] = false;
+            $r['is_archived'] = false;
+            $r['category_id'] = null;
+            $r['shared'] = true;
+        }
+        Http::ok(['items' => $rows, 'total' => count($rows), 'page' => 1, 'per_page' => 500]);
     }
 
     public static function store(): void
@@ -138,15 +219,33 @@ final class NotesController
     public static function update(int $id): void
     {
         $u = Auth::require();
-        self::find($id, $u['id']);
-        self::apply($id, $u['id'], Http::body());
+        [$note, $role] = self::access($id, $u['id']);
+        $in = Http::body();
+        if ($role === 'view') {
+            throw new HttpException('You can only view this note.', 403);
+        }
+        if ($role === 'edit') {
+            // Collaborators may change the text only; organisation stays with the owner.
+            $in = array_intersect_key($in, array_flip(['title', 'content', 'base_updated_at']));
+        }
+        // Optimistic concurrency: refuse to overwrite a newer version saved by someone else.
+        $base = V::str($in['base_updated_at'] ?? null, 30);
+        if ($base !== null && (array_key_exists('title', $in) || array_key_exists('content', $in))
+            && $note['updated_at'] !== $base && $note['updated_by'] !== null && (int) $note['updated_by'] !== $u['id']) {
+            $who = (string) DB::val('SELECT name FROM users WHERE id = ?', [$note['updated_by']]);
+            throw new HttpException("This note was just changed by $who. Reload to get the latest version before editing.", 409);
+        }
+        self::apply($id, (int) $note['user_id'], $in, $u['id']);
         Http::ok(self::payload($id, $u['id']));
     }
 
     /** Apply a (partial) set of fields to a note. */
-    private static function apply(int $id, int $userId, array $in): void
+    private static function apply(int $id, int $userId, array $in, ?int $editorId = null): void
     {
         $data = [];
+        if (array_key_exists('title', $in) || array_key_exists('content', $in)) {
+            $data['updated_by'] = $editorId ?? $userId;
+        }
         if (array_key_exists('title', $in)) {
             $data['title'] = V::str($in['title'], 255) ?? '';
         }

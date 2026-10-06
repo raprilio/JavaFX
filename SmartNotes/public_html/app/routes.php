@@ -43,6 +43,22 @@ return [
     ['GET', 'notes/{id}', 'NotesController::show', 'auth'],
     ['POST', 'notes/{id}', 'NotesController::update', 'auth'],
     ['POST', 'notes/{id}/duplicate', 'NotesController::duplicate', 'auth'],
+    ['GET', 'notes/{id}/shares', 'SharesController::index', 'auth'],
+    ['POST', 'notes/{id}/shares', 'SharesController::store', 'auth'],
+    ['POST', 'notes/{id}/shares/{id}/remove', 'SharesController::remove', 'auth'],
+    ['POST', 'notes/{id}/share-pin', 'SharesController::pin', 'auth'],
+    ['POST', 'notes/{id}/leave', 'SharesController::leave', 'auth'],
+    ['GET', 'notes/{id}/related-files', 'DriveController::relatedFiles', 'auth'],
+    ['GET', 'users/directory', 'SharesController::directory', 'auth'],
+
+    // Drive
+    ['GET', 'drive', 'DriveController::index', 'auth'],
+    ['GET', 'drive/folders', 'DriveController::folders', 'auth'],
+    ['POST', 'drive/folders', 'DriveController::createFolder', 'auth'],
+    ['POST', 'drive/folders/{id}', 'DriveController::updateFolder', 'auth'],
+    ['POST', 'drive/folders/{id}/delete', 'DriveController::deleteFolder', 'auth'],
+    ['POST', 'drive/move', 'DriveController::move', 'auth'],
+    ['GET', 'files/{id}/related', 'DriveController::relatedNotes', 'auth'],
 
     // Categories & tags
     ['GET', 'categories', 'CategoriesController::index', 'auth'],
@@ -58,6 +74,7 @@ return [
     // Files
     ['GET', 'files', 'FilesController::index', 'auth'],
     ['POST', 'files/upload', 'FilesController::upload', 'auth'],
+    ['GET', 'files/{id}', 'FilesController::show', 'auth'],
     ['GET', 'files/{id}/raw', 'FilesController::raw', 'auth'],
     ['GET', 'files/{id}/thumb', 'FilesController::thumb', 'auth'],
     ['GET', 'files/{id}/download', 'FilesController::download', 'auth'],
@@ -128,6 +145,7 @@ return [
     ['POST', 'admin/users', 'AdminController::createUser', 'manage_users'],
     ['POST', 'admin/users/{id}', 'AdminController::updateUser', 'manage_users'],
     ['POST', 'admin/users/{id}/delete', 'AdminController::deleteUser', 'manage_users'],
+    ['POST', 'admin/users/{id}/logout', 'AdminController::forceLogout', 'manage_users'],
     ['GET', 'admin/settings', 'AdminController::settings', 'manage_settings'],
     ['POST', 'admin/settings', 'AdminController::saveSettings', 'manage_settings'],
     ['POST', 'admin/branding/{type}', 'AdminController::uploadBranding', 'manage_branding'],

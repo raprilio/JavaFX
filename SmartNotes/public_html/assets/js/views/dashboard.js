@@ -47,6 +47,8 @@ function render(el, d) {
     ${statCard('Audio notes', c.audio, 'mic', '#db2777', '', '#/audio')}
     ${statCard('Mind maps', c.mindmaps, 'network', '#eab308', '', '#/mindmaps')}
     ${statCard('Flowcharts', c.flowcharts, 'workflow', '#14b8a6', '', '#/flowcharts')}
+    ${statCard('Drive files', c.drive_files, 'hard-drive', '#0891b2', '', '#/drive')}
+    ${statCard('Shared with me', c.shared_with_me, 'users', '#7c3aed', '', '#/notes?filter=shared')}
   </div>
 
   <div class="dash-grid">
@@ -64,6 +66,12 @@ function render(el, d) {
                 : html`<p class="small subtle" style="padding:10px 0">Nothing due. Nice work!</p>`}</div>
           </div>
         </div></div>
+      ${d.shared_notes.length ? html`<div class="card"><div class="card-head"><h3>${icon('users', 'sm')} Shared with me</h3><a class="btn ghost sm" href="#/notes?filter=shared">View all ${icon('chevron-right', 'sm')}</a></div>
+        <div class="card-body"><div class="grid grid-3" style="gap:12px">${d.shared_notes.map((n) => html`
+          <a class="note-card" data-nc="${n.color || ''}" href="#/notes/${n.id}" style="margin:0">
+            ${n.is_pinned ? html`<span class="nc-pin">${icon('pin', 'sm')}</span>` : ''}
+            <h3>${n.title || 'Untitled'}</h3><div class="nc-body" style="-webkit-line-clamp:3">${n.excerpt || ''}</div>
+            <div class="nc-meta"><span class="badge info">${icon('user', 'sm')} ${n.owner_name}</span><span>${n.permission === 'edit' ? 'can edit' : 'view'}</span></div></a>`)}</div></div></div>` : ''}
       <div class="card"><div class="card-head"><h3>${icon('history', 'sm')} Recent notes</h3><a class="btn ghost sm" href="#/notes">View all ${icon('chevron-right', 'sm')}</a></div>
         <div class="card-body">${d.recent_notes.length ? html`<div class="grid grid-3" style="gap:12px">${d.recent_notes.map((n) => html`
           <a class="note-card" data-nc="${n.color || ''}" href="#/notes/${n.id}" style="margin:0">

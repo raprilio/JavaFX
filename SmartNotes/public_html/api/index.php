@@ -14,6 +14,7 @@ if (!Config::isInstalled()) {
 }
 
 try {
+    Migrator::run();
     Auth::startSession();
     $method = Http::method();
     if ($method === 'HEAD') {
@@ -59,6 +60,11 @@ try {
         Auth::require();
     } elseif ($access !== 'public') {
         Auth::requirePermission($access);
+    }
+    // Accounts created/reset by an admin must set their own password before doing anything else.
+    $me = Auth::user();
+    if ($me && $me['must_change_password'] && !in_array($handler, ['AppController::bootstrap', 'AuthController::logout', 'ProfileController::password', 'ProfileController::avatar'], true)) {
+        throw new HttpException('Please set a new password before continuing.', 403, ['password_change_required' => true]);
     }
 
     [$class, $fn] = explode('::', $handler);

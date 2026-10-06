@@ -40,8 +40,9 @@ final class SearchController
         };
 
         if ($want('note')) {
-            $where = ['n.user_id = ?', 'n.deleted_at IS NULL'];
-            $params = [$uid];
+            // Own notes + notes other users shared with me.
+            $where = ['(n.user_id = ? OR EXISTS (SELECT 1 FROM note_shares sh WHERE sh.note_id = n.id AND sh.user_id = ?))', 'n.deleted_at IS NULL'];
+            $params = [$uid, $uid];
             if ($q !== '') {
                 $where[] = '(n.title LIKE ? OR n.content_text LIKE ?)';
                 array_push($params, $like, $like);
@@ -156,16 +157,24 @@ final class SearchController
                     'date' => $r['created_at'], 'meta' => [gmdate('i:s', (int) $r['duration'])], 'link' => '#/audio?play=' . $r['id'],
                 ], $rows);
             }
-            if ($want('file')) {
-                $where = ['user_id = ?', 'deleted_at IS NULL', 'original_name LIKE ?'];
-                $params = [$uid, $like];
-                $dateFilter('created_at', $where, $params);
-                $rows = DB::all('SELECT id, original_name, file_kind, file_size, created_at FROM note_attachments WHERE ' . implode(' AND ', $where) . " ORDER BY created_at DESC LIMIT $limit", $params);
-                $groups['file'] = array_map(static fn($r) => [
-                    'id' => (int) $r['id'], 'title' => $r['original_name'], 'snippet' => '',
-                    'date' => $r['created_at'], 'meta' => [$r['file_kind'], format_bytes((int) $r['file_size'])], 'link' => '#/files?open=' . $r['id'],
-                ], $rows);
+        }
+        if ($want('file') && ($q !== '' || $tag || ($simpleOnlyText && $from))) {
+            $where = ['a.user_id = ?', 'a.deleted_at IS NULL'];
+            $params = [$uid];
+            if ($q !== '') {
+                $where[] = '(a.original_name LIKE ? OR a.description LIKE ? OR EXISTS (SELECT 1 FROM file_tag_relations r JOIN note_tags t ON t.id = r.tag_id WHERE r.file_id = a.id AND t.name LIKE ?))';
+                array_push($params, $like, $like, $like);
             }
+            if ($tag) {
+                $where[] = 'EXISTS (SELECT 1 FROM file_tag_relations r JOIN note_tags t ON t.id = r.tag_id WHERE r.file_id = a.id AND t.name = ?)';
+                $params[] = $tag;
+            }
+            $dateFilter('a.created_at', $where, $params);
+            $rows = DB::all('SELECT a.id, a.original_name, a.file_kind, a.file_size, a.created_at, a.description FROM note_attachments a WHERE ' . implode(' AND ', $where) . " ORDER BY a.created_at DESC LIMIT $limit", $params);
+            $groups['file'] = array_map(static fn($r) => [
+                'id' => (int) $r['id'], 'title' => $r['original_name'], 'snippet' => self::snippet((string) $r['description'], $q),
+                'date' => $r['created_at'], 'meta' => [$r['file_kind'], format_bytes((int) $r['file_size'])], 'link' => '#/drive?open=' . $r['id'],
+            ], $rows);
         }
         Http::ok(['query' => $q, 'groups' => array_filter($groups)]);
     }

@@ -63,6 +63,10 @@ export function applyAll() {
   document.documentElement.classList.toggle('compact', !!s.compact_mode);
   applyFavicon(b.favicon_url, accent);
   window.__SN_BRANDING__ = b;
+  const rs = document.documentElement.style;
+  rs.setProperty('--logo-h', (b.logo_height || 34) + 'px');
+  rs.setProperty('--logo-maxw', (b.logo_max_width || 180) + 'px');
+  rs.setProperty('--login-logo-h', (b.login_logo_height || 48) + 'px');
 
   const bg = document.querySelector('.app-bg');
   if (bg) {

@@ -6,7 +6,7 @@ import { setQuery } from '../core/router.js';
 import { toastError, empty } from '../core/ui.js';
 
 const TYPES = [['all', 'Everything', 'search'], ['note', 'Notes', 'notebook-pen'], ['task', 'Tasks', 'square-check-big'], ['meeting', 'Meetings', 'users'], ['event', 'Calendar', 'calendar-days'],
-  ['mindmap', 'Mind maps', 'network'], ['flowchart', 'Flowcharts', 'workflow'], ['audio', 'Audio', 'mic'], ['file', 'Files', 'paperclip']];
+  ['mindmap', 'Mind maps', 'network'], ['flowchart', 'Flowcharts', 'workflow'], ['audio', 'Audio', 'mic'], ['file', 'Drive', 'hard-drive']];
 const LABEL = Object.fromEntries(TYPES.map(([k, l, i]) => [k, [l, i]]));
 
 export default {

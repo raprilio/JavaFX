@@ -959,3 +959,56 @@ svg .edge-path.selected { stroke: var(--accent) !important; }
   .editor-paper { max-width: none; padding: 0; }
   body { background: #fff; color: #000; }
 }
+
+/* =====================================================================
+   v1.1 — Drive, PDF viewer, sharing, logo sizing, password gate
+   ===================================================================== */
+.drive-drop { position: relative; min-height: 160px; }
+.drive-crumbs { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; margin: -6px 0 14px; font-size: 14px; color: var(--text-3); }
+.drive-crumbs a { color: var(--text-2); font-weight: 560; padding: 4px 8px; border-radius: 8px; display: inline-flex; align-items: center; gap: 6px; }
+.drive-crumbs a:last-child { color: var(--text); font-weight: 650; }
+.drive-crumbs a:hover { background: var(--bg-hover); text-decoration: none; }
+.folder-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
+.folder-card { display: flex; align-items: center; gap: 12px; padding: 12px 10px 12px 14px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-elev); cursor: pointer; transition: all var(--t-fast); }
+.folder-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow-sm); transform: translateY(-1px); }
+.folder-ic { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; flex: none; color: var(--fc); background: color-mix(in srgb, var(--fc) 15%, transparent); }
+.folder-ic .ic { fill: color-mix(in srgb, var(--fc) 25%, transparent); }
+.drop-target { outline: 2px dashed var(--accent) !important; outline-offset: 2px; background: var(--accent-softer) !important; }
+.fc-thumb { position: relative; }
+.fc-type { position: absolute; left: 8px; bottom: 8px; }
+.file-hero { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-soft); }
+.file-hero img { width: 84px; height: 84px; object-fit: cover; border-radius: 10px; }
+.file-hero .file-icon { width: 56px; height: 56px; border-radius: 14px; font-size: 12px; }
+.pdf-modal { max-width: min(1100px, 96vw) !important; height: min(92dvh, 1000px); }
+.pdf-modal .modal-body { flex: 1; display: flex; min-height: 0; }
+.pdf-viewer { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; }
+.pdf-bar { display: flex; align-items: center; gap: 4px; padding: 8px 14px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); background: var(--bg-soft); flex-wrap: wrap; }
+.pdf-page { width: 56px !important; height: 30px !important; padding: 0 6px !important; text-align: center; }
+.pdf-pages { flex: 1; overflow: auto; background: color-mix(in srgb, var(--text) 8%, var(--bg)); padding: 16px; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.pdf-page-holder { background: #fff; box-shadow: var(--shadow-md); border-radius: 4px; flex: none; overflow: hidden; }
+.pdf-page-holder canvas { display: block; }
+.related-files .file-row { cursor: pointer; }
+.share-banner { display: flex; align-items: center; gap: 10px; padding: 10px 14px; margin: 0 var(--pad) 8px; border-radius: 12px; background: var(--info-soft); color: var(--text); font-size: 13.5px; }
+.share-banner .ic { color: var(--info); }
+.share-row { display: flex; align-items: center; gap: 10px; padding: 8px 4px; border-bottom: 1px solid var(--border); }
+.share-row:last-child { border-bottom: 0; }
+.user-pick { max-height: 260px; overflow-y: auto; border: 1px solid var(--border); border-radius: 12px; }
+.user-pick label { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.user-pick label:last-child { border-bottom: 0; }
+.user-pick label:hover { background: var(--bg-hover); }
+.nc-owner { display: inline-flex; align-items: center; gap: 4px; }
+/* Logo sizing (values come from Admin → Branding) */
+.brand-logo { height: var(--logo-h, 34px); max-width: var(--logo-maxw, 180px); width: auto; object-fit: contain; }
+/* Logo + name: the logo yields width so the name keeps at least a few characters (ellipsis instead of a hard cut). */
+.brand .brand-logo { flex: 0 1 auto; min-width: 0; }
+.brand .brand-logo + .brand-name { flex: 1 1 auto; min-width: 4.5em; }
+.sidebar-head { min-height: max(64px, calc(var(--logo-h, 34px) + 28px)); }
+.auth-art .brand-logo, .auth-mobile-brand .brand-logo { height: var(--login-logo-h, 48px); max-width: min(320px, 80vw); }
+.logo-preview { display: grid; grid-template-columns: 260px 74px; gap: 14px; align-items: start; }
+.logo-preview .mock { border: 1px solid var(--border); border-radius: 14px; background: var(--bg-elev); padding: 14px 12px; min-height: 120px; overflow: hidden; }
+.logo-preview .mock .brand { overflow: hidden; }
+.logo-preview .mock-nav { margin-top: 12px; display: grid; gap: 6px; }
+.logo-preview .mock-nav i { display: block; height: 10px; border-radius: 6px; background: var(--bg-soft); }
+.logo-preview .mock.collapsed { display: flex; flex-direction: column; align-items: center; }
+.app.sidebar-collapsed .sidebar .brand-logo { max-width: 46px; height: auto; max-height: 40px; }
+@media (max-width: 767px) { .logo-preview { grid-template-columns: 1fr; } .logo-preview .mock.collapsed { display: none; } .pdf-modal { height: 92dvh; } }

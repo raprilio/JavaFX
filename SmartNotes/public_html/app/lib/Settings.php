@@ -12,7 +12,8 @@ final class Settings
     private const SECRET_KEYS = ['smtp_password'];
     private const PUBLIC_KEYS = [
         'app_name', 'app_tagline', 'logo_path', 'favicon_path', 'background_path',
-        'default_theme', 'default_accent', 'allow_registration',
+        'default_theme', 'default_accent', 'allow_registration', 'allow_note_sharing',
+        'logo_display', 'logo_height', 'logo_max_width', 'login_logo_height',
     ];
 
     private static ?array $cache = null;
@@ -88,6 +89,11 @@ final class Settings
         $out['default_theme'] = $out['default_theme'] ?: 'system';
         $out['default_accent'] = $out['default_accent'] ?: '#6366f1';
         $out['allow_registration'] = (bool) (int) ($out['allow_registration'] ?? 0);
+        $out['allow_note_sharing'] = (bool) (int) ($out['allow_note_sharing'] ?? 1);
+        $out['logo_display'] = in_array($out['logo_display'], ['logo', 'logo_name', 'name'], true) ? $out['logo_display'] : 'logo';
+        $out['logo_height'] = max(16, min(120, (int) ($out['logo_height'] ?: 34)));
+        $out['logo_max_width'] = max(40, min(240, (int) ($out['logo_max_width'] ?: 180)));
+        $out['login_logo_height'] = max(20, min(160, (int) ($out['login_logo_height'] ?: 48)));
         return $out;
     }
 

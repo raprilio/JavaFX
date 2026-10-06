@@ -92,8 +92,10 @@ final class AudioController
     public static function raw(int $id): void
     {
         $u = Auth::require();
-        $r = DB::one('SELECT * FROM audio_notes WHERE id = ? AND user_id = ?', [$id, $u['id']]);
-        if (!$r) {
+        $r = DB::one('SELECT * FROM audio_notes WHERE id = ?', [$id]);
+        $shared = $r && (int) $r['user_id'] !== $u['id'] && !$r['deleted_at'] && $r['note_id']
+            && DB::val('SELECT s.id FROM note_shares s JOIN notes n ON n.id = s.note_id AND n.deleted_at IS NULL WHERE s.note_id = ? AND s.user_id = ?', [$r['note_id'], $u['id']]);
+        if (!$r || ((int) $r['user_id'] !== $u['id'] && !$shared)) {
             throw new HttpException('Recording not found.', 404);
         }
         $ext = pathinfo($r['file_path'], PATHINFO_EXTENSION);

@@ -67,7 +67,21 @@ final class DashboardController
             $d = date('Y-m-d', strtotime("-$i days"));
             $series[] = ['date' => $d, 'count' => (int) ($map[$d] ?? 0)];
         }
+        $shared = DB::all(
+            "SELECT n.id, n.title, LEFT(n.content_text, 140) AS excerpt, n.color, n.updated_at, s.is_pinned, s.permission, o.name AS owner_name
+             FROM note_shares s JOIN notes n ON n.id = s.note_id AND n.deleted_at IS NULL JOIN users o ON o.id = n.user_id
+             WHERE s.user_id = ? ORDER BY s.is_pinned DESC, n.updated_at DESC LIMIT 6",
+            [$uid]
+        );
+        foreach ($shared as &$sh) {
+            $sh['id'] = (int) $sh['id'];
+            $sh['is_pinned'] = (bool) $sh['is_pinned'];
+        }
+        unset($sh);
+        $counts['drive_files'] = (int) DB::val('SELECT COUNT(*) FROM note_attachments WHERE user_id = ? AND deleted_at IS NULL AND note_id IS NULL AND task_id IS NULL AND meeting_id IS NULL', [$uid]);
+        $counts['shared_with_me'] = (int) DB::val('SELECT COUNT(*) FROM note_shares s JOIN notes n ON n.id = s.note_id AND n.deleted_at IS NULL WHERE s.user_id = ?', [$uid]);
         Http::ok([
+            'shared_notes' => $shared,
             'counts' => $counts,
             'progress' => $progress,
             'today' => $today,

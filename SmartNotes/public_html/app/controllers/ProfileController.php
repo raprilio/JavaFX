@@ -70,11 +70,16 @@ final class ProfileController
             throw new HttpException('Your current password is incorrect.', 422, ['current_password' => 'invalid']);
         }
         $new = V::password(Http::input('password'));
-        DB::update('users', ['password_hash' => password_hash($new, PASSWORD_DEFAULT)], 'id = ?', [$u['id']]);
-        // Sign out other remembered devices.
+        if (password_verify($new, $hash)) {
+            throw new HttpException('The new password must be different from the current one.', 422, ['password' => 'same']);
+        }
+        DB::update('users', ['password_hash' => password_hash($new, PASSWORD_DEFAULT), 'must_change_password' => 0], 'id = ?', [$u['id']]);
+        DB::run('UPDATE users SET session_version = session_version + 1 WHERE id = ?', [$u['id']]);
+        // Sign out every other session and remembered device; keep this one.
         $keep = Auth::currentRememberSelector();
         DB::run('DELETE FROM remember_tokens WHERE user_id = ? AND selector <> ?', [$u['id'], (string) $keep]);
         session_regenerate_id(true);
+        Auth::syncSessionVersion($u['id']);
         Activity::log('profile.password', 'user', $u['id'], 'Changed password');
         Http::ok(null, 'Password changed.');
     }

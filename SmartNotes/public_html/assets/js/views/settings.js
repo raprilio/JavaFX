@@ -190,7 +190,7 @@ const tabs = {
       const r = await api.get('profile/storage');
       const colors = { image: '#6366f1', document: '#0ea5e9', recordings: '#ec4899', audio: '#f97316', archive: '#a855f7', other: '#64748b' };
       const total = r.total || 1;
-      el.querySelector('[data-st]').innerHTML = String(html`<div class="row between mb-1"><b style="font-size:22px">${fmtBytes(r.total)}</b><a class="btn sm" href="#/files">Manage files</a></div>
+      el.querySelector('[data-st]').innerHTML = String(html`<div class="row between mb-1"><b style="font-size:22px">${fmtBytes(r.total)}</b><a class="btn sm" href="#/drive">Open Drive</a></div>
         <div class="storage-bar mb-3">${Object.entries(r.by_kind).map(([k, v]) => html`<span style="width:${(v.size / total) * 100}%;background:${colors[k] || '#999'}" data-tip="${k}: ${fmtBytes(v.size)}"></span>`)}</div>
         <div class="grid grid-3" style="gap:10px">${Object.entries(r.by_kind).map(([k, v]) => html`<div class="row small"><span class="legend-dot" style="background:${colors[k] || '#999'}"></span><span class="grow" style="text-transform:capitalize">${k}</span><b>${fmtBytes(v.size)}</b><span class="subtle">${v.count}</span></div>`)}</div>
         <p class="small subtle mt-3">Upload limits: images ${state.limits.image_mb} MB, audio ${state.limits.audio_mb} MB, other files ${state.limits.file_mb} MB (server maximum ${state.limits.server_upload}).</p>`);

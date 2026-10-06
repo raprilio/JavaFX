@@ -21,6 +21,8 @@ CREATE TABLE IF NOT EXISTS `users` (
   `status`          ENUM('active','suspended') NOT NULL DEFAULT 'active',
   `last_login_at`   DATETIME NULL,
   `last_login_ip`   VARCHAR(45) NULL,
+  `must_change_password` TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Set when an admin creates/resets the password',
+  `session_version` INT UNSIGNED NOT NULL DEFAULT 1 COMMENT 'Incremented to sign the user out everywhere',
   `created_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `deleted_at`      DATETIME NULL,
@@ -168,6 +170,7 @@ CREATE TABLE IF NOT EXISTS `notes` (
   `checklist_total` SMALLINT UNSIGNED NOT NULL DEFAULT 0,
   `checklist_done`  SMALLINT UNSIGNED NOT NULL DEFAULT 0,
   `last_opened_at`  DATETIME NULL,
+  `updated_by`      INT UNSIGNED NULL COMMENT 'Last editor (owner or a user the note is shared with)',
   `created_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `deleted_at`      DATETIME NULL,
@@ -317,12 +320,28 @@ CREATE TABLE IF NOT EXISTS `event_participants` (
 -- ---------------------------------------------------------------------
 -- Files (images, documents, archives) & audio
 -- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `drive_folders` (
+  `id`          INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `user_id`     INT UNSIGNED NOT NULL,
+  `parent_id`   INT UNSIGNED NULL,
+  `name`        VARCHAR(120) NOT NULL,
+  `color`       VARCHAR(9) NULL,
+  `created_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_df_user_parent` (`user_id`, `parent_id`),
+  KEY `idx_df_parent` (`parent_id`),
+  CONSTRAINT `fk_df_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_df_parent` FOREIGN KEY (`parent_id`) REFERENCES `drive_folders` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `note_attachments` (
   `id`             INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `user_id`        INT UNSIGNED NOT NULL,
   `note_id`        INT UNSIGNED NULL,
   `task_id`        INT UNSIGNED NULL,
   `meeting_id`     INT UNSIGNED NULL,
+  `folder_id`      INT UNSIGNED NULL COMMENT 'Drive folder',
   `file_name`      VARCHAR(120) NOT NULL COMMENT 'Stored (random) file name',
   `original_name`  VARCHAR(255) NOT NULL,
   `file_path`      VARCHAR(255) NOT NULL COMMENT 'Relative to uploads/',
@@ -333,6 +352,9 @@ CREATE TABLE IF NOT EXISTS `note_attachments` (
   `file_hash`      CHAR(64) NULL,
   `width`          INT UNSIGNED NULL,
   `height`         INT UNSIGNED NULL,
+  `description`    TEXT NULL,
+  `is_starred`     TINYINT(1) NOT NULL DEFAULT 0,
+  `last_opened_at` DATETIME NULL,
   `created_at`     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'uploaded_at',
   `updated_at`     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `deleted_at`     DATETIME NULL,
@@ -342,10 +364,40 @@ CREATE TABLE IF NOT EXISTS `note_attachments` (
   KEY `idx_att_task` (`task_id`),
   KEY `idx_att_meeting` (`meeting_id`),
   KEY `idx_att_hash` (`user_id`, `file_hash`),
+  KEY `idx_att_folder` (`folder_id`),
   CONSTRAINT `fk_att_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_att_note` FOREIGN KEY (`note_id`) REFERENCES `notes` (`id`) ON DELETE SET NULL,
   CONSTRAINT `fk_att_task` FOREIGN KEY (`task_id`) REFERENCES `tasks` (`id`) ON DELETE SET NULL,
-  CONSTRAINT `fk_att_meeting` FOREIGN KEY (`meeting_id`) REFERENCES `meetings` (`id`) ON DELETE SET NULL
+  CONSTRAINT `fk_att_meeting` FOREIGN KEY (`meeting_id`) REFERENCES `meetings` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_att_folder` FOREIGN KEY (`folder_id`) REFERENCES `drive_folders` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `file_tag_relations` (
+  `file_id`  INT UNSIGNED NOT NULL,
+  `tag_id`   INT UNSIGNED NOT NULL,
+  PRIMARY KEY (`file_id`, `tag_id`),
+  KEY `idx_ftr_tag` (`tag_id`),
+  CONSTRAINT `fk_ftr_file` FOREIGN KEY (`file_id`) REFERENCES `note_attachments` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_ftr_tag` FOREIGN KEY (`tag_id`) REFERENCES `note_tags` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `note_shares` (
+  `id`              INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `note_id`         INT UNSIGNED NOT NULL,
+  `owner_id`        INT UNSIGNED NOT NULL,
+  `user_id`         INT UNSIGNED NOT NULL COMMENT 'Recipient',
+  `permission`      ENUM('view','edit') NOT NULL DEFAULT 'view',
+  `is_pinned`       TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Pinned by the recipient',
+  `last_opened_at`  DATETIME NULL,
+  `created_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_share_note_user` (`note_id`, `user_id`),
+  KEY `idx_share_user` (`user_id`, `is_pinned`),
+  KEY `idx_share_owner` (`owner_id`),
+  CONSTRAINT `fk_share_note` FOREIGN KEY (`note_id`) REFERENCES `notes` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_share_owner` FOREIGN KEY (`owner_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_share_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `audio_notes` (
@@ -619,4 +671,10 @@ INSERT IGNORE INTO `settings` (`setting_key`, `setting_value`) VALUES
 ('smtp_password', ''),
 ('smtp_encryption', 'tls'),
 ('smtp_from_name', 'SmartNotes'),
-('smtp_from_email', '');
+('smtp_from_email', ''),
+('schema_version', '2'),
+('allow_note_sharing', '1'),
+('logo_display', 'logo'),
+('logo_height', '34'),
+('logo_max_width', '180'),
+('login_logo_height', '48');

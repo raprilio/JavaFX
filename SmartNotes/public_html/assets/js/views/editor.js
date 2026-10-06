@@ -11,6 +11,8 @@ import { uploadFile, pickFiles } from '../components/attachments.js';
 import { openImageViewer } from '../components/imageViewer.js';
 import { audioItemHtml, bindAudioPlayers, openRecorder, uploadAudioFile, peaksFromFile, stopAudio } from '../components/audio.js';
 import { openTaskForm, refreshTags } from '../components/forms.js';
+import { openShareDialog } from '../components/share.js';
+import { openFilePreview } from '../components/filePreview.js';
 
 export default {
   title: 'Note',
@@ -25,8 +27,13 @@ export default {
     }
     const isNew = ctx.query.new === '1';
     const trashed = !!note.deleted_at;
+    const role = note.access || 'owner';
+    const isOwner = role === 'owner';
+    const readOnly = trashed || role === 'view';
     ctx.setTitle(note.title || 'Untitled note');
 
+    let conflict = false;
+    let closeConflictToast = null;
     let dirty = false, saving = false, lastSaved = { title: note.title, content: note.content || '' };
     let images = note.attachments.filter((a) => a.kind === 'image');
     let files = note.attachments.filter((a) => a.kind !== 'image');
@@ -40,12 +47,15 @@ export default {
             <span class="save-state" data-save><span class="d"></span><span data-save-text>Saved</span></span>
             <div class="grow"></div>
             ${trashed ? html`<span class="badge danger">${icon('trash-2', 'sm')} In trash</span><button class="btn sm" data-a="restore">${icon('rotate-ccw', 'sm')} Restore</button>` : ''}
-            <button class="btn ghost icon sm ${note.is_pinned ? 'active' : ''}" data-a="pin" data-tip="Pin">${icon('pin', 'sm')}</button>
+            ${isOwner && !trashed && state.branding?.allow_note_sharing !== false ? html`<button class="btn ghost sm ${(note.shares || []).length ? 'active' : ''}" data-a="share" data-tip="Share with users">${icon('users', 'sm')}<span class="hide-sm">Share</span><span data-share-count>${(note.shares || []).length || ''}</span></button>` : ''}
+            ${isOwner ? html`<button class="btn ghost icon sm ${note.is_pinned ? 'active' : ''}" data-a="pin" data-tip="Pin">${icon('pin', 'sm')}</button>
             <button class="btn ghost icon sm ${note.is_favorite ? 'active' : ''}" data-a="favorite" data-tip="Favorite">${icon('star', 'sm')}</button>
-            <button class="btn ghost icon sm" data-a="color" data-tip="Color & background">${icon('palette', 'sm')}</button>
+            <button class="btn ghost icon sm" data-a="color" data-tip="Color & background">${icon('palette', 'sm')}</button>`
+              : html`<button class="btn ghost icon sm ${note.share_pinned ? 'active' : ''}" data-a="spin" data-tip="Pin to my shared notes">${icon('pin', 'sm')}</button>`}
             <button class="btn ghost icon sm" data-a="info" data-tip="Details">${icon('panel-right', 'sm')}</button>
             <button class="btn ghost icon sm" data-a="more" data-tip="More">${icon('more-horizontal', 'sm')}</button>
           </div>
+          ${!isOwner ? html`<div class="share-banner">${icon('users', 'sm')}<span>Shared by <b>${note.owner?.name || 'another user'}</b> · ${role === 'edit' ? 'you can edit the title and text' : 'view only'}${note.updated_by_name ? html` · last edited by ${note.updated_by_name}` : ''}</span></div>` : ''}
           <div data-toolbar></div>
           <div class="editor-paper" style="position:relative">
             <div class="drop-hint">${icon('upload', 'lg')}&nbsp; Drop to attach</div>
@@ -60,7 +70,7 @@ export default {
         </div>
         <aside class="inspector" data-inspector>
           <div class="row between show-sm" style="margin-bottom:6px"><b>Details</b><button class="btn ghost icon sm" data-a="info">${icon('x', 'sm')}</button></div>
-          <h4>Category</h4>
+          ${isOwner ? html`<h4>Category</h4>
           <select class="select sm" data-category><option value="">No category</option>${state.categories.note.map((c) => html`<option value="${c.id}" ${c.id === note.category_id ? 'selected' : ''}>${c.name}</option>`)}</select>
           <h4>Tags</h4><div data-tags></div>
           <h4>Quick actions</h4>
@@ -70,6 +80,8 @@ export default {
             <button class="btn sm" data-a="attach">${icon('paperclip', 'sm')} Attach file</button>
           </div>
           <h4>Related tasks</h4><div data-tasks></div>
+          <h4>Linked Drive files <span class="subtle" style="text-transform:none;letter-spacing:0">(same #tag)</span></h4><div data-related class="related-files"></div>`
+          : html`<h4>Owner</h4><p class="small">${note.owner?.name}<br><span class="subtle">${note.owner?.email}</span></p><h4>Your access</h4><p class="small">${role === 'edit' ? 'Can edit title & text' : 'View only'}</p>`}
           <h4>Info</h4>
           <dl class="kv small"><dt>Type</dt><dd data-type>${note.note_type}</dd><dt>Created</dt><dd>${fmtDateTime(note.created_at)}</dd><dt>Updated</dt><dd data-upd2>${fmtDateTime(note.updated_at)}</dd>
             <dt>Images</dt><dd data-cnt-img>${images.length}</dd><dt>Audio</dt><dd data-cnt-audio>${audio.length}</dd><dt>Files</dt><dd data-cnt-files>${files.length}</dd></dl>
@@ -86,9 +98,10 @@ export default {
       content: note.content,
       placeholder: 'Start writing… Type "# " for a heading, "- " for a list, "[] " for a checklist.',
       onChange: () => markDirty(),
-      onImages: (list) => uploadImages(list, true),
-      onAudio: (list) => (list ? uploadAudios(list) : record()),
-      onFiles: (list) => uploadFiles(list),
+      onImages: isOwner ? (list) => uploadImages(list, true) : undefined,
+      onAudio: isOwner ? (list) => (list ? uploadAudios(list) : record()) : undefined,
+      onFiles: isOwner ? (list) => uploadFiles(list) : undefined,
+      media: isOwner && !trashed,
       onImageOpen: (img) => {
         const fid = +img.dataset.fileId || +(img.getAttribute('src').match(/files\/(\d+)/) || [])[1];
         const k = images.findIndex((x) => x.id === fid);
@@ -97,9 +110,9 @@ export default {
     });
     $('[data-toolbar]').appendChild(rte.toolbar);
     $('[data-editor]').appendChild(rte.editor);
-    if (trashed) { rte.editor.contentEditable = 'false'; titleEl.readOnly = true; rte.toolbar.style.display = 'none'; }
-    const tags = tagInput({ value: note.tags, suggestions: state.tags.map((t) => t.name), placeholder: 'Add tag…', normalize: normalizeTag, prefix: '#', onChange: (v) => saveField({ tags: v }).then(refreshTags) });
-    $('[data-tags]').appendChild(tags.el);
+    if (readOnly) { rte.editor.contentEditable = 'false'; titleEl.readOnly = true; rte.toolbar.style.display = 'none'; }
+    const tags = isOwner && tagInput({ value: note.tags, suggestions: state.tags.map((t) => t.name), placeholder: 'Add tag…', normalize: normalizeTag, prefix: '#', onChange: (v) => saveField({ tags: v }).then(refreshTags).then(() => loadRelated()) });
+    if (tags) $('[data-tags]').appendChild(tags.el);
 
     // ------------------------------------------------------------ save
     const saveEl = $('[data-save]');
@@ -114,7 +127,7 @@ export default {
     }
     words();
     function markDirty() {
-      if (trashed) return;
+      if (readOnly) return;
       dirty = true;
       setSave('dirty', 'Unsaved changes');
       autosave();
@@ -123,6 +136,7 @@ export default {
     const autosave = debounce(() => save(), 1200);
     async function save() {
       autosave.cancel();
+      if (conflict) return;
       if (saving) { autosave(); return; }
       const payload = {};
       const title = titleEl.value.trim();
@@ -133,6 +147,7 @@ export default {
       saving = true;
       setSave('saving', 'Saving…');
       try {
+        payload.base_updated_at = note.updated_at;
         const r = await api.post(`notes/${id}`, payload);
         lastSaved = { title, content };
         note.updated_at = r.updated_at;
@@ -144,9 +159,17 @@ export default {
         $('[data-upd2]').textContent = fmtDateTime(r.updated_at);
         ctx.setTitle(title || 'Untitled note');
       } catch (e) {
-        setSave('error', 'Not saved — retrying');
-        toastError(e);
-        setTimeout(() => dirty && save(), 5000);
+        if (e.status === 409) {
+          // Someone else saved a newer version: never overwrite it silently.
+          conflict = true;
+          setSave('error', 'Conflict — not saved');
+          closeConflictToast?.();
+          closeConflictToast = toast(e.message, 'warning', { action: 'Reload', onAction: () => { dirty = false; location.reload(); }, timeout: 15000 });
+        } else {
+          setSave('error', 'Not saved — retrying');
+          toastError(e);
+          setTimeout(() => dirty && save(), 5000);
+        }
       } finally { saving = false; }
     }
     async function saveField(data) {
@@ -271,6 +294,20 @@ export default {
       const a = e.target.closest('[data-a]')?.dataset.a;
       if (!a) return;
       const btn = e.target.closest('[data-a]');
+      if (a === 'share') {
+        const shares = await openShareDialog({ ...note, id });
+        note.shares = shares;
+        btn.classList.toggle('active', shares.length > 0);
+        btn.querySelector('[data-share-count]').textContent = shares.length || '';
+      }
+      if (a === 'spin') {
+        try {
+          const r = await api.post(`notes/${id}/share-pin`, { pinned: !note.share_pinned });
+          note.share_pinned = r.pinned;
+          btn.classList.toggle('active', r.pinned);
+          toast(r.pinned ? 'Pinned to your shared notes' : 'Unpinned', 'success', { timeout: 1500 });
+        } catch (err) { toastError(err); }
+      }
       if (a === 'pin') { const r = await saveField({ is_pinned: !note.is_pinned }); btn.classList.toggle('active', !!r?.is_pinned); toast(r?.is_pinned ? 'Pinned' : 'Unpinned', 'success', { timeout: 1500 }); }
       if (a === 'favorite') { const r = await saveField({ is_favorite: !note.is_favorite }); btn.classList.toggle('active', !!r?.is_favorite); toast(r?.is_favorite ? 'Added to favorites' : 'Removed from favorites', 'success', { timeout: 1500 }); }
       if (a === 'color') colorPicker(btn, note.color, async (c) => { await saveField({ color: c }); main.dataset.nc = note.color || ''; }, { backgrounds: true, currentBg: note.background, onBg: async (b) => { await saveField({ background: b }); main.dataset.nbg = note.background || ''; } });
@@ -282,6 +319,21 @@ export default {
         await save();
         const t = await openTaskForm(null, { title: titleEl.value.trim() || 'Follow up', note_id: id });
         if (t?.id) loadTasks();
+      }
+      if (a === 'more' && !isOwner) {
+        return menu(btn, [
+          { label: 'Export as HTML', icon: 'file-code', onClick: () => exportNote('html') },
+          { label: 'Export as text', icon: 'file-text', onClick: () => exportNote('txt') },
+          { label: 'Print / save as PDF', icon: 'printer', onClick: () => window.print() },
+          { divider: true },
+          { label: 'Remove from my shared notes', icon: 'log-out', danger: true, onClick: async () => {
+            if (!(await confirm({ title: 'Remove this note?', message: 'You will no longer see this shared note. The owner keeps it.', confirmText: 'Remove' }))) return;
+            await save();
+            await api.post(`notes/${id}/leave`).catch(toastError);
+            ctx.beforeLeave = null;
+            navigate('/notes?filter=shared');
+          } },
+        ], { align: 'end' });
       }
       if (a === 'more') {
         menu(btn, [
@@ -302,7 +354,7 @@ export default {
         ], { align: 'end' });
       }
     });
-    $('[data-category]').addEventListener('change', (e) => saveField({ category_id: e.target.value || null }));
+    $('[data-category]')?.addEventListener('change', (e) => saveField({ category_id: e.target.value || null }));
 
     function exportNote(kind) {
       const title = titleEl.value.trim() || 'note';
@@ -318,7 +370,22 @@ export default {
           : '<p class="small subtle">No tasks linked yet.</p>';
       } catch { /* ignore */ }
     }
-    loadTasks();
+    let related = [];
+    async function loadRelated() {
+      const box = $('[data-related]');
+      if (!box) return;
+      try {
+        related = await api.get(`notes/${id}/related-files`);
+        box.innerHTML = related.length ? related.map((f) => String(html`<div class="file-row" data-rel="${f.id}" style="padding:7px 9px">${fileBadge(f.name)}
+          <div class="grow" style="min-width:0"><div class="truncate small" style="font-weight:560">${f.name}</div><div class="tiny subtle truncate">${f.tags.map((t) => '#' + t).join(' ')}</div></div></div>`)).join('')
+          : '<p class="small subtle">Add a #tag that is also used on a Drive file to link it here.</p>';
+      } catch { /* ignore */ }
+    }
+    if (isOwner) { loadTasks(); loadRelated(); }
+    el.addEventListener('click', (e) => {
+      const r = e.target.closest('[data-rel]');
+      if (r) openFilePreview(related.find((f) => f.id === +r.dataset.rel), related);
+    });
 
     // Drag & drop anywhere on the paper
     const paper = $('.editor-paper');
@@ -329,18 +396,19 @@ export default {
     paper.addEventListener('drop', (e) => {
       depth = 0;
       paper.classList.remove('dragging-file');
-      if (e.defaultPrevented || !e.dataTransfer?.files?.length) return;
+      if (e.defaultPrevented || !e.dataTransfer?.files?.length || !isOwner) return;
       e.preventDefault();
       uploadFiles(Array.from(e.dataTransfer.files));
     });
 
     // Flush unsaved changes when the tab is hidden/closed (sendBeacon carries the CSRF token in the body).
     const onHide = () => {
-      if (!dirty || trashed) return;
+      if (!dirty || readOnly || conflict) return;
       const fd = new FormData();
       fd.append('_csrf', getCsrf());
       fd.append('title', titleEl.value.trim());
       fd.append('content', rte.getHTML());
+      fd.append('base_updated_at', note.updated_at || '');
       navigator.sendBeacon?.(apiUrl(`notes/${id}`), fd);
     };
     const onBeforeUnload = (e) => { if (dirty) { onHide(); e.preventDefault(); e.returnValue = ''; } };
@@ -348,6 +416,12 @@ export default {
     window.addEventListener('beforeunload', onBeforeUnload);
 
     ctx.beforeLeave = async () => {
+      if (conflict && dirty) {
+        const leave = await confirm({ title: 'Discard your changes?', message: 'Someone else saved a newer version of this note, so your latest edits were not saved. Leave and discard them? (Tip: copy your text first.)', confirmText: 'Discard & leave' });
+        if (!leave) return false;
+        dirty = false;
+        return true;
+      }
       if (dirty) await save();
       // Discard brand-new notes that were left completely empty.
       if (isNew && !titleEl.value.trim() && !rte.getText().trim() && !images.length && !audio.length && !files.length && !rte.editor.querySelector('img,table,hr')) {
@@ -359,6 +433,7 @@ export default {
     setTitle(note.title || 'Untitled note');
 
     return () => {
+      closeConflictToast?.();
       stopAudio();
       rte.destroy();
       window.removeEventListener('pagehide', onHide);

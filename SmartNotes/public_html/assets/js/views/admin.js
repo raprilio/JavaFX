@@ -5,6 +5,7 @@ import { state, can, emit } from '../core/store.js';
 import { toast, toastError, confirm, modal, formData, showFieldErrors, withLoading, switchHtml, ACCENTS, empty, prompt } from '../core/ui.js';
 import { pickFiles } from '../components/attachments.js';
 import { themeColors } from '../components/canvas.js';
+import { brandHtml } from '../core/shell.js';
 
 const TABS = [
   ['overview', 'Overview', 'chart-column', 'view_stats'], ['users', 'Users', 'users', 'manage_users'], ['branding', 'Branding', 'image', 'manage_branding'],
@@ -80,10 +81,10 @@ const tabs = {
         <div class="table-wrap"><table class="table"><thead><tr><th>User</th><th>Role</th><th class="hide-sm">Status</th><th class="hide-sm">Content</th><th class="hide-sm">Last login</th><th></th></tr></thead><tbody>
         ${data.items.map((u) => html`<tr data-id="${u.id}"><td><div class="row"><span class="avatar sm">${initials(u.name)}</span><div style="min-width:0"><div class="truncate" style="font-weight:600">${u.name}</div><div class="tiny subtle truncate">${u.email}</div></div></div></td>
           <td><span class="badge ${u.role === 'admin' ? 'accent' : ''}">${u.role}</span>${u.permissions.length && u.role !== 'admin' ? html` <span class="badge info" data-tip="${u.permissions.join(', ')}">+${u.permissions.length}</span>` : ''}</td>
-          <td class="hide-sm"><span class="badge ${u.status === 'active' ? 'success' : 'danger'}">${u.status}</span></td>
+          <td class="hide-sm"><span class="badge ${u.status === 'active' ? 'success' : 'danger'}">${u.status}</span>${u.must_change_password ? html` <span class="badge warning" data-tip="Must set a new password at next sign-in">${icon('key-round', 'sm')}</span>` : ''}</td>
           <td class="hide-sm small">${u.notes} notes · ${u.tasks} tasks · ${fmtBytes(u.storage)}</td>
           <td class="hide-sm small">${u.last_login_at ? timeAgo(u.last_login_at) : 'Never'}</td>
-          <td class="nowrap"><button class="btn ghost icon sm" data-edit="${u.id}" aria-label="Edit">${icon('pencil', 'sm')}</button>${u.id !== state.user.id ? html`<button class="btn ghost icon sm" data-del="${u.id}" aria-label="Delete">${icon('trash-2', 'sm')}</button>` : ''}</td></tr>`)}
+          <td class="nowrap"><button class="btn ghost icon sm" data-edit="${u.id}" aria-label="Edit" data-tip="Edit">${icon('pencil', 'sm')}</button><button class="btn ghost icon sm" data-logout="${u.id}" aria-label="Sign out everywhere" data-tip="Sign out of all devices">${icon('log-out', 'sm')}</button>${u.id !== state.user.id ? html`<button class="btn ghost icon sm" data-del="${u.id}" aria-label="Delete">${icon('trash-2', 'sm')}</button>` : ''}</td></tr>`)}
         </tbody></table></div>`));
     };
     const reload = async () => { data = await api.get('admin/users', { q }); paint(); };
@@ -96,6 +97,8 @@ const tabs = {
         <div class="field"><label>${u ? 'New password (optional)' : 'Password'}</label><input class="input" type="text" name="password" autocomplete="new-password" placeholder="${u ? 'Leave empty to keep' : 'Min. 8 chars, letters & numbers'}"></div>
         <div class="field"><label>Role</label><select class="select" name="role" ${isAdmin ? '' : 'disabled'}><option value="user" ${u?.role !== 'admin' ? 'selected' : ''}>User</option><option value="admin" ${u?.role === 'admin' ? 'selected' : ''}>Admin</option></select></div>
         ${u ? html`<div class="field"><label>Status</label><select class="select" name="status"><option value="active" ${u.status === 'active' ? 'selected' : ''}>Active</option><option value="suspended" ${u.status === 'suspended' ? 'selected' : ''}>Suspended</option></select></div>` : html`<div class="field"><label>&nbsp;</label><label class="check small"><input type="checkbox" name="send_welcome" ${state.smtpConfigured ? 'checked' : 'disabled'}> Send welcome e-mail</label></div>`}
+        <div class="field span-2"><label class="check small"><input type="checkbox" name="must_change_password" checked> Require ${u ? 'a new password at next sign-in (when you set a password above)' : 'the user to choose their own password at first sign-in'}</label>
+          <span class="hint">Each user has their own login. Setting a password or suspending signs the user out of every device immediately.</span></div>
         ${isAdmin ? html`<div class="field span-2"><label>Extra permissions (for users)</label><div class="grid grid-2" style="gap:6px">${Object.entries(data.permissions).map(([k, l]) => html`<label class="check small"><input type="checkbox" name="perm_${k}" ${u?.permissions?.includes(k) ? 'checked' : ''}> ${l}</label>`)}</div><span class="hint">Users only manage their own data. Permissions grant access to parts of this admin panel.</span></div>` : ''}
       </form>`));
       return form;
@@ -108,7 +111,7 @@ const tabs = {
           label: u ? 'Save changes' : 'Create user', variant: 'primary', onClick: async () => {
             const d = formData(form);
             const perms = Object.keys(data.permissions).filter((k) => d['perm_' + k]);
-            const payload = { name: d.name, email: d.email, role: d.role || 'user', permissions: perms, send_welcome: d.send_welcome };
+            const payload = { name: d.name, email: d.email, role: d.role || 'user', permissions: perms, send_welcome: d.send_welcome, must_change_password: d.must_change_password };
             if (d.password) payload.password = d.password;
             if (u) payload.status = d.status;
             try {
@@ -124,6 +127,13 @@ const tabs = {
       if (e.target.closest('[data-a="new"]')) return openForm();
       const ed = e.target.closest('[data-edit]');
       if (ed) return openForm(data.items.find((u) => u.id === +ed.dataset.edit));
+      const lo = e.target.closest('[data-logout]');
+      if (lo) {
+        const u = data.items.find((x) => x.id === +lo.dataset.logout);
+        if (!(await confirm({ title: `Sign out ${u.name}?`, message: 'The user is signed out of every browser and device and must sign in again.', confirmText: 'Sign out everywhere' }))) return;
+        try { await api.post(`admin/users/${u.id}/logout`); toast(`${u.name} was signed out everywhere`, 'success'); } catch (err) { toastError(err); }
+        return;
+      }
       const del = e.target.closest('[data-del]');
       if (del) {
         const u = data.items.find((x) => x.id === +del.dataset.del);
@@ -144,8 +154,46 @@ const tabs = {
     el.innerHTML = String(html`
       ${card('App identity', html`<form class="form-grid" data-text><div class="field"><label>Application name</label><input class="input" name="app_name" value="${b.app_name}" maxlength="60"></div>
         <div class="field"><label>Tagline</label><input class="input" name="app_tagline" value="${s.app_tagline || ''}" maxlength="120"></div><div class="span-2"><button class="btn primary" type="submit">Save</button></div></form>`)}
+      ${card(html`${icon('ruler', 'sm')} Logo layout`, html`<form data-logo class="col" style="gap:14px">
+        <div class="field" style="margin:0"><label>Display</label><div class="btn-group" data-mode>${[['logo', 'Logo only'], ['logo_name', 'Logo + name'], ['name', 'Name only']].map(([v, l]) => html`<button type="button" class="btn ${b.logo_display === v ? 'active' : ''}" data-v="${v}">${l}</button>`)}</div>
+          ${b.logo_url ? '' : html`<span class="hint">Upload a logo below to use the logo modes.</span>`}</div>
+        <div class="form-grid">
+          <div class="field"><label>Sidebar logo height <b data-out="logo_height">${b.logo_height}px</b></label><input type="range" min="16" max="120" name="logo_height" value="${b.logo_height}"></div>
+          <div class="field"><label>Max logo width <b data-out="logo_max_width">${b.logo_max_width}px</b></label><input type="range" min="40" max="240" name="logo_max_width" value="${b.logo_max_width}"><span class="hint">The sidebar column is 260px wide (≈ 230px usable).</span></div>
+          <div class="field"><label>Login page logo height <b data-out="login_logo_height">${b.login_logo_height}px</b></label><input type="range" min="20" max="160" name="login_logo_height" value="${b.login_logo_height}"></div>
+          <div class="field"><label>Presets</label><div class="row wrap" style="gap:6px">${[['Compact', 28, 150, 40], ['Balanced', 36, 190, 52], ['Large', 56, 230, 80]].map(([l, a, w, g]) => html`<button type="button" class="btn sm" data-preset="${a},${w},${g}">${l}</button>`)}</div></div>
+        </div>
+        <div><div class="label mb-1">Live preview</div><div class="logo-preview" data-preview></div></div>
+        <div><button class="btn primary" type="submit">Save logo layout</button></div></form>`)}
       <div class="grid grid-3">${asset('logo', 'Logo', b.logo_url, 'PNG/WEBP, transparent, ~400×100')}${asset('favicon', 'Favicon', b.favicon_url, 'Square PNG, 256×256')}${asset('background', 'Login & app background', b.background_url, 'JPG/WEBP, 1920×1080')}</div>
       <p class="small subtle">Branding is applied to every page, the login screen and e-mails. Users can override the app background in their own appearance settings.</p>`);
+    const lf = el.querySelector('[data-logo]');
+    const cur = { logo_display: b.logo_display, logo_height: b.logo_height, logo_max_width: b.logo_max_width, login_logo_height: b.login_logo_height };
+    const preview = () => {
+      ['logo_height', 'logo_max_width', 'login_logo_height'].forEach((k) => { cur[k] = +lf[k].value; lf.querySelector(`[data-out="${k}"]`).textContent = cur[k] + 'px'; });
+      const pb = { ...b, ...cur };
+      const vars = `--logo-h:${cur.logo_height}px;--logo-maxw:${cur.logo_max_width}px`;
+      lf.querySelector('[data-preview]').innerHTML = String(html`
+        <div class="mock" style="${vars}"><div class="sidebar-head" style="padding:0;min-height:0">${brandHtml(pb)}</div><div class="mock-nav"><i style="width:80%"></i><i style="width:65%"></i><i style="width:72%"></i></div><div class="tiny subtle mt-2">Sidebar (260px)</div></div>
+        <div class="mock collapsed" style="${vars}">${pb.logo_url && cur.logo_display !== 'name' ? html`<img src="${pb.logo_url}" alt="" style="max-width:46px;max-height:40px">` : html`<span class="brand-mark">${icon('notebook-pen')}</span>`}<div class="tiny subtle mt-2" style="text-align:center">Collapsed</div></div>
+        <div class="mock" style="grid-column:1/-1;background:linear-gradient(140deg,var(--accent),color-mix(in srgb,var(--accent) 40%,#0f172a));color:#fff;--login-logo-h:${cur.login_logo_height}px">
+          <div class="auth-art" style="padding:0;background:none;min-height:0;display:block">${pb.logo_url ? html`<img class="brand-logo" src="${pb.logo_url}" alt="">` : html`<span class="brand-mark">${icon('notebook-pen')}</span>`} <b>${cur.logo_display !== 'logo' || !pb.logo_url ? pb.app_name : ''}</b></div>
+          <div class="tiny mt-2" style="opacity:.8">Login page</div></div>`);
+    };
+    preview();
+    lf.addEventListener('input', preview);
+    lf.addEventListener('click', (e) => {
+      const m = e.target.closest('[data-v]');
+      if (m) { cur.logo_display = m.dataset.v; lf.querySelectorAll('[data-v]').forEach((x) => x.classList.toggle('active', x === m)); preview(); }
+      const p = e.target.closest('[data-preset]');
+      if (p) { const [a, w, g] = p.dataset.preset.split(',').map(Number); lf.logo_height.value = a; lf.logo_max_width.value = w; lf.login_logo_height.value = g; preview(); }
+    });
+    lf.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      await withLoading(lf.querySelector('[type=submit]'), async () => {
+        try { state.branding = await api.post('admin/branding-text', cur); emit('branding:changed'); toast('Logo layout saved', 'success'); } catch (err) { toastError(err); }
+      });
+    });
     el.querySelector('[data-text]').addEventListener('submit', async (e) => {
       e.preventDefault();
       try { state.branding = await api.post('admin/branding-text', formData(e.target)); emit('branding:changed'); toast('Branding saved', 'success'); } catch (err) { toastError(err); }
@@ -171,7 +219,8 @@ const tabs = {
         <div class="field"><label>Default theme</label><select class="select" name="default_theme">${['system', 'light', 'dark'].map((t) => html`<option value="${t}" ${s.default_theme === t ? 'selected' : ''}>${t}</option>`)}</select></div>
         <div class="field"><label>Default accent color</label><div class="row">${ACCENTS.slice(0, 6).map((c) => html`<label><input type="radio" name="default_accent" value="${c}" class="sr-only" ${s.default_accent === c ? 'checked' : ''}><span class="accent-dot" style="--sw:${c};width:26px;height:26px"></span></label>`)}<input type="color" data-custom-accent value="${s.default_accent}"></div></div>
         <div class="field"><label>Default reminder (minutes before)</label><input class="input" type="number" min="0" max="10080" name="default_reminder_minutes" value="${s.default_reminder_minutes}"></div>
-        <div class="field"><label>Self registration</label>${switchHtml('allow_registration', s.allow_registration === '1', 'Allow visitors to create accounts')}</div></div>`)}
+        <div class="field"><label>Self registration</label>${switchHtml('allow_registration', s.allow_registration === '1', 'Allow visitors to create accounts')}<span class="hint">Keep off so only administrators create accounts.</span></div>
+        <div class="field"><label>Note sharing</label>${switchHtml('allow_note_sharing', s.allow_note_sharing !== '0', 'Users may share notes with other users')}</div></div>`)}
       ${card('Uploads & trash', html`<div class="form-grid">
         <div class="field"><label>Max image size (MB)</label><input class="input" type="number" min="1" max="100" name="max_image_mb" value="${s.max_image_mb}"></div>
         <div class="field"><label>Max audio size (MB)</label><input class="input" type="number" min="1" max="200" name="max_audio_mb" value="${s.max_audio_mb}"></div>

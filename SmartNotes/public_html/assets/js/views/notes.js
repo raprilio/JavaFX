@@ -7,7 +7,7 @@ import { toast, toastError, menu, contextMenu, colorPicker, confirm, empty, skel
 import { newNote } from '../core/actions.js';
 import { uploadFile } from '../components/attachments.js';
 
-const FILTERS = [['all', 'All notes', 'notebook'], ['pinned', 'Pinned', 'pin'], ['favorite', 'Favorites', 'star'], ['recent', 'Recent', 'history'], ['archived', 'Archived', 'archive']];
+const FILTERS = [['all', 'All notes', 'notebook'], ['pinned', 'Pinned', 'pin'], ['favorite', 'Favorites', 'star'], ['shared', 'Shared with me', 'users'], ['shared_by_me', 'Shared by me', 'share-2'], ['recent', 'Recent', 'history'], ['archived', 'Archived', 'archive']];
 const TYPE_ICON = { checklist: 'list-checks', image: 'image', audio: 'mic', mixed: 'layers', rich: 'type', text: 'file-text' };
 
 function card(n, selecting, selected) {
@@ -26,16 +26,19 @@ function card(n, selecting, selected) {
         ${n.attachment_count ? html`<span>${icon('paperclip', 'sm')}${n.attachment_count}</span>` : ''}
         ${n.audio_count ? html`<span>${icon('mic', 'sm')}${n.audio_count}</span>` : ''}
         ${n.is_favorite ? html`<span style="color:var(--warning)">${icon('star', 'sm')}</span>` : ''}
+        ${n.shared ? html`<span class="badge info nc-owner">${icon('user', 'sm')} ${n.owner_name}${n.permission === 'edit' ? ' · edit' : ''}</span>` : n.share_count ? html`<span class="badge info" data-tip="Shared with ${n.share_count}">${icon('users', 'sm')} ${n.share_count}</span>` : ''}
         <span style="margin-left:auto" title="${n.updated_at}">${icon(TYPE_ICON[n.note_type] || 'file-text', 'sm')} ${timeAgo(n.updated_at)}</span>
       </div>
     </div>
-    <div class="nc-actions">
+    ${n.shared ? html`<div class="nc-actions">
+      <button class="btn ghost icon xs" data-a="spin" data-tip="${n.is_pinned ? 'Unpin' : 'Pin'}">${icon(n.is_pinned ? 'pin-off' : 'pin', 'sm')}</button>
+      <button class="btn ghost icon xs" data-a="leave" data-tip="Remove from my list">${icon('log-out', 'sm')}</button></div>` : html`<div class="nc-actions">
       <button class="btn ghost icon xs" data-a="pin" data-tip="${n.is_pinned ? 'Unpin' : 'Pin'}">${icon(n.is_pinned ? 'pin-off' : 'pin', 'sm')}</button>
       <button class="btn ghost icon xs" data-a="favorite" data-tip="${n.is_favorite ? 'Unfavorite' : 'Favorite'}">${icon('star', 'sm')}</button>
       <button class="btn ghost icon xs" data-a="color" data-tip="Color">${icon('palette', 'sm')}</button>
       <button class="btn ghost icon xs" data-a="archive" data-tip="${n.is_archived ? 'Unarchive' : 'Archive'}">${icon(n.is_archived ? 'archive-restore' : 'archive', 'sm')}</button>
       <button class="btn ghost icon xs" data-a="more" data-tip="More">${icon('more-horizontal', 'sm')}</button>
-    </div>
+    </div>`}
   </article>`;
 }
 
@@ -99,6 +102,8 @@ export default {
       if (!items.length) {
         const msg = f.q ? ['search-x', 'No matching notes', 'Try a different keyword or clear the filters.']
           : f.filter === 'archived' ? ['archive', 'No archived notes', 'Archived notes are kept out of your main list.']
+          : f.filter === 'shared' ? ['users', 'Nothing shared with you yet', 'When a colleague shares a note with you it appears here. Pin the ones you need often.']
+          : f.filter === 'shared_by_me' ? ['share-2', 'You have not shared any notes', 'Open a note and press Share to give specific users view or edit access.']
             : f.filter === 'pinned' ? ['pin', 'No pinned notes', 'Pin important notes to keep them on top.']
               : f.filter === 'favorite' ? ['star', 'No favorites yet', 'Star the notes you use most.']
                 : ['notebook-pen', 'Capture your first idea', 'Notes support rich text, checklists, images, audio and attachments.'];
@@ -229,11 +234,19 @@ export default {
       if (!cardEl) return;
       const n = items.find((x) => x.id === +cardEl.dataset.id);
       const a = e.target.closest('[data-a]')?.dataset.a;
-      if (selecting || e.target.closest('[data-select]') || e.ctrlKey || e.metaKey) {
+      if (n.shared && !a) return navigate(`/notes/${n.id}`);
+      if (!n.shared && (selecting || e.target.closest('[data-select]') || e.ctrlKey || e.metaKey)) {
         if (!selecting) { selecting = true; }
         selected.has(n.id) ? selected.delete(n.id) : selected.add(n.id);
         if (e.target.matches('[data-select]')) e.preventDefault();
         return paint();
+      }
+      if (a === 'spin') {
+        try { const r = await api.post(`notes/${n.id}/share-pin`, { pinned: !n.is_pinned }); toast(r.pinned ? 'Pinned' : 'Unpinned', 'success', { timeout: 1200 }); return load(true); } catch (err) { return toastError(err); }
+      }
+      if (a === 'leave') {
+        if (!(await confirm({ title: 'Remove shared note?', message: `"${n.title || 'Untitled'}" will disappear from your list. ${n.owner_name} keeps the note.`, confirmText: 'Remove' }))) return;
+        try { await api.post(`notes/${n.id}/leave`); toast('Removed from your shared notes', 'success'); return load(true); } catch (err) { return toastError(err); }
       }
       if (a === 'pin') return update(n, { is_pinned: !n.is_pinned }, n.is_pinned ? 'Unpinned' : 'Pinned to top');
       if (a === 'favorite') return update(n, { is_favorite: !n.is_favorite }, n.is_favorite ? 'Removed from favorites' : 'Added to favorites');
@@ -251,7 +264,7 @@ export default {
       const c = e.target.closest('.note-card');
       if (!c) return;
       const n = items.find((x) => x.id === +c.dataset.id);
-      if (n) moreMenu(e, n);
+      if (n && !n.shared) moreMenu(e, n);
     });
     const search = debounce(() => { sync(); load(true); }, 300);
     el.querySelector('[data-search]').addEventListener('input', (e) => { f.q = e.target.value.trim(); search(); });

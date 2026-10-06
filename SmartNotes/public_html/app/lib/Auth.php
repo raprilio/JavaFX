@@ -68,8 +68,12 @@ final class Auth
         $uid = (int) ($_SESSION['uid'] ?? 0);
         if ($uid > 0) {
             self::$user = self::loadUser($uid);
+            // An admin can sign a user out everywhere by bumping session_version.
+            if (self::$user && (int) self::$user['session_version'] !== (int) ($_SESSION['sv'] ?? 0)) {
+                self::$user = null;
+            }
             if (!self::$user) {
-                unset($_SESSION['uid']);
+                unset($_SESSION['uid'], $_SESSION['sv']);
             }
         }
         if (!self::$user) {
@@ -140,6 +144,7 @@ final class Auth
     {
         $u = DB::one(
             "SELECT u.id, u.email, u.name, u.role, u.permissions, u.status, u.created_at, u.last_login_at,
+                    u.must_change_password, u.session_version,
                     p.avatar_path, p.job_title, p.phone, p.bio
              FROM users u LEFT JOIN user_profiles p ON p.user_id = u.id
              WHERE u.id = ? AND u.deleted_at IS NULL",
@@ -169,6 +174,7 @@ final class Auth
             'phone' => $u['phone'],
             'bio' => $u['bio'],
             'created_at' => $u['created_at'],
+            'must_change_password' => (bool) ($u['must_change_password'] ?? false),
         ];
     }
 
@@ -203,6 +209,7 @@ final class Auth
     {
         session_regenerate_id(true);
         $_SESSION['uid'] = $userId;
+        $_SESSION['sv'] = (int) DB::val('SELECT session_version FROM users WHERE id = ?', [$userId]);
         $_SESSION['remember'] = $remember ? 1 : 0;
         $_SESSION['_csrf'] = random_key(32);
         DB::update('users', ['last_login_at' => now(), 'last_login_ip' => client_ip()], 'id = ?', [$userId]);
@@ -315,8 +322,23 @@ final class Auth
         self::setRememberCookie($selector . ':' . $newValidator, strtotime($row['expires_at']));
         session_regenerate_id(true);
         $_SESSION['uid'] = $user['id'];
+        $_SESSION['sv'] = (int) $user['session_version'];
         $_SESSION['remember'] = 1;
         return $user;
+    }
+
+    /** Invalidate every session and remember-me token of a user. */
+    public static function signOutEverywhere(int $userId): void
+    {
+        DB::run('UPDATE users SET session_version = session_version + 1 WHERE id = ?', [$userId]);
+        DB::run('DELETE FROM remember_tokens WHERE user_id = ?', [$userId]);
+    }
+
+    /** Keep the current session valid after the user's own session_version changed. */
+    public static function syncSessionVersion(int $userId): void
+    {
+        $_SESSION['sv'] = (int) DB::val('SELECT session_version FROM users WHERE id = ?', [$userId]);
+        self::refresh();
     }
 
     public static function currentRememberSelector(): ?string
@@ -370,7 +392,8 @@ final class Auth
         DB::tx(static function () use ($row, $password) {
             DB::update('users', ['password_hash' => password_hash($password, PASSWORD_DEFAULT)], 'id = ?', [$row['user_id']]);
             DB::update('password_resets', ['used_at' => now()], 'id = ?', [$row['id']]);
-            DB::run('DELETE FROM remember_tokens WHERE user_id = ?', [$row['user_id']]);
+            DB::update('users', ['must_change_password' => 0], 'id = ?', [$row['user_id']]);
+            self::signOutEverywhere((int) $row['user_id']);
         });
         Activity::log('auth.reset', 'user', (int) $row['user_id'], 'Password reset via e-mail link', (int) $row['user_id']);
     }
@@ -378,13 +401,14 @@ final class Auth
     // ------------------------------------------------------------ accounts
 
     /** Create a user with profile, settings and default categories. */
-    public static function createUser(string $name, string $email, string $password, string $role = 'user', array $permissions = []): int
+    public static function createUser(string $name, string $email, string $password, string $role = 'user', array $permissions = [], bool $mustChange = false): int
     {
         if (DB::val('SELECT id FROM users WHERE email = ?', [$email])) {
             throw new HttpException('This e-mail address is already registered.', 422, ['email' => 'taken']);
         }
-        return DB::tx(static function () use ($name, $email, $password, $role, $permissions) {
+        return DB::tx(static function () use ($name, $email, $password, $role, $permissions, $mustChange) {
             $id = DB::insert('users', [
+                'must_change_password' => $mustChange ? 1 : 0,
                 'name' => $name,
                 'email' => $email,
                 'password_hash' => password_hash($password, PASSWORD_DEFAULT),

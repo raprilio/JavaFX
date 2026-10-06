@@ -109,7 +109,8 @@ final class AdminController
             array_push($params, $like, $like);
         }
         $rows = DB::all(
-            'SELECT u.id, u.name, u.email, u.role, u.permissions, u.status, u.last_login_at, u.created_at, p.job_title,
+            'SELECT u.id, u.name, u.email, u.role, u.permissions, u.status, u.must_change_password, u.last_login_at, u.created_at, p.job_title,
+                    (SELECT COUNT(*) FROM note_shares s WHERE s.owner_id = u.id) AS shares,
                     (SELECT COUNT(*) FROM notes n WHERE n.user_id = u.id AND n.deleted_at IS NULL) AS notes,
                     (SELECT COUNT(*) FROM tasks t WHERE t.user_id = u.id AND t.deleted_at IS NULL) AS tasks,
                     (SELECT COALESCE(SUM(file_size),0) FROM note_attachments a WHERE a.user_id = u.id)
@@ -124,6 +125,8 @@ final class AdminController
             $r['notes'] = (int) $r['notes'];
             $r['tasks'] = (int) $r['tasks'];
             $r['storage'] = (int) $r['storage'];
+            $r['shares'] = (int) $r['shares'];
+            $r['must_change_password'] = (bool) $r['must_change_password'];
         }
         Http::ok(['items' => $rows, 'permissions' => Auth::PERMISSIONS]);
     }
@@ -143,7 +146,8 @@ final class AdminController
             throw new HttpException('Only administrators can create administrators.', 403);
         }
         $perms = Auth::isAdmin() ? self::permissionsFrom(Http::input('permissions')) : [];
-        $id = Auth::createUser($name, $email, $password, $role, $perms);
+        $mustChange = V::bool(Http::input('must_change_password', true)) === 1;
+        $id = Auth::createUser($name, $email, $password, $role, $perms, $mustChange);
         if (V::bool(Http::input('send_welcome')) && Mailer::isConfigured()) {
             $html = Mailer::template('Akun Anda telah dibuat', '<p>Halo ' . e($name) . ',</p><p>Akun ' . e((string) Settings::get('app_name', 'SmartNotes')) . ' telah dibuat untuk Anda.</p><p>Email: <strong>' . e($email) . '</strong></p><p style="margin:24px 0"><a class="btn" href="' . e(app_url()) . '">Masuk sekarang</a></p><p>Silakan gunakan password yang diberikan oleh administrator dan segera menggantinya di Settings &rarr; Security.</p>');
             Mailer::deliver(Mailer::queue($id, 'system', $email, 'Selamat datang di ' . Settings::get('app_name', 'SmartNotes'), $html));
@@ -190,6 +194,7 @@ final class AdminController
         $pw = (string) Http::input('password', '');
         if ($pw !== '') {
             $data['password_hash'] = password_hash(V::password($pw), PASSWORD_DEFAULT);
+            $data['must_change_password'] = V::bool(Http::input('must_change_password', true));
         }
         if (($data['role'] ?? $user['role']) !== 'admin' && $user['role'] === 'admin') {
             $admins = (int) DB::val("SELECT COUNT(*) FROM users WHERE role = 'admin' AND status = 'active' AND deleted_at IS NULL");
@@ -199,14 +204,45 @@ final class AdminController
         }
         DB::update('users', $data, 'id = ?', [$id]);
         if (($data['status'] ?? '') === 'suspended' || isset($data['password_hash'])) {
-            DB::run('DELETE FROM remember_tokens WHERE user_id = ?', [$id]);
+            // Suspension or a password reset signs the user out of every device immediately.
+            Auth::signOutEverywhere($id);
+            if ($id === $me['id']) {
+                Auth::syncSessionVersion($id);
+            }
         }
         Activity::log('admin.user_update', 'user', $id, 'Updated user ' . ($data['email'] ?? $user['email']));
         Http::ok();
     }
 
+    /** Sign a user out of every browser and device. */
+    public static function forceLogout(int $id): void
+    {
+        $me = Auth::require();
+        $user = DB::one('SELECT id, email, role FROM users WHERE id = ? AND deleted_at IS NULL', [$id]);
+        if (!$user) {
+            throw new HttpException('User not found.', 404);
+        }
+        if ($user['role'] === 'admin' && !Auth::isAdmin()) {
+            throw new HttpException('Only administrators can sign out administrators.', 403);
+        }
+        Auth::signOutEverywhere($id);
+        if ($id === $me['id']) {
+            Auth::syncSessionVersion($id);
+        }
+        Activity::log('admin.user_logout', 'user', $id, 'Signed out everywhere: ' . $user['email']);
+        Http::ok(null, 'The user has been signed out of all devices.');
+    }
+
+    private static function requireFullAdmin(): void
+    {
+        if (!Auth::isAdmin()) {
+            throw new HttpException('Only administrators can do this.', 403);
+        }
+    }
+
     public static function deleteUser(int $id): void
     {
+        self::requireFullAdmin();
         $me = Auth::require();
         if ($id === $me['id']) {
             throw new HttpException('You cannot delete your own account.', 422);
@@ -236,7 +272,7 @@ final class AdminController
     // ------------------------------------------------------------ settings
 
     private const GENERAL_KEYS = [
-        'app_name', 'app_tagline', 'default_theme', 'default_accent', 'allow_registration', 'trash_auto_delete_days',
+        'app_name', 'app_tagline', 'default_theme', 'default_accent', 'allow_registration', 'allow_note_sharing', 'trash_auto_delete_days',
         'max_image_mb', 'max_audio_mb', 'max_file_mb', 'default_reminder_minutes', 'web_cron_enabled',
     ];
 
@@ -268,7 +304,7 @@ final class AdminController
         if (array_key_exists('default_accent', $in)) {
             $v['default_accent'] = V::color($in['default_accent']) ?? '#6366f1';
         }
-        foreach (['allow_registration', 'web_cron_enabled'] as $k) {
+        foreach (['allow_registration', 'web_cron_enabled', 'allow_note_sharing'] as $k) {
             if (array_key_exists($k, $in)) {
                 $v[$k] = (string) V::bool($in[$k]);
             }
@@ -294,6 +330,14 @@ final class AdminController
     public static function saveBrandingText(): void
     {
         $v = [];
+        if (Http::has('logo_display')) {
+            $v['logo_display'] = V::enum(Http::input('logo_display'), ['logo', 'logo_name', 'name'], 'logo');
+        }
+        foreach (['logo_height' => [16, 120], 'logo_max_width' => [40, 240], 'login_logo_height' => [20, 160]] as $k => [$min, $max]) {
+            if (Http::has($k)) {
+                $v[$k] = (string) (V::int(Http::input($k), $min, $max) ?? $min);
+            }
+        }
         if (Http::has('app_name')) {
             $v['app_name'] = V::str(Http::input('app_name'), 60, true, 'app name');
         }
@@ -525,6 +569,7 @@ final class AdminController
 
     public static function restoreBackup(string $name): void
     {
+        self::requireFullAdmin();
         if (Http::input('confirm') !== 'RESTORE') {
             throw new HttpException('Type RESTORE to confirm.', 422);
         }
@@ -543,6 +588,7 @@ final class AdminController
 
     public static function restoreUpload(): void
     {
+        self::requireFullAdmin();
         if (Http::input('confirm') !== 'RESTORE') {
             throw new HttpException('Type RESTORE to confirm.', 422);
         }

@@ -17,7 +17,7 @@ const NAV = [
   { path: '/mindmaps', label: 'Mind Maps', icon: 'network' },
   { path: '/flowcharts', label: 'Flowcharts', icon: 'workflow' },
   { path: '/audio', label: 'Audio Notes', icon: 'mic' },
-  { path: '/files', label: 'Files', icon: 'folder-open' },
+  { path: '/drive', label: 'Drive', icon: 'hard-drive' },
   { path: '/trash', label: 'Trash', icon: 'trash-2' },
 ];
 
@@ -28,9 +28,12 @@ export const shell = {
   setTitle(t) { const el = $('.topbar-title', shellEl); if (el) el.textContent = t || ''; },
 };
 
-function brandHtml() {
-  const b = state.branding || {};
-  return html`<a class="brand" href="#/">${b.logo_url ? html`<img class="brand-logo" src="${b.logo_url}" alt="${b.app_name}">` : html`<span class="brand-mark">${icon('notebook-pen')}</span><span class="brand-name">${b.app_name || 'SmartNotes'}</span>`}</a>`;
+export function brandHtml(b = state.branding || {}) {
+  const name = b.app_name || 'SmartNotes';
+  const mode = b.logo_url ? b.logo_display || 'logo' : 'name';
+  if (mode === 'logo') return html`<a class="brand" href="#/" aria-label="${name}"><img class="brand-logo" src="${b.logo_url}" alt="${name}"></a>`;
+  if (mode === 'logo_name') return html`<a class="brand" href="#/"><img class="brand-logo" src="${b.logo_url}" alt=""><span class="brand-name truncate">${name}</span></a>`;
+  return html`<a class="brand" href="#/"><span class="brand-mark">${icon('notebook-pen')}</span><span class="brand-name truncate">${name}</span></a>`;
 }
 
 function sidebarHtml() {
