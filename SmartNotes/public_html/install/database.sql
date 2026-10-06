@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS `user_settings` (
   `default_reminder`       SMALLINT NULL DEFAULT 30 COMMENT 'minutes before',
   `last_daily_agenda_at`   DATE NULL,
   `last_weekly_agenda_at`  DATE NULL,
+  `dashboard_hidden`       TEXT NULL COMMENT 'JSON list of hidden dashboard widgets',
   `updated_at`             DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`user_id`),
   CONSTRAINT `fk_usettings_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
@@ -167,6 +168,7 @@ CREATE TABLE IF NOT EXISTS `notes` (
   `is_pinned`       TINYINT(1) NOT NULL DEFAULT 0,
   `is_favorite`     TINYINT(1) NOT NULL DEFAULT 0,
   `is_archived`     TINYINT(1) NOT NULL DEFAULT 0,
+  `is_locked`       TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Requires the owner''s notes PIN to open',
   `checklist_total` SMALLINT UNSIGNED NOT NULL DEFAULT 0,
   `checklist_done`  SMALLINT UNSIGNED NOT NULL DEFAULT 0,
   `last_opened_at`  DATETIME NULL,
@@ -211,6 +213,7 @@ CREATE TABLE IF NOT EXISTS `meetings` (
   `status`            ENUM('scheduled','completed','cancelled') NOT NULL DEFAULT 'scheduled',
   `reminder_minutes`  SMALLINT NULL,
   `color`             VARCHAR(9) NULL,
+  `share_all`         TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Visible to every user',
   `created_at`        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at`        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `deleted_at`        DATETIME NULL,
@@ -231,6 +234,20 @@ CREATE TABLE IF NOT EXISTS `meeting_participants` (
   PRIMARY KEY (`id`),
   KEY `idx_mp_meeting` (`meeting_id`),
   CONSTRAINT `fk_mp_meeting` FOREIGN KEY (`meeting_id`) REFERENCES `meetings` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `meeting_shares` (
+  `id`          INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `meeting_id`  INT UNSIGNED NOT NULL,
+  `owner_id`    INT UNSIGNED NOT NULL,
+  `user_id`     INT UNSIGNED NOT NULL COMMENT 'Recipient (read-only access)',
+  `created_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_mshare` (`meeting_id`, `user_id`),
+  KEY `idx_mshare_user` (`user_id`),
+  CONSTRAINT `fk_mshare_meeting` FOREIGN KEY (`meeting_id`) REFERENCES `meetings` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_mshare_owner` FOREIGN KEY (`owner_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_mshare_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `tasks` (
@@ -347,7 +364,7 @@ CREATE TABLE IF NOT EXISTS `note_attachments` (
   `file_path`      VARCHAR(255) NOT NULL COMMENT 'Relative to uploads/',
   `thumb_path`     VARCHAR(255) NULL,
   `mime_type`      VARCHAR(120) NOT NULL,
-  `file_kind`      ENUM('image','audio','document','archive','other') NOT NULL DEFAULT 'other',
+  `file_kind`      ENUM('image','audio','video','document','archive','other') NOT NULL DEFAULT 'other',
   `file_size`      BIGINT UNSIGNED NOT NULL DEFAULT 0,
   `file_hash`      CHAR(64) NULL,
   `width`          INT UNSIGNED NULL,
@@ -398,6 +415,16 @@ CREATE TABLE IF NOT EXISTS `note_shares` (
   CONSTRAINT `fk_share_note` FOREIGN KEY (`note_id`) REFERENCES `notes` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_share_owner` FOREIGN KEY (`owner_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_share_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `note_pins` (
+  `user_id`          INT UNSIGNED NOT NULL,
+  `pin_hash`         VARCHAR(255) NOT NULL COMMENT 'password_hash() of the notes PIN',
+  `failed_attempts`  SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+  `locked_until`     DATETIME NULL COMMENT 'Throttle after too many wrong PINs',
+  `updated_at`       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`user_id`),
+  CONSTRAINT `fk_npin_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `audio_notes` (
@@ -661,6 +688,7 @@ INSERT IGNORE INTO `settings` (`setting_key`, `setting_value`) VALUES
 ('max_image_mb', '8'),
 ('max_audio_mb', '25'),
 ('max_file_mb', '20'),
+('max_video_mb', '100'),
 ('default_reminder_minutes', '30'),
 ('web_cron_enabled', '1'),
 ('default_note_categories', '["Work","Personal","Project","Meeting","Ideas","Important","Finance","Development"]'),
@@ -672,7 +700,7 @@ INSERT IGNORE INTO `settings` (`setting_key`, `setting_value`) VALUES
 ('smtp_encryption', 'tls'),
 ('smtp_from_name', 'SmartNotes'),
 ('smtp_from_email', ''),
-('schema_version', '2'),
+('schema_version', '3'),
 ('allow_note_sharing', '1'),
 ('logo_display', 'logo'),
 ('logo_height', '34'),

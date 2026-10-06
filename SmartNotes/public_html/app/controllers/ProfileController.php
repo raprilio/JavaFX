@@ -102,6 +102,11 @@ final class ProfileController
             'email_notifications' => static fn($v) => V::bool($v),
             'daily_agenda_time' => static fn($v) => V::time($v) ?? '07:00:00',
             'default_reminder' => static fn($v) => V::int($v, 0, 10080),
+            // Dashboard widgets the user chose to hide (keys like "recent_notes", "stat_audio").
+            'dashboard_hidden' => static fn($v) => json_encode(array_values(array_unique(array_filter(
+                array_slice(is_array($v) ? $v : [], 0, 60),
+                static fn($k) => is_string($k) && preg_match('/^[a-z][a-z_]{1,39}$/', $k)
+            )))),
         ];
         $data = [];
         foreach ($map as $k => $fn) {

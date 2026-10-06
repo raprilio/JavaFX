@@ -224,6 +224,7 @@ const tabs = {
       ${card('Uploads & trash', html`<div class="form-grid">
         <div class="field"><label>Max image size (MB)</label><input class="input" type="number" min="1" max="100" name="max_image_mb" value="${s.max_image_mb}"></div>
         <div class="field"><label>Max audio size (MB)</label><input class="input" type="number" min="1" max="200" name="max_audio_mb" value="${s.max_audio_mb}"></div>
+        <div class="field"><label>Max video size (MB)</label><input class="input" type="number" min="1" max="2048" name="max_video_mb" value="${s.max_video_mb || 100}"><span class="hint">Videos are stored in the uploads folder on your hosting, not in MySQL.</span></div>
         <div class="field"><label>Max other file size (MB)</label><input class="input" type="number" min="1" max="500" name="max_file_mb" value="${s.max_file_mb}"><span class="hint">The PHP server limit also applies (upload_max_filesize).</span></div>
         <div class="field"><label>Auto-delete trash after (days)</label><input class="input" type="number" min="0" max="3650" name="trash_auto_delete_days" value="${s.trash_auto_delete_days}"><span class="hint">0 = never delete automatically.</span></div></div>`)}
       ${card('Application URL', html`<div class="field"><label>Public URL</label><input class="input" name="app_url" value="${s.app_url || ''}" placeholder="https://notes.example.com/"><span class="hint">Used for links inside e-mails sent by the cron job.</span></div>`)}

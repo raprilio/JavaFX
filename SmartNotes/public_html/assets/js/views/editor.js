@@ -13,6 +13,7 @@ import { audioItemHtml, bindAudioPlayers, openRecorder, uploadAudioFile, peaksFr
 import { openTaskForm, refreshTags } from '../components/forms.js';
 import { openShareDialog } from '../components/share.js';
 import { openFilePreview } from '../components/filePreview.js';
+import { renderLockScreen, unlockNotes, toggleNoteLock, lockNow } from '../components/notePin.js';
 
 export default {
   title: 'Note',
@@ -23,6 +24,13 @@ export default {
       note = await api.get(`notes/${id}`);
     } catch (e) {
       el.innerHTML = String(html`<div class="content"><div class="empty"><div class="empty-art">${icon('file-x', 'xl')}</div><h3>Note not found</h3><p>${e.message}</p><a class="btn primary" href="#/notes">Back to notes</a></div></div>`);
+      return;
+    }
+    // Re-mount the route (proper cleanup) after the lock state changes.
+    const remount = () => navigate(location.hash.slice(1) || `/notes/${id}`);
+    if (note.locked) {
+      ctx.setTitle(note.title || 'Locked note');
+      renderLockScreen(el, note, remount);
       return;
     }
     const isNew = ctx.query.new === '1';
@@ -48,6 +56,7 @@ export default {
             <div class="grow"></div>
             ${trashed ? html`<span class="badge danger">${icon('trash-2', 'sm')} In trash</span><button class="btn sm" data-a="restore">${icon('rotate-ccw', 'sm')} Restore</button>` : ''}
             ${isOwner && !trashed && state.branding?.allow_note_sharing !== false ? html`<button class="btn ghost sm ${(note.shares || []).length ? 'active' : ''}" data-a="share" data-tip="Share with users">${icon('users', 'sm')}<span class="hide-sm">Share</span><span data-share-count>${(note.shares || []).length || ''}</span></button>` : ''}
+            ${isOwner && note.is_locked && !trashed ? html`<button class="btn ghost icon sm active" data-a="lock-now" data-tip="Locked note · lock now">${icon('lock', 'sm')}</button>` : ''}
             ${isOwner ? html`<button class="btn ghost icon sm ${note.is_pinned ? 'active' : ''}" data-a="pin" data-tip="Pin">${icon('pin', 'sm')}</button>
             <button class="btn ghost icon sm ${note.is_favorite ? 'active' : ''}" data-a="favorite" data-tip="Favorite">${icon('star', 'sm')}</button>
             <button class="btn ghost icon sm" data-a="color" data-tip="Color & background">${icon('palette', 'sm')}</button>`
@@ -145,6 +154,7 @@ export default {
       if (content !== lastSaved.content) payload.content = content;
       if (!Object.keys(payload).length) { dirty = false; setSave('', 'Saved'); return; }
       saving = true;
+      let relock = false;
       setSave('saving', 'Saving…');
       try {
         payload.base_updated_at = note.updated_at;
@@ -159,7 +169,11 @@ export default {
         $('[data-upd2]').textContent = fmtDateTime(r.updated_at);
         ctx.setTitle(title || 'Untitled note');
       } catch (e) {
-        if (e.status === 409) {
+        if (e.status === 423) {
+          // The unlock window expired while editing: ask for the PIN after this attempt, then save again.
+          setSave('error', 'Locked — enter your PIN');
+          relock = true;
+        } else if (e.status === 409) {
           // Someone else saved a newer version: never overwrite it silently.
           conflict = true;
           setSave('error', 'Conflict — not saved');
@@ -171,6 +185,7 @@ export default {
           setTimeout(() => dirty && save(), 5000);
         }
       } finally { saving = false; }
+      if (relock && await unlockNotes('Your notes were locked again after a period of inactivity. Enter your PIN to save your changes.')) save();
     }
     async function saveField(data) {
       try {
@@ -196,8 +211,8 @@ export default {
     }
     function renderFiles() {
       $('[data-cnt-files]').textContent = files.length;
-      $('[data-files]').innerHTML = files.length ? String(html`<h4>${icon('paperclip', 'sm')} Files <span class="subtle">${files.length}</span></h4>${files.map((f) => html`<div class="file-row" data-file="${f.id}">
-        ${fileBadge(f.name)}<div class="grow" style="min-width:0"><div class="truncate" style="font-weight:560">${f.name}</div><div class="tiny subtle">${fmtBytes(f.size)} · ${timeAgo(f.created_at)}</div></div>
+      $('[data-files]').innerHTML = files.length ? String(html`<h4>${icon('paperclip', 'sm')} Files <span class="subtle">${files.length}</span></h4>${files.map((f) => html`${f.kind === 'video' ? html`<video class="note-video" controls playsinline preload="metadata" src="${f.url}"></video>` : ''}<div class="file-row" data-file="${f.id}">
+        ${f.kind === 'video' ? html`<span class="file-icon video-badge" style="--fc:#0ea5e9">${icon('video', 'sm')}</span>` : fileBadge(f.name)}<div class="grow" style="min-width:0"><div class="truncate" style="font-weight:560">${f.name}</div><div class="tiny subtle">${fmtBytes(f.size)} · ${timeAgo(f.created_at)}</div></div>
         <a class="btn ghost icon sm" href="${f.url}" target="_blank" rel="noopener" data-tip="Open">${icon('external-link', 'sm')}</a>
         <a class="btn ghost icon sm" href="${f.download_url}" download data-tip="Download">${icon('download', 'sm')}</a>
         <button class="btn ghost icon sm" data-del-file="${f.id}" data-tip="Remove">${icon('trash-2', 'sm')}</button></div>`)}`) : '';
@@ -312,6 +327,7 @@ export default {
       if (a === 'favorite') { const r = await saveField({ is_favorite: !note.is_favorite }); btn.classList.toggle('active', !!r?.is_favorite); toast(r?.is_favorite ? 'Added to favorites' : 'Removed from favorites', 'success', { timeout: 1500 }); }
       if (a === 'color') colorPicker(btn, note.color, async (c) => { await saveField({ color: c }); main.dataset.nc = note.color || ''; }, { backgrounds: true, currentBg: note.background, onBg: async (b) => { await saveField({ background: b }); main.dataset.nbg = note.background || ''; } });
       if (a === 'info') $('[data-inspector]').classList.toggle('open');
+      if (a === 'lock-now') { await save(); await lockNow().catch(toastError); remount(); }
       if (a === 'record') record();
       if (a === 'attach') uploadFiles(await pickFiles());
       if (a === 'restore') { await api.post(`items/note/${id}/restore`).catch(toastError); toast('Note restored', 'success'); navigate(`/notes/${id}`, { replace: true }); }
@@ -339,6 +355,7 @@ export default {
         menu(btn, [
           { label: note.is_archived ? 'Unarchive' : 'Archive', icon: 'archive', onClick: async () => { const r = await saveField({ is_archived: !note.is_archived }); toast(r?.is_archived ? 'Note archived' : 'Note unarchived', 'success'); } },
           { label: 'Duplicate', icon: 'copy', onClick: async () => { await save(); const r = await api.post(`notes/${id}/duplicate`).catch(toastError); if (r) navigate(`/notes/${r.id}`); } },
+          ...(trashed ? [] : [{ label: note.is_locked ? 'Remove lock' : 'Lock with PIN', icon: note.is_locked ? 'lock-open' : 'lock', onClick: async () => { await save(); if (await toggleNoteLock(note)) remount(); } }]),
           { label: 'Export as HTML', icon: 'file-code', onClick: () => exportNote('html') },
           { label: 'Export as text', icon: 'file-text', onClick: () => exportNote('txt') },
           { label: 'Print / save as PDF', icon: 'printer', onClick: () => window.print() },

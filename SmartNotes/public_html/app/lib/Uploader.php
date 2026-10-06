@@ -23,6 +23,9 @@ final class Uploader
         'ogg' => [['audio/ogg', 'application/ogg', 'video/ogg'], 'audio'],
         'oga' => [['audio/ogg', 'application/ogg'], 'audio'],
         'webm' => [['audio/webm', 'video/webm'], 'audio'],
+        // Video files (stored on disk like everything else; only metadata goes to MySQL).
+        'mov' => [['video/quicktime'], 'video'],
+        'm4v' => [['video/x-m4v', 'video/mp4'], 'video'],
         'pdf' => [['application/pdf'], 'document'],
         'doc' => [['application/msword', 'application/vnd.ms-office', 'application/CDFV2', 'application/x-ole-storage'], 'document'],
         'docx' => [['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/zip', 'application/octet-stream'], 'document'],
@@ -34,6 +37,9 @@ final class Uploader
         'csv' => [['text/csv', 'text/plain', 'application/csv'], 'document'],
         'zip' => [['application/zip', 'application/x-zip-compressed', 'application/x-zip'], 'archive'],
     ];
+
+    /** MP4 / WebM can hold audio or video: they are stored as video wherever video is accepted. */
+    private const VIDEO_MIME = ['mp4' => 'video/mp4', 'm4v' => 'video/mp4', 'webm' => 'video/webm', 'mov' => 'video/quicktime'];
 
     /** Canonical MIME types we send back when serving files. */
     public const SERVE_MIME = [
@@ -80,6 +86,10 @@ final class Uploader
             throw new HttpException('File type ".' . $ext . '" is not allowed.', 422);
         }
         [$mimes, $kind] = self::TYPES[$ext];
+        if (in_array('video', $kinds, true) && in_array($ext, ['mp4', 'webm'], true)) {
+            $kind = 'video';
+            $mimes = array_merge($mimes, ['video/mp4', 'video/webm', 'audio/mp4', 'audio/webm']);
+        }
         if (!in_array($kind, $kinds, true)) {
             throw new HttpException('This file type is not allowed here.', 422);
         }
@@ -88,6 +98,7 @@ final class Uploader
         $limitMb = match ($kind) {
             'image' => Settings::int('max_image_mb', 8),
             'audio' => Settings::int('max_audio_mb', 25),
+            'video' => Settings::int('max_video_mb', 100),
             default => Settings::int('max_file_mb', 20),
         };
         if ($size <= 0) {
@@ -153,7 +164,7 @@ final class Uploader
             'original_name' => $original,
             'file_path' => $rel . '/' . $stored,
             'thumb_path' => $thumb,
-            'mime_type' => self::SERVE_MIME[$ext] ?? $mime,
+            'mime_type' => $kind === 'video' ? self::VIDEO_MIME[$ext] : (self::SERVE_MIME[$ext] ?? $mime),
             'file_kind' => $kind,
             'file_size' => (int) filesize($dest),
             'file_hash' => hash_file('sha256', $dest),
@@ -266,7 +277,7 @@ final class Uploader
         header('ETag: ' . $etag);
         header('Accept-Ranges: bytes');
         // Only images/audio/PDF can be shown inline; everything else downloads.
-        $inlineOk = $inline && (str_starts_with($mime, 'image/') || str_starts_with($mime, 'audio/') || $mime === 'application/pdf');
+        $inlineOk = $inline && (str_starts_with($mime, 'image/') || str_starts_with($mime, 'audio/') || str_starts_with($mime, 'video/') || $mime === 'application/pdf');
         $disp = $inlineOk ? 'inline' : 'attachment';
         header("Content-Disposition: $disp; filename=\"" . addcslashes(preg_replace('/[^\x20-\x7E]/', '_', $downloadName) ?? 'file', '"\\') . "\"; filename*=UTF-8''" . rawurlencode($downloadName));
         header('Content-Type: ' . $mime);

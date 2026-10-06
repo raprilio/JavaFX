@@ -8,7 +8,7 @@ import { uploadFile, pickFiles } from '../components/attachments.js';
 import { openFilePreview, openFileDetails } from '../components/filePreview.js';
 
 const VIEWS = [['drive', 'My Drive', 'hard-drive'], ['starred', 'Starred', 'star'], ['recent', 'Recent', 'clock'], ['all', 'All files', 'files']];
-const KINDS = [['', 'All types'], ['pdf', 'PDF'], ['image', 'Images'], ['document', 'Documents'], ['audio', 'Audio'], ['archive', 'Archives']];
+const KINDS = [['', 'All types'], ['pdf', 'PDF'], ['image', 'Images'], ['video', 'Videos'], ['document', 'Documents'], ['audio', 'Audio'], ['archive', 'Archives']];
 
 /** Flat folder list -> indented options for selects. */
 export function folderOptions(list) {
@@ -77,7 +77,7 @@ export default {
 
     function fileCard(x) {
       return html`<div class="file-card" data-id="${x.id}" draggable="true" tabindex="0">
-        <div class="fc-thumb">${x.kind === 'image' ? html`<img src="${x.thumb_url}" alt="" loading="lazy">` : fileBadge(x.name)}
+        <div class="fc-thumb">${x.kind === 'image' ? html`<img src="${x.thumb_url}" alt="" loading="lazy">` : x.kind === 'video' ? html`<video src="${x.url}#t=0.5" preload="metadata" muted playsinline tabindex="-1"></video><span class="fc-play">${icon('play', 'sm')}</span>` : fileBadge(x.name)}
           ${x.preview === 'pdf' ? html`<span class="badge danger fc-type">PDF</span>` : ''}</div>
         <div class="fc-info"><div class="row" style="gap:6px"><div class="fc-name grow" title="${x.name}">${x.name}</div>${x.is_starred ? html`<span style="color:var(--warning)">${icon('star', 'sm')}</span>` : ''}</div>
           <div class="fc-sub">${fmtBytes(x.size)} · ${timeAgo(x.created_at)}${f.view !== 'drive' && x.folder_name ? html` · ${icon('folder', 'sm')} ${x.folder_name}` : ''}</div>

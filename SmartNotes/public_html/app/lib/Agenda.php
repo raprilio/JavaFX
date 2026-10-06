@@ -52,10 +52,12 @@ final class Agenda
         }
 
         if (in_array('meeting', $types, true)) {
+            // Own meetings + meetings shared with this user (read-only for them).
             $rows = DB::all(
-                "SELECT id, title, description, meeting_date, start_time, end_time, location, meeting_url, status, color
-                 FROM meetings WHERE user_id = ? AND deleted_at IS NULL AND meeting_date BETWEEN ? AND ?",
-                [$userId, date('Y-m-d', $fromTs), date('Y-m-d', $toTs)]
+                "SELECT m.id, m.user_id, m.title, m.description, m.meeting_date, m.start_time, m.end_time, m.location, m.meeting_url, m.status, m.color, o.name AS owner_name
+                 FROM meetings m JOIN users o ON o.id = m.user_id
+                 WHERE " . MeetingsController::visibleSql('m') . " AND m.deleted_at IS NULL AND m.meeting_date BETWEEN ? AND ?",
+                [$userId, $userId, date('Y-m-d', $fromTs), date('Y-m-d', $toTs)]
             );
             foreach ($rows as $r) {
                 $items[] = [
@@ -71,6 +73,8 @@ final class Agenda
                     'meeting_url' => $r['meeting_url'],
                     'color' => $r['color'],
                     'status' => $r['status'],
+                    'shared' => (int) $r['user_id'] !== $userId,
+                    'owner_name' => (int) $r['user_id'] !== $userId ? $r['owner_name'] : null,
                 ];
             }
         }

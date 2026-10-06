@@ -64,7 +64,7 @@ export default {
             const done = it.status === 'completed';
             return {
               id: it.uid,
-              title: (it.type === 'task' ? '☐ ' : '') + it.title,
+              title: (it.type === 'task' ? '☐ ' : '') + (it.shared ? '👥 ' : '') + it.title,
               start: it.start.replace(' ', 'T'),
               end: it.type === 'task' ? undefined : it.end.replace(' ', 'T'),
               allDay: it.all_day,
@@ -72,7 +72,9 @@ export default {
               borderColor: color,
               textColor: '#fff',
               classNames: [`ev-${it.type}`, done ? 'done' : '', it.status === 'cancelled' ? 'done' : ''],
-              durationEditable: it.type !== 'task',
+              // Meetings shared with me are read-only (only the owner can move them).
+              startEditable: !it.shared,
+              durationEditable: it.type !== 'task' && !it.shared,
               extendedProps: it,
             };
           }));

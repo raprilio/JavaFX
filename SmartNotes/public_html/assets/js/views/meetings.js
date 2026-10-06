@@ -8,6 +8,7 @@ import { toast, toastError, menu, confirm, empty, skeletonRows } from '../core/u
 import { openMeetingForm, openTaskForm } from '../components/forms.js';
 import { createRTE } from '../components/rte.js';
 import { mountAttachments } from '../components/attachments.js';
+import { openMeetingShare } from '../components/meetingShare.js';
 
 const STATUS_BADGE = { scheduled: 'accent', completed: 'success', cancelled: 'danger' };
 const t5 = (t) => (t || '').slice(0, 5);
@@ -22,24 +23,26 @@ function meetingCard(m) {
         ${m.location ? html`<span>${icon('map-pin', 'sm')} ${m.location}</span>` : ''}
         ${m.meeting_url ? html`<span>${icon('video', 'sm')} Online</span>` : ''}
         ${m.task_count ? html`<span>${icon('square-check-big', 'sm')} ${m.task_count}</span>` : ''}
-        ${m.has_minutes ? html`<span>${icon('notebook-pen', 'sm')} Notes</span>` : ''}</div>
+        ${m.has_minutes ? html`<span>${icon('notebook-pen', 'sm')} Notes</span>` : ''}
+        ${m.shared ? html`<span class="badge info">${icon('user', 'sm')} ${m.owner_name}</span>` : m.share_all ? html`<span class="badge info" data-tip="Shared with all users">${icon('globe', 'sm')} Everyone</span>` : m.share_count ? html`<span class="badge info" data-tip="Shared with ${m.share_count}">${icon('users', 'sm')} ${m.share_count}</span>` : ''}</div>
       ${m.participant_count ? html`<div class="row mt-1" style="gap:8px"><div class="avatar-stack">${m.participant_names.map((n) => html`<span class="avatar sm">${initials(n)}</span>`)}</div><span class="small subtle">${m.participant_count} participant${m.participant_count > 1 ? 's' : ''}</span></div>` : ''}
     </div></a>`;
 }
 
 async function renderList(el, ctx) {
-  const f = { scope: ctx.query.scope || 'upcoming', q: ctx.query.q || '' };
+  const f = { scope: ctx.query.scope || 'upcoming', q: ctx.query.q || '', owner: ctx.query.owner || '' };
   el.innerHTML = String(html`
     <div class="page-head"><div><h1>Meetings</h1><p>Plan meetings, capture minutes and track follow-up tasks.</p></div>
       <button class="btn primary" data-act="new">${icon('plus', 'sm')} New meeting</button></div>
     <div class="toolbar"><div class="chips">${[['upcoming', 'Upcoming'], ['today', 'Today'], ['past', 'Past'], ['all', 'All']].map(([v, l]) => html`<button class="chip ${f.scope === v ? 'active' : ''}" data-scope="${v}">${l}</button>`)}</div>
+      <select class="select sm" style="width:auto" data-owner aria-label="Owner">${[['', 'Everyone\'s'], ['me', 'Mine'], ['others', 'Shared with me']].map(([v, l]) => html`<option value="${v}" ${f.owner === v ? 'selected' : ''}>${l}</option>`)}</select>
       <div class="grow"></div><div class="input-icon" style="width:min(260px,100%)">${icon('search', 'sm')}<input class="input sm" type="search" placeholder="Search meetings…" value="${f.q}" data-search></div></div>
     <div data-list class="grid grid-2">${skeletonRows(4)}</div>`);
   const list = el.querySelector('[data-list]');
   async function load() {
     try {
-      const rows = await api.get('meetings', { scope: f.scope, q: f.q });
-      setQuery({ scope: f.scope !== 'upcoming' ? f.scope : '', q: f.q });
+      const rows = await api.get('meetings', { scope: f.scope, q: f.q, owner: f.owner });
+      setQuery({ scope: f.scope !== 'upcoming' ? f.scope : '', q: f.q, owner: f.owner });
       list.innerHTML = rows.length ? rows.map((m) => String(meetingCard(m))).join('')
         : String(html`<div style="grid-column:1/-1">${empty({ icon: 'users', title: f.q ? 'No meetings found' : f.scope === 'upcoming' ? 'No upcoming meetings' : 'No meetings', text: 'Schedule a meeting with participants, location and an automatic e-mail reminder.', action: '<button class="btn primary" data-act="new">Schedule a meeting</button>' })}</div>`);
     } catch (e) { toastError(e); }
@@ -51,6 +54,7 @@ async function renderList(el, ctx) {
   });
   const search = debounce(load, 300);
   el.querySelector('[data-search]').addEventListener('input', (e) => { f.q = e.target.value.trim(); search(); });
+  el.querySelector('[data-owner]').addEventListener('change', (e) => { f.owner = e.target.value; load(); });
   await load();
   return on('meetings:changed', load);
 }
@@ -63,6 +67,7 @@ async function renderDetail(el, ctx) {
     return;
   }
   ctx.setTitle(m.title);
+  const isOwner = m.access !== 'viewer';
   let minutesDirty = false;
   let rte;
 
@@ -79,40 +84,43 @@ async function renderDetail(el, ctx) {
             ${m.reminder_minutes !== null ? html`<span>${icon('bell', 'sm')} ${m.reminder_minutes ? `${m.reminder_minutes} min before` : 'At start'}</span>` : ''}</div></div>
         <div class="row wrap">
           ${m.meeting_url ? html`<a class="btn primary" href="${m.meeting_url}" target="_blank" rel="noopener">${icon('video', 'sm')} Join meeting</a>` : ''}
+          ${isOwner ? html`<button class="btn ${m.shares?.all || m.shares?.users.length ? 'active' : ''}" data-a="share">${icon(m.shares?.all ? 'globe' : 'users', 'sm')} Share${m.shares?.all ? ' · Everyone' : m.shares?.users.length ? ` · ${m.shares.users.length}` : ''}</button>
           <button class="btn" data-a="edit">${icon('pencil', 'sm')} Edit</button>
-          <button class="btn icon" data-a="more" aria-label="More">${icon('more-horizontal', 'sm')}</button></div>
+          <button class="btn icon" data-a="more" aria-label="More">${icon('more-horizontal', 'sm')}</button>` : ''}</div>
       </div>
+      ${isOwner ? '' : html`<div class="share-banner mb-2">${icon('users', 'sm')}<span>Shared by <b>${m.owner?.name || 'another user'}</b> · view only — you'll get the reminder for this meeting.</span></div>`}
       <div class="dash-grid">
         <div class="col" style="gap:var(--gap)">
           ${m.description ? html`<div class="card card-pad"><div class="section-title">${icon('list', 'sm')} Agenda</div><p style="white-space:pre-line;margin:0">${m.description}</p></div>` : ''}
           <div class="card" style="overflow:hidden"><div class="card-head" style="padding-bottom:12px"><h3>${icon('notebook-pen', 'sm')} Meeting notes</h3>
             <div class="row"><span class="save-state small" data-min-state></span>
-            ${past && m.status === 'scheduled' ? html`<button class="btn sm soft" data-a="complete">${icon('check', 'sm')} Save & mark completed</button>` : ''}
-            <button class="btn sm primary" data-a="save-min">${icon('save', 'sm')} Save</button></div></div>
+            ${isOwner && past && m.status === 'scheduled' ? html`<button class="btn sm soft" data-a="complete">${icon('check', 'sm')} Save & mark completed</button>` : ''}
+            ${isOwner ? html`<button class="btn sm primary" data-a="save-min">${icon('save', 'sm')} Save</button>` : ''}</div></div>
             <div data-min-toolbar></div><div style="padding:16px 20px 22px" data-min-editor></div></div>
           <div class="card card-pad" data-attachments></div>
         </div>
         <div class="col" style="gap:var(--gap)">
           <div class="card card-pad"><div class="section-title">${icon('users', 'sm')} Participants <span class="subtle small">${m.participants.length}</span></div>
             ${m.participants.length ? m.participants.map((p) => html`<span class="participant"><span class="avatar sm">${initials(p.name)}</span>${p.name}${p.email && p.email !== p.name ? html`<span class="subtle tiny">${p.email}</span>` : ''}</span>`) : html`<p class="small subtle">No participants added.</p>`}</div>
-          <div class="card card-pad"><div class="row between mb-2"><div class="section-title" style="margin:0">${icon('square-check-big', 'sm')} Action items</div><button class="btn sm" data-a="task">${icon('plus', 'sm')} Task</button></div>
+          <div class="card card-pad"><div class="row between mb-2"><div class="section-title" style="margin:0">${icon('square-check-big', 'sm')} Action items</div>${isOwner ? html`<button class="btn sm" data-a="task">${icon('plus', 'sm')} Task</button>` : ''}</div>
             ${m.tasks.length ? m.tasks.map((t) => html`<div class="row" style="padding:7px 0;border-bottom:1px dashed var(--border)">
-              <button class="t-check prio-${t.priority} ${t.status === 'completed' ? 'on' : ''}" data-done="${t.id}" data-status="${t.status}">${icon('check')}</button>
-              <a href="#/tasks?open=${t.id}" class="grow truncate" style="color:inherit;${t.status === 'completed' ? 'text-decoration:line-through;opacity:.6' : ''}">${t.title}</a>
-              ${t.due_date ? html`<span class="tiny subtle">${fmtDay(t.due_date)}</span>` : ''}</div>`) : html`<p class="small subtle">Capture follow-ups as tasks so nothing gets lost.</p>`}</div>
-          <div class="card card-pad"><div class="section-title">${icon('link', 'sm')} Related note</div>
-            ${m.note ? html`<a class="list-item" href="#/notes/${m.note.id}" style="padding:8px"><span class="li-icon">${icon('notebook-pen', 'sm')}</span><div class="li-main"><div class="li-title">${m.note.title || 'Untitled note'}</div><div class="li-sub">${m.note.excerpt || ''}</div></div></a>`
-              : html`<p class="small subtle mb-2">No note linked.</p><button class="btn sm" data-a="create-note">${icon('plus', 'sm')} Create linked note</button>`}</div>
+              ${isOwner ? html`<button class="t-check prio-${t.priority} ${t.status === 'completed' ? 'on' : ''}" data-done="${t.id}" data-status="${t.status}">${icon('check')}</button>` : html`<span class="t-check prio-${t.priority} ${t.status === 'completed' ? 'on' : ''}" style="pointer-events:none">${icon('check')}</span>`}
+              ${isOwner ? html`<a href="#/tasks?open=${t.id}" class="grow truncate" style="color:inherit;${t.status === 'completed' ? 'text-decoration:line-through;opacity:.6' : ''}">${t.title}</a>` : html`<span class="grow truncate" style="${t.status === 'completed' ? 'text-decoration:line-through;opacity:.6' : ''}">${t.title}</span>`}
+              ${t.due_date ? html`<span class="tiny subtle">${fmtDay(t.due_date)}</span>` : ''}</div>`) : html`<p class="small subtle">${isOwner ? 'Capture follow-ups as tasks so nothing gets lost.' : 'No action items.'}</p>`}</div>
+          ${isOwner ? html`<div class="card card-pad"><div class="section-title">${icon('link', 'sm')} Related note</div>
+            ${m.note ? html`<a class="list-item" href="#/notes/${m.note.id}" style="padding:8px"><span class="li-icon">${icon(m.note.is_locked ? 'lock' : 'notebook-pen', 'sm')}</span><div class="li-main"><div class="li-title">${m.note.title || 'Untitled note'}</div><div class="li-sub">${m.note.excerpt || ''}</div></div></a>`
+              : html`<p class="small subtle mb-2">No note linked.</p><button class="btn sm" data-a="create-note">${icon('plus', 'sm')} Create linked note</button>`}</div>` : ''}
           <p class="tiny subtle">Created ${timeAgo(m.created_at)} · Updated ${timeAgo(m.updated_at)}</p>
         </div>
       </div>`);
     rte?.destroy();
-    rte = createRTE({ content: m.minutes || '', placeholder: past ? 'What was discussed? Decisions, notes and next steps…' : 'Prepare notes for this meeting…', media: false, onChange: () => { minutesDirty = true; setMinState('dirty', 'Unsaved'); autosave(); } });
-    rte.editor.style.minHeight = '220px';
+    rte = createRTE({ content: m.minutes || '', placeholder: !isOwner ? 'No meeting notes yet.' : past ? 'What was discussed? Decisions, notes and next steps…' : 'Prepare notes for this meeting…', media: false, onChange: () => { if (!isOwner) return; minutesDirty = true; setMinState('dirty', 'Unsaved'); autosave(); } });
+    rte.editor.style.minHeight = isOwner ? '220px' : '80px';
     rte.toolbar.style.position = 'static';
+    if (!isOwner) { rte.editor.contentEditable = 'false'; rte.toolbar.style.display = 'none'; }
     el.querySelector('[data-min-toolbar]').appendChild(rte.toolbar);
     el.querySelector('[data-min-editor]').appendChild(rte.editor);
-    mountAttachments(el.querySelector('[data-attachments]'), { parent: 'meeting', parentId: id, items: m.attachments });
+    mountAttachments(el.querySelector('[data-attachments]'), { parent: 'meeting', parentId: id, items: m.attachments, readOnly: !isOwner });
   };
   const setMinState = (cls, text) => { const s = el.querySelector('[data-min-state]'); if (s) { s.className = 'save-state small ' + cls; s.innerHTML = String(html`<span class="d"></span>${text}`); } };
   async function saveMinutes(markCompleted = false) {
@@ -127,7 +135,7 @@ async function renderDetail(el, ctx) {
     } catch (e) { setMinState('error', 'Not saved'); toastError(e); }
   }
   const autosave = debounce(() => saveMinutes(), 1500);
-  shell.saveHandler = async () => { minutesDirty = true; await saveMinutes(); toast('Meeting notes saved', 'success', { timeout: 1500 }); };
+  shell.saveHandler = isOwner ? async () => { minutesDirty = true; await saveMinutes(); toast('Meeting notes saved', 'success', { timeout: 1500 }); } : null;
   ctx.beforeLeave = async () => { if (minutesDirty) await saveMinutes(); return true; };
   paint();
 
@@ -141,6 +149,7 @@ async function renderDetail(el, ctx) {
     }
     const a = e.target.closest('[data-a]')?.dataset.a;
     if (!a) return;
+    if (a === 'share') { const sh = await openMeetingShare(m); if (sh) { m.shares = sh; paint(); emit('meetings:changed'); } return; }
     if (a === 'save-min') { minutesDirty = true; return saveMinutes(); }
     if (a === 'complete') return saveMinutes(true);
     if (a === 'edit') { const r = await openMeetingForm(m); if (r?.id) { await saveMinutes(); m = r; paint(); } }

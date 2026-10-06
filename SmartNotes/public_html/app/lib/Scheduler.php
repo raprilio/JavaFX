@@ -180,6 +180,21 @@ final class Scheduler
                 $refs = ['reminder_id' => $rid, $type === 'event' ? 'event_id' : $type . '_id' => $id];
                 Mailer::queue((int) $r['user_id'], $type === 'event' ? 'schedule' : $type, $r['email'], $title, $html, $refs);
             }
+            if ($type === 'meeting') {
+                // Everyone the meeting is shared with gets the same reminder, following their own preferences.
+                foreach (MeetingsController::recipients($id) as $p) {
+                    Notify::create((int) $p['id'], 'reminder', $title, $info['detail_text'], $info['link']);
+                    if ($smtpReady && (int) $p['email_on'] && (int) $p['n_meeting']) {
+                        $html = Mailer::template(
+                            "Reminder: {$label}",
+                            '<p>Halo ' . e($p['name']) . ',</p><p style="font-size:16px"><strong>' . e($title) . '</strong></p>'
+                            . $info['detail_html']
+                            . '<p style="margin:24px 0 0"><a class="btn" href="' . e(app_url() . $info['link']) . '">Buka di ' . e((string) Settings::get('app_name', 'SmartNotes')) . '</a></p>'
+                        );
+                        Mailer::queue((int) $p['id'], 'meeting', $p['email'], $title, $html, ['reminder_id' => $rid, 'meeting_id' => $id]);
+                    }
+                }
+            }
             DB::update('reminders', ['status' => 'sent', 'sent_at' => now()], 'id = ?', [$rid]);
             if ($type === 'event') {
                 self::sync('event', $id); // schedule the next occurrence of a repeating event

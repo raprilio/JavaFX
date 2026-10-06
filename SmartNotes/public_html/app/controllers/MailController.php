@@ -566,7 +566,7 @@ final class MailController
             throw new HttpException('Could not save the file.', 500);
         }
         try {
-            $meta = Uploader::store(['name' => $a['name'], 'tmp_name' => $tmp, 'error' => UPLOAD_ERR_OK, 'size' => strlen($bin)], ['image', 'audio', 'document', 'archive'], 'u' . $u['id'], true, true);
+            $meta = Uploader::store(['name' => $a['name'], 'tmp_name' => $tmp, 'error' => UPLOAD_ERR_OK, 'size' => strlen($bin)], ['image', 'audio', 'video', 'document', 'archive'], 'u' . $u['id'], true, true);
         } finally {
             @unlink($tmp);
         }

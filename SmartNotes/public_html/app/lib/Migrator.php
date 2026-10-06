@@ -9,7 +9,7 @@ defined('SN_APP') || exit;
  */
 final class Migrator
 {
-    public const VERSION = 2;
+    public const VERSION = 3;
 
     public static function run(): void
     {
@@ -24,6 +24,9 @@ final class Migrator
             $current = (int) DB::val("SELECT setting_value FROM settings WHERE setting_key = 'schema_version'") ?: 1;
             if ($current < 2) {
                 self::v2();
+            }
+            if ($current < 3) {
+                self::v3();
             }
             Settings::set('schema_version', (string) self::VERSION);
         } finally {
@@ -99,5 +102,36 @@ final class Migrator
         foreach (['allow_note_sharing' => '1', 'logo_display' => 'logo', 'logo_height' => '34', 'logo_max_width' => '180', 'login_logo_height' => '48'] as $k => $v) {
             DB::run('INSERT IGNORE INTO settings (setting_key, setting_value) VALUES (?, ?)', [$k, $v]);
         }
+    }
+
+    /** v1.3: note PIN lock, shared meetings, video files, dashboard customisation. */
+    private static function v3(): void
+    {
+        $pdo = DB::pdo();
+        self::addColumn('notes', 'is_locked', 'TINYINT(1) NOT NULL DEFAULT 0');
+        if (!self::hasTable('note_pins')) {
+            $pdo->exec("CREATE TABLE `note_pins` (
+              `user_id` INT UNSIGNED NOT NULL, `pin_hash` VARCHAR(255) NOT NULL, `failed_attempts` SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+              `locked_until` DATETIME NULL, `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              PRIMARY KEY (`user_id`), CONSTRAINT `fk_npin_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+        }
+        self::addColumn('meetings', 'share_all', 'TINYINT(1) NOT NULL DEFAULT 0');
+        if (!self::hasTable('meeting_shares')) {
+            $pdo->exec("CREATE TABLE `meeting_shares` (
+              `id` INT UNSIGNED NOT NULL AUTO_INCREMENT, `meeting_id` INT UNSIGNED NOT NULL, `owner_id` INT UNSIGNED NOT NULL, `user_id` INT UNSIGNED NOT NULL,
+              `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              PRIMARY KEY (`id`), UNIQUE KEY `uq_mshare` (`meeting_id`, `user_id`), KEY `idx_mshare_user` (`user_id`),
+              CONSTRAINT `fk_mshare_meeting` FOREIGN KEY (`meeting_id`) REFERENCES `meetings` (`id`) ON DELETE CASCADE,
+              CONSTRAINT `fk_mshare_owner` FOREIGN KEY (`owner_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+              CONSTRAINT `fk_mshare_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+        }
+        $type = (string) DB::val("SELECT COLUMN_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'note_attachments' AND COLUMN_NAME = 'file_kind'");
+        if ($type !== '' && !str_contains($type, "'video'")) {
+            $pdo->exec("ALTER TABLE `note_attachments` MODIFY `file_kind` ENUM('image','audio','video','document','archive','other') NOT NULL DEFAULT 'other'");
+        }
+        self::addColumn('user_settings', 'dashboard_hidden', 'TEXT NULL');
+        DB::run("INSERT IGNORE INTO settings (setting_key, setting_value) VALUES ('max_video_mb', '100')");
     }
 }

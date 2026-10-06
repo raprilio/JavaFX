@@ -9,6 +9,7 @@ import { renderSidebar } from '../core/shell.js';
 import { pickFiles } from '../components/attachments.js';
 import { sortable } from '../components/sortable.js';
 import { REMINDERS } from '../components/forms.js';
+import { pinStatus, setupPin, resetPinDialog, removePinDialog, lockNow } from '../components/notePin.js';
 
 const TABS = [
   ['profile', 'Profile', 'user'], ['appearance', 'Appearance', 'palette'], ['notifications', 'Notifications', 'bell'], ['email', 'Email', 'mail'],
@@ -152,7 +153,36 @@ const tabs = {
         <div class="field"><label>New password</label><input class="input" type="password" name="password" autocomplete="new-password" required></div>
         <div class="field"><label>Confirm new password</label><input class="input" type="password" name="password_confirm" autocomplete="new-password" required></div>
         <div class="span-2"><button class="btn primary" type="submit">Update password</button></div></form>`)}
+      ${card('Notes PIN', 'Lock private notes behind a 4–8 digit PIN. Locked notes hide their text, images and files until the PIN is entered on this device.', html`<div data-pin><span class="spinner"></span></div>`)}
       ${card('Signed-in devices', 'Devices where you chose “Remember me”.', html`<div data-devices><span class="spinner"></span></div>`)}`);
+    async function loadPin() {
+      try {
+        const st = await pinStatus();
+        el.querySelector('[data-pin]').innerHTML = String(st.has_pin ? html`
+          <div class="row wrap" style="gap:8px;align-items:center">
+            <span class="badge success">${icon('lock', 'sm')} PIN active</span>
+            <span class="small subtle">${st.locked_notes} locked note${st.locked_notes === 1 ? '' : 's'} · ${st.unlocked ? `unlocked on this device for ${Math.ceil(st.expires_in / 60)} more min` : 'locked on this device'}${st.blocked_until ? ' · blocked after too many wrong PINs' : ''}</span>
+          </div>
+          <div class="row wrap mt-2" style="gap:8px">
+            <button class="btn sm" data-pin-act="change">${icon('key-round', 'sm')} Change PIN</button>
+            <button class="btn sm" data-pin-act="reset">${icon('rotate-ccw', 'sm')} Forgot PIN</button>
+            ${st.unlocked ? html`<button class="btn sm" data-pin-act="lock">${icon('lock', 'sm')} Lock now</button>` : ''}
+            <button class="btn sm danger ghost" data-pin-act="remove">${icon('lock-open', 'sm')} Remove PIN</button>
+          </div>
+          <p class="small subtle mt-2">Lock a note from its ⋯ menu. The PIN protects against other people using your account on this device; administrators with database access can still read the text.</p>`
+          : html`<button class="btn" data-pin-act="set">${icon('lock', 'sm')} Set a notes PIN</button>`);
+      } catch (e) { toastError(e); }
+    }
+    loadPin();
+    el.addEventListener('click', async (e) => {
+      const a = e.target.closest('[data-pin-act]')?.dataset.pinAct;
+      if (!a) return;
+      if (a === 'set' && await setupPin()) loadPin();
+      if (a === 'change' && await setupPin({ change: true })) loadPin();
+      if (a === 'reset' && await resetPinDialog()) loadPin();
+      if (a === 'remove' && await removePinDialog()) loadPin();
+      if (a === 'lock') { await lockNow().catch(toastError); loadPin(); }
+    });
     const form = el.querySelector('[data-pw]');
     form.addEventListener('submit', async (e) => {
       e.preventDefault();

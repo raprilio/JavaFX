@@ -43,8 +43,10 @@ final class SearchController
             // Own notes + notes other users shared with me.
             $where = ['(n.user_id = ? OR EXISTS (SELECT 1 FROM note_shares sh WHERE sh.note_id = n.id AND sh.user_id = ?))', 'n.deleted_at IS NULL'];
             $params = [$uid, $uid];
+            $unlocked = NoteLock::unlocked($uid);
             if ($q !== '') {
-                $where[] = '(n.title LIKE ? OR n.content_text LIKE ?)';
+                // Locked notes match on their title only until the PIN is entered.
+                $where[] = $unlocked ? '(n.title LIKE ? OR n.content_text LIKE ?)' : '(n.title LIKE ? OR (n.is_locked = 0 AND n.content_text LIKE ?))';
                 array_push($params, $like, $like);
             }
             if ($category) {
@@ -65,7 +67,7 @@ final class SearchController
             }
             $dateFilter('n.updated_at', $where, $params);
             $rows = DB::all(
-                'SELECT n.id, n.title, LEFT(n.content_text, 200) AS excerpt, n.updated_at AS date, n.is_archived, n.is_favorite, n.note_type, c.name AS category
+                'SELECT n.id, n.title, ' . ($unlocked ? 'LEFT(n.content_text, 200)' : "IF(n.is_locked = 1, '', LEFT(n.content_text, 200))") . ' AS excerpt, n.is_locked, n.updated_at AS date, n.is_archived, n.is_favorite, n.note_type, c.name AS category
                  FROM notes n LEFT JOIN note_categories c ON c.id = n.category_id
                  WHERE ' . implode(' AND ', $where) . " ORDER BY n.is_pinned DESC, n.updated_at DESC LIMIT $limit",
                 $params
@@ -75,7 +77,7 @@ final class SearchController
                 'title' => $r['title'] !== '' ? $r['title'] : '(Untitled note)',
                 'snippet' => self::snippet((string) $r['excerpt'], $q),
                 'date' => $r['date'],
-                'meta' => array_values(array_filter([$r['category'], $r['is_archived'] ? 'Archived' : null, $r['is_favorite'] ? 'Favorite' : null])),
+                'meta' => array_values(array_filter([$r['category'], $r['is_locked'] ? 'Locked' : null, $r['is_archived'] ? 'Archived' : null, $r['is_favorite'] ? 'Favorite' : null])),
                 'link' => '#/notes/' . $r['id'],
             ], $rows);
         }
@@ -107,10 +109,11 @@ final class SearchController
 
         if ($simpleOnlyText && $q !== '' || ($simpleOnlyText && $from)) {
             if ($want('meeting')) {
-                $where = ['user_id = ?', 'deleted_at IS NULL', '(title LIKE ? OR description LIKE ? OR location LIKE ? OR minutes_text LIKE ?)'];
-                $params = [$uid, $like, $like, $like, $like];
-                $dateFilter('meeting_date', $where, $params);
-                $rows = DB::all('SELECT id, title, description, meeting_date, start_time, location FROM meetings WHERE ' . implode(' AND ', $where) . " ORDER BY meeting_date DESC LIMIT $limit", $params);
+                // Own meetings + meetings shared with me.
+                $where = [MeetingsController::visibleSql('m'), 'm.deleted_at IS NULL', '(m.title LIKE ? OR m.description LIKE ? OR m.location LIKE ? OR m.minutes_text LIKE ?)'];
+                $params = [$uid, $uid, $like, $like, $like, $like];
+                $dateFilter('m.meeting_date', $where, $params);
+                $rows = DB::all('SELECT m.id, m.title, m.description, m.meeting_date, m.start_time, m.location FROM meetings m WHERE ' . implode(' AND ', $where) . " ORDER BY m.meeting_date DESC LIMIT $limit", $params);
                 $groups['meeting'] = array_map(static fn($r) => [
                     'id' => (int) $r['id'], 'title' => $r['title'], 'snippet' => self::snippet((string) $r['description'], $q),
                     'date' => $r['meeting_date'] . ' ' . $r['start_time'], 'meta' => array_filter([$r['location']]), 'link' => '#/meetings/' . $r['id'],
@@ -159,7 +162,7 @@ final class SearchController
             }
         }
         if ($want('file') && ($q !== '' || $tag || ($simpleOnlyText && $from))) {
-            $where = ['a.user_id = ?', 'a.deleted_at IS NULL'];
+            $where = ['a.user_id = ?', 'a.deleted_at IS NULL' . NoteLock::fileFilter('a.note_id', $uid)];
             $params = [$uid];
             if ($q !== '') {
                 $where[] = '(a.original_name LIKE ? OR a.description LIKE ? OR EXISTS (SELECT 1 FROM file_tag_relations r JOIN note_tags t ON t.id = r.tag_id WHERE r.file_id = a.id AND t.name LIKE ?))';

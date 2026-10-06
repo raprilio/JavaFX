@@ -47,6 +47,12 @@ return [
     ['POST', 'notes/{id}/shares', 'SharesController::store', 'auth'],
     ['POST', 'notes/{id}/shares/{id}/remove', 'SharesController::remove', 'auth'],
     ['POST', 'notes/{id}/share-pin', 'SharesController::pin', 'auth'],
+    ['POST', 'notes/{id}/lock', 'NotesController::lock', 'auth'],
+    ['GET', 'notes-pin', 'NotesPinController::status', 'auth'],
+    ['POST', 'notes-pin', 'NotesPinController::save', 'auth'],
+    ['POST', 'notes-pin/remove', 'NotesPinController::remove', 'auth'],
+    ['POST', 'notes-pin/unlock', 'NotesPinController::unlock', 'auth'],
+    ['POST', 'notes-pin/lock', 'NotesPinController::lockNow', 'auth'],
     ['POST', 'notes/{id}/leave', 'SharesController::leave', 'auth'],
     ['GET', 'notes/{id}/related-files', 'DriveController::relatedFiles', 'auth'],
     ['GET', 'users/directory', 'SharesController::directory', 'auth'],
@@ -110,6 +116,9 @@ return [
     ['POST', 'meetings/{id}', 'MeetingsController::update', 'auth'],
     ['POST', 'meetings/{id}/minutes', 'MeetingsController::minutes', 'auth'],
     ['POST', 'meetings/{id}/move', 'MeetingsController::move', 'auth'],
+    ['GET', 'meetings/{id}/shares', 'MeetingsController::shares', 'auth'],
+    ['POST', 'meetings/{id}/shares', 'MeetingsController::share', 'auth'],
+    ['POST', 'meetings/{id}/shares/{id}/remove', 'MeetingsController::unshare', 'auth'],
 
     // Mind maps
     ['GET', 'mindmaps', 'MindmapsController::index', 'auth'],

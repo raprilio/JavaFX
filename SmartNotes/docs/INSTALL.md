@@ -140,7 +140,7 @@ Login sebagai admin → **Admin → Email & reminders** → isi → **Save SMTP*
 
 ## 8. Batas upload
 
-Aplikasi punya batas per jenis file (Admin → General): gambar 8 MB, audio 25 MB, file lain 20 MB (bisa diubah). PHP juga punya batas sendiri:
+Aplikasi punya batas per jenis file (Admin → General): gambar 8 MB, audio 25 MB, video 100 MB, file lain 20 MB (bisa diubah). PHP juga punya batas sendiri — **untuk video, naikkan `upload_max_filesize` dan `post_max_size` minimal setara batas video** (mis. 128M), kalau tidak upload video besar akan gagal:
 
 - `.user.ini` (sudah disertakan) → untuk PHP-FPM / LiteSpeed: `upload_max_filesize = 32M`, `post_max_size = 40M`.
 - `.htaccess` → untuk Apache mod_php.
@@ -182,6 +182,8 @@ File backup disimpan di `storage/backups/` (tidak bisa diakses publik). Simpan s
 1. Backup database & uploads dari Admin.
 2. Upload ulang semua file **kecuali** `app/config.php`, `uploads/`, dan `storage/`.
 3. Buka aplikasi. Perubahan skema dijalankan **otomatis** oleh migrator saat request pertama (tidak perlu phpMyAdmin). Versi skema tersimpan di tabel `settings` (`schema_version`).
+
+**Upgrade ke v1.3** (PIN catatan, meeting berbagi, video, dashboard yang bisa diatur): cukup timpa file, migrasi skema v3 berjalan otomatis (menambah `note_pins`, `meeting_shares`, kolom `notes.is_locked`, `meetings.share_all`, `user_settings.dashboard_hidden`, jenis file `video`). Data lama tidak diubah. Naikkan batas upload PHP bila ingin mengunggah video (bagian 8).
 
 **Upgrade v1.0 → v1.1** (Drive, catatan berbagi, kontrol akun, tata letak logo):
 - Pastikan folder `assets/vendor/pdfjs/` ikut ter-upload (viewer PDF).

@@ -273,7 +273,7 @@ final class AdminController
 
     private const GENERAL_KEYS = [
         'app_name', 'app_tagline', 'default_theme', 'default_accent', 'allow_registration', 'allow_note_sharing', 'trash_auto_delete_days',
-        'max_image_mb', 'max_audio_mb', 'max_file_mb', 'default_reminder_minutes', 'web_cron_enabled',
+        'max_image_mb', 'max_audio_mb', 'max_video_mb', 'max_file_mb', 'default_reminder_minutes', 'web_cron_enabled',
     ];
 
     public static function settings(): void
@@ -309,7 +309,7 @@ final class AdminController
                 $v[$k] = (string) V::bool($in[$k]);
             }
         }
-        $ints = ['trash_auto_delete_days' => [0, 3650], 'max_image_mb' => [1, 100], 'max_audio_mb' => [1, 200], 'max_file_mb' => [1, 500], 'default_reminder_minutes' => [0, 10080]];
+        $ints = ['trash_auto_delete_days' => [0, 3650], 'max_image_mb' => [1, 100], 'max_audio_mb' => [1, 200], 'max_video_mb' => [1, 2048], 'max_file_mb' => [1, 500], 'default_reminder_minutes' => [0, 10080]];
         foreach ($ints as $k => [$min, $max]) {
             if (array_key_exists($k, $in)) {
                 $v[$k] = (string) (V::int($in[$k], $min, $max) ?? $min);

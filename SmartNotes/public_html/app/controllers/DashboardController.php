@@ -27,7 +27,7 @@ final class DashboardController
             'tasks_active' => (int) $tasks['active'],
             'tasks_completed' => (int) $tasks['completed'],
             'tasks_overdue' => (int) $tasks['overdue'],
-            'meetings_upcoming' => (int) DB::val("SELECT COUNT(*) FROM meetings WHERE user_id = ? AND deleted_at IS NULL AND status = 'scheduled' AND (meeting_date > CURDATE() OR (meeting_date = CURDATE() AND end_time >= CURTIME()))", [$uid]),
+            'meetings_upcoming' => (int) DB::val("SELECT COUNT(*) FROM meetings m WHERE " . MeetingsController::visibleSql('m') . " AND m.deleted_at IS NULL AND m.status = 'scheduled' AND (m.meeting_date > CURDATE() OR (m.meeting_date = CURDATE() AND m.end_time >= CURTIME()))", [$uid, $uid]),
             'events_upcoming' => count(array_filter(
                 Agenda::range($uid, now(), date('Y-m-d 23:59:59', strtotime('+30 days')), ['event']),
                 static fn($e) => $e['status'] === 'scheduled'
@@ -49,10 +49,18 @@ final class DashboardController
             static fn($i) => ($i['status'] ?? '') !== 'cancelled'
         ));
         $recent = DB::all(
-            "SELECT id, title, LEFT(content_text, 140) AS excerpt, note_type, color, is_pinned, updated_at, last_opened_at
+            "SELECT id, title, LEFT(content_text, 140) AS excerpt, note_type, color, is_pinned, is_locked, updated_at, last_opened_at
              FROM notes WHERE user_id = ? AND deleted_at IS NULL ORDER BY COALESCE(last_opened_at, updated_at) DESC LIMIT 6",
             [$uid]
         );
+        $unlocked = NoteLock::unlocked($uid);
+        foreach ($recent as &$rn) {
+            $rn['is_locked'] = (bool) $rn['is_locked'];
+            if ($rn['is_locked'] && !$unlocked) {
+                $rn['excerpt'] = '';
+            }
+        }
+        unset($rn);
         $todayTasks = array_map([TasksController::class, 'present'], DB::all(
             "SELECT id, title, status, priority, due_date, due_time FROM tasks
              WHERE user_id = ? AND deleted_at IS NULL AND status IN ('todo','in_progress') AND due_date <= CURDATE()

@@ -43,6 +43,7 @@ final class FilesController
             $kind === 'image' => 'image',
             $mime === 'application/pdf' => 'pdf',
             $kind === 'audio' => 'audio',
+            $kind === 'video' => 'video',
             in_array($mime, ['text/plain', 'text/csv'], true) => 'text',
             default => 'none',
         };
@@ -70,10 +71,18 @@ final class FilesController
     {
         $r = DB::one('SELECT * FROM note_attachments WHERE id = ?', [$id]);
         if ($r && (int) $r['user_id'] === $userId) {
+            if ($r['note_id'] && !NoteLock::unlocked($userId) && DB::val('SELECT is_locked FROM notes WHERE id = ?', [$r['note_id']])) {
+                throw new HttpException('This file belongs to a locked note. Enter your notes PIN first.', 423, ['locked' => true]);
+            }
             return $r;
         }
         if ($r && !$r['deleted_at'] && $r['note_id']
             && DB::val('SELECT s.id FROM note_shares s JOIN notes n ON n.id = s.note_id AND n.deleted_at IS NULL WHERE s.note_id = ? AND s.user_id = ?', [$r['note_id'], $userId])) {
+            return $r;
+        }
+        // Attachments of a meeting shared with this user.
+        if ($r && !$r['deleted_at'] && $r['meeting_id']
+            && DB::val('SELECT m.id FROM meetings m WHERE m.id = ? AND m.deleted_at IS NULL AND ' . MeetingsController::visibleSql('m'), [$r['meeting_id'], $userId, $userId])) {
             return $r;
         }
         throw new HttpException('File not found.', 404);
@@ -118,7 +127,7 @@ final class FilesController
         $u = Auth::require();
         $where = ['a.user_id = ?', 'a.deleted_at IS NULL'];
         $params = [$u['id']];
-        if (in_array(Http::query('kind'), ['image', 'audio', 'document', 'archive', 'other'], true)) {
+        if (in_array(Http::query('kind'), ['image', 'audio', 'video', 'document', 'archive', 'other'], true)) {
             $where[] = 'a.file_kind = ?';
             $params[] = Http::query('kind');
         }
@@ -158,7 +167,7 @@ final class FilesController
         $folderId = DriveController::ownedFolder(V::id($_POST['folder_id'] ?? null), $u['id']);
         $kinds = match ($_POST['accept'] ?? '') {
             'image' => ['image'],
-            default => ['image', 'audio', 'document', 'archive'],
+            default => ['image', 'audio', 'video', 'document', 'archive'],
         };
         $meta = Uploader::store($_FILES['file'], $kinds, 'u' . $u['id']);
         $id = DB::insert('note_attachments', array_merge($parents, [

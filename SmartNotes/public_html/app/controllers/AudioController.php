@@ -34,7 +34,7 @@ final class AudioController
     public static function index(): void
     {
         $u = Auth::require();
-        $where = ['a.user_id = ?', 'a.deleted_at IS NULL'];
+        $where = ['a.user_id = ?', 'a.deleted_at IS NULL' . NoteLock::fileFilter('a.note_id', $u['id'])];
         $params = [$u['id']];
         if ($q = V::str(Http::query('q'), 100)) {
             $where[] = 'a.title LIKE ?';
@@ -97,6 +97,9 @@ final class AudioController
             && DB::val('SELECT s.id FROM note_shares s JOIN notes n ON n.id = s.note_id AND n.deleted_at IS NULL WHERE s.note_id = ? AND s.user_id = ?', [$r['note_id'], $u['id']]);
         if (!$r || ((int) $r['user_id'] !== $u['id'] && !$shared)) {
             throw new HttpException('Recording not found.', 404);
+        }
+        if (!$shared && $r['note_id'] && !NoteLock::unlocked($u['id']) && DB::val('SELECT is_locked FROM notes WHERE id = ?', [$r['note_id']])) {
+            throw new HttpException('This recording belongs to a locked note. Enter your notes PIN first.', 423, ['locked' => true]);
         }
         $ext = pathinfo($r['file_path'], PATHINFO_EXTENSION);
         Uploader::serve($r['file_path'], $r['mime_type'], $r['title'] . '.' . $ext);

@@ -131,6 +131,12 @@ export function openFilePreview(file, list = [file]) {
     case 'pdf': return openPdfViewer(file);
     case 'audio':
       return modal({ title: file.name, size: 'sm', body: html`<audio controls autoplay src="${file.url}" style="width:100%"></audio>`, actions: [{ label: 'Close' }] });
+    case 'video':
+      return modal({
+        title: file.name, size: 'xl', className: 'video-modal',
+        body: html`<video class="video-player" controls autoplay playsinline preload="metadata" src="${file.url}"></video>`,
+        actions: [{ label: 'Download', icon: 'download', left: true, onClick: () => { window.location.href = file.download_url; } }, { label: 'Close' }],
+      });
     case 'text': return openText(file);
     default:
       return modal({

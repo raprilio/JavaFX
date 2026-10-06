@@ -34,10 +34,10 @@ final class SharesController
     }
 
     /** Active users a note can be shared with. */
+    /** Colleagues to share notes or meetings with. */
     public static function directory(): void
     {
         $u = Auth::require();
-        self::enabled();
         $params = [$u['id']];
         $where = "u.id <> ? AND u.status = 'active' AND u.deleted_at IS NULL";
         if ($q = V::str(Http::query('q'), 100)) {
@@ -54,7 +54,7 @@ final class SharesController
 
     private static function ownNote(int $noteId, int $uid): array
     {
-        $n = DB::one('SELECT id, title, user_id FROM notes WHERE id = ? AND user_id = ? AND deleted_at IS NULL', [$noteId, $uid]);
+        $n = DB::one('SELECT id, title, user_id, is_locked FROM notes WHERE id = ? AND user_id = ? AND deleted_at IS NULL', [$noteId, $uid]);
         if (!$n) {
             throw new HttpException('Only the owner can manage sharing for this note.', 404);
         }
@@ -73,6 +73,9 @@ final class SharesController
         $u = Auth::require();
         self::enabled();
         $note = self::ownNote($noteId, $u['id']);
+        if (!empty($note['is_locked'])) {
+            throw new HttpException('Locked notes cannot be shared. Remove the lock first.', 422, ['locked' => true]);
+        }
         $userIds = V::ids(Http::input('user_ids', [Http::input('user_id')]));
         $perm = V::enum(Http::input('permission'), ['view', 'edit'], 'view');
         if (!$userIds) {

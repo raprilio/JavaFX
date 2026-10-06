@@ -150,7 +150,7 @@ export function highlight(text, q) {
   return raw(t.replace(re, '<mark class="hl">$1</mark>'));
 }
 
-export const FILE_COLORS = { pdf: '#e5484d', doc: '#2b6cdf', docx: '#2b6cdf', xls: '#16a34a', xlsx: '#16a34a', csv: '#16a34a', ppt: '#ea7a1a', pptx: '#ea7a1a', zip: '#7c5cdb', txt: '#64748b', mp3: '#db2777', wav: '#db2777', m4a: '#db2777', webm: '#db2777', ogg: '#db2777' };
+export const FILE_COLORS = { mp4: '#0ea5e9', mov: '#0ea5e9', m4v: '#0ea5e9', pdf: '#e5484d', doc: '#2b6cdf', docx: '#2b6cdf', xls: '#16a34a', xlsx: '#16a34a', csv: '#16a34a', ppt: '#ea7a1a', pptx: '#ea7a1a', zip: '#7c5cdb', txt: '#64748b', mp3: '#db2777', wav: '#db2777', m4a: '#db2777', webm: '#db2777', ogg: '#db2777' };
 export function fileBadge(name) {
   const ext = (name.split('.').pop() || '').toLowerCase().slice(0, 4);
   return raw(`<span class="file-icon" style="--fc:${FILE_COLORS[ext] || '#8b92a1'}">${esc(ext || 'file')}</span>`);

@@ -37,15 +37,15 @@ export function fileRow(f, { removable = true } = {}) {
  * Mount an attachment manager.
  * parent: 'note' | 'task' | 'meeting', parentId: number
  */
-export function mountAttachments(container, { parent, parentId, items = [], title = 'Attachments', onChange } = {}) {
+export function mountAttachments(container, { parent, parentId, items = [], title = 'Attachments', onChange, readOnly = false } = {}) {
   let files = [...items];
   const field = parent + '_id';
 
   function render() {
     container.innerHTML = String(html`
       <div class="row between mb-2"><div class="section-title" style="margin:0">${icon('paperclip', 'sm')} ${title} <span class="subtle small">${files.length || ''}</span></div>
-      <button class="btn sm" data-act="add">${icon('upload', 'sm')} Upload</button></div>
-      <div class="att-list">${files.length ? files.map((f) => fileRow(f)) : html`<div class="dropzone small" data-act="add">${icon('upload-cloud')} <div class="mt-1">Drop files here or click to upload</div></div>`}</div>
+      ${readOnly ? '' : html`<button class="btn sm" data-act="add">${icon('upload', 'sm')} Upload</button>`}</div>
+      <div class="att-list">${files.length ? files.map((f) => fileRow(f, { removable: !readOnly })) : readOnly ? html`<p class="small subtle">No attachments.</p>` : html`<div class="dropzone small" data-act="add">${icon('upload-cloud')} <div class="mt-1">Drop files here or click to upload</div></div>`}</div>
       <div class="att-progress"></div>`);
   }
 
@@ -90,7 +90,7 @@ export function mountAttachments(container, { parent, parentId, items = [], titl
   container.addEventListener('dragover', (e) => { if (e.dataTransfer?.types?.includes('Files')) { e.preventDefault(); container.querySelector('.dropzone')?.classList.add('over'); } });
   container.addEventListener('dragleave', () => container.querySelector('.dropzone')?.classList.remove('over'));
   container.addEventListener('drop', (e) => {
-    if (!e.dataTransfer?.files?.length) return;
+    if (!e.dataTransfer?.files?.length || readOnly) return;
     e.preventDefault();
     upload(Array.from(e.dataTransfer.files));
   });

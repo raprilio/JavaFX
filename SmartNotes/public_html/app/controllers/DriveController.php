@@ -60,10 +60,10 @@ final class DriveController
         $folderId = $view === 'drive' ? self::ownedFolder(V::id(Http::query('folder')), $uid) : null;
         $q = V::str(Http::query('q'), 100);
         $tag = TagsController::normalize(Http::query('tag'));
-        $kind = in_array(Http::query('kind'), ['image', 'audio', 'document', 'archive', 'other', 'pdf'], true) ? Http::query('kind') : null;
+        $kind = in_array(Http::query('kind'), ['image', 'audio', 'video', 'document', 'archive', 'other', 'pdf'], true) ? Http::query('kind') : null;
         $filtering = $q !== null || $tag || $kind;
 
-        $where = ['a.user_id = ?', 'a.deleted_at IS NULL'];
+        $where = ['a.user_id = ?', 'a.deleted_at IS NULL' . NoteLock::fileFilter('a.note_id', $uid)];
         $params = [$uid];
         if ($view === 'drive') {
             $where[] = 'a.note_id IS NULL AND a.task_id IS NULL AND a.meeting_id IS NULL';
@@ -230,8 +230,8 @@ final class DriveController
     public static function relatedFiles(int $noteId): void
     {
         $u = Auth::require();
-        [, $role] = NotesController::access($noteId, $u['id']);
-        if ($role !== 'owner') {
+        [$note, $role] = NotesController::access($noteId, $u['id']);
+        if ($role !== 'owner' || NoteLock::hides($note, $u['id'])) {
             Http::ok([]);
         }
         $rows = DB::all(
@@ -254,15 +254,20 @@ final class DriveController
             throw new HttpException('File not found.', 404);
         }
         $rows = DB::all(
-            "SELECT DISTINCT n.id, n.title, LEFT(n.content_text, 140) AS excerpt, n.updated_at, n.color
+            "SELECT DISTINCT n.id, n.title, LEFT(n.content_text, 140) AS excerpt, n.is_locked, n.updated_at, n.color
              FROM notes n
              WHERE n.user_id = ? AND n.deleted_at IS NULL AND (n.id = ? OR EXISTS (
                SELECT 1 FROM note_tag_relations nr JOIN file_tag_relations fr ON fr.tag_id = nr.tag_id AND fr.file_id = ? WHERE nr.note_id = n.id))
              ORDER BY n.updated_at DESC LIMIT 100",
             [$u['id'], (int) $f['note_id'], $fileId]
         );
+        $unlocked = NoteLock::unlocked($u['id']);
         foreach ($rows as &$r) {
             $r['id'] = (int) $r['id'];
+            $r['is_locked'] = (bool) $r['is_locked'];
+            if ($r['is_locked'] && !$unlocked) {
+                $r['excerpt'] = '';
+            }
         }
         Http::ok($rows);
     }

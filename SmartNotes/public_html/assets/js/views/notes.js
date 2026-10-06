@@ -6,6 +6,7 @@ import { navigate, setQuery } from '../core/router.js';
 import { toast, toastError, menu, contextMenu, colorPicker, confirm, empty, skeletonCards } from '../core/ui.js';
 import { newNote } from '../core/actions.js';
 import { uploadFile } from '../components/attachments.js';
+import { toggleNoteLock, lockNow } from '../components/notePin.js';
 
 const FILTERS = [['all', 'All notes', 'notebook'], ['pinned', 'Pinned', 'pin'], ['favorite', 'Favorites', 'star'], ['shared', 'Shared with me', 'users'], ['shared_by_me', 'Shared by me', 'share-2'], ['recent', 'Recent', 'history'], ['archived', 'Archived', 'archive']];
 const TYPE_ICON = { checklist: 'list-checks', image: 'image', audio: 'mic', mixed: 'layers', rich: 'type', text: 'file-text' };
@@ -18,7 +19,7 @@ function card(n, selecting, selected) {
     <div class="nc-main">
       ${n.is_pinned ? html`<span class="nc-pin">${icon('pin', 'sm')}</span>` : ''}
       ${n.title ? html`<h3>${n.title}</h3>` : ''}
-      <div class="nc-body">${n.excerpt || (n.title ? '' : 'Empty note')}</div>
+      ${n.locked ? html`<div class="nc-body nc-locked">${icon('lock', 'sm')} Locked — PIN required</div>` : html`<div class="nc-body">${n.excerpt || (n.title ? '' : 'Empty note')}</div>`}
       <div class="nc-meta">
         ${n.checklist_total ? html`<span class="badge ${n.checklist_done === n.checklist_total ? 'success' : ''}">${icon('list-checks', 'sm')} ${n.checklist_done}/${n.checklist_total}</span>` : ''}
         ${cat ? html`<span class="badge"><span class="dot" style="width:7px;height:7px;border-radius:50%;background:${cat.color}"></span>${cat.name}</span>` : ''}
@@ -26,6 +27,7 @@ function card(n, selecting, selected) {
         ${n.attachment_count ? html`<span>${icon('paperclip', 'sm')}${n.attachment_count}</span>` : ''}
         ${n.audio_count ? html`<span>${icon('mic', 'sm')}${n.audio_count}</span>` : ''}
         ${n.is_favorite ? html`<span style="color:var(--warning)">${icon('star', 'sm')}</span>` : ''}
+        ${n.is_locked && !n.locked ? html`<span class="nc-lock" data-tip="Locked note (unlocked now)">${icon('lock-open', 'sm')}</span>` : ''}
         ${n.shared ? html`<span class="badge info nc-owner">${icon('user', 'sm')} ${n.owner_name}${n.permission === 'edit' ? ' · edit' : ''}</span>` : n.share_count ? html`<span class="badge info" data-tip="Shared with ${n.share_count}">${icon('users', 'sm')} ${n.share_count}</span>` : ''}
         <span style="margin-left:auto" title="${n.updated_at}">${icon(TYPE_ICON[n.note_type] || 'file-text', 'sm')} ${timeAgo(n.updated_at)}</span>
       </div>
@@ -61,6 +63,7 @@ export default {
         <div class="row"><div class="btn-group" data-view>
           <button class="btn ${f.view === 'grid' ? 'active' : ''}" data-v="grid" data-tip="Grid">${icon('layout-grid', 'sm')}</button>
           <button class="btn ${f.view === 'list' ? 'active' : ''}" data-v="list" data-tip="List">${icon('list', 'sm')}</button></div>
+          <button class="btn hidden" data-act="lock-now" data-tip="Lock your locked notes again">${icon('lock', 'sm')}<span class="hide-sm">Lock now</span></button>
           <button class="btn" data-act="select">${icon('square-check', 'sm')}<span class="hide-sm">Select</span></button>
           <button class="btn primary" data-act="new">${icon('plus', 'sm')} New note</button></div></div>
       <div class="toolbar">
@@ -90,6 +93,7 @@ export default {
         const r = await api.get('notes', { filter: f.filter, category: f.category, tag: f.tag, q: f.q, sort: f.sort, dir: f.sort === 'title' ? 'asc' : 'desc', page, per_page: 40 });
         total = r.total;
         items = reset ? r.items : items.concat(r.items);
+        el.querySelector('[data-act="lock-now"]')?.classList.toggle('hidden', !(r.unlocked && items.some((x) => x.is_locked)));
         done = items.length >= total || !r.items.length;
         page++;
         paint();
@@ -183,7 +187,8 @@ export default {
         { label: n.is_pinned ? 'Unpin' : 'Pin to top', icon: 'pin', onClick: () => update(n, { is_pinned: !n.is_pinned }) },
         { label: n.is_favorite ? 'Remove from favorites' : 'Add to favorites', icon: 'star', onClick: () => update(n, { is_favorite: !n.is_favorite }) },
         { label: n.is_archived ? 'Unarchive' : 'Archive', icon: 'archive', onClick: () => update(n, { is_archived: !n.is_archived }, n.is_archived ? 'Note restored from archive' : 'Note archived') },
-        { label: 'Duplicate', icon: 'copy', onClick: async () => { try { await api.post(`notes/${n.id}/duplicate`); toast('Note duplicated', 'success'); load(true); } catch (e) { toastError(e); } } },
+        { label: 'Duplicate', icon: 'copy', disabled: n.locked, onClick: async () => { try { await api.post(`notes/${n.id}/duplicate`); toast('Note duplicated', 'success'); load(true); } catch (e) { toastError(e); } } },
+        { label: n.is_locked ? 'Remove lock' : 'Lock with PIN', icon: n.is_locked ? 'lock-open' : 'lock', onClick: async () => { if (await toggleNoteLock(n)) load(true); } },
         { label: 'Move to category', icon: 'folder', onClick: () => menu(anchor, [{ label: 'No category', icon: 'folder-x', onClick: () => update(n, { category_id: null }, 'Category removed') }, ...state.categories.note.map((c) => ({ label: c.name, icon: 'folder', checked: c.id === n.category_id, onClick: () => update(n, { category_id: c.id }, `Moved to ${c.name}`) }))]) },
         { divider: true },
         { label: 'Move to trash', icon: 'trash-2', danger: true, onClick: () => trash(n) },
@@ -193,6 +198,7 @@ export default {
 
     el.addEventListener('click', async (e) => {
       const act = e.target.closest('[data-act]')?.dataset.act;
+      if (act === 'lock-now') { try { await lockNow(); load(true); } catch (err) { toastError(err); } return; }
       if (act === 'new') return newNote(f.category ? { category_id: +f.category } : {});
       if (act === 'select') { selecting = !selecting; selected.clear(); return paint(); }
       if (act === 'category') {
