@@ -18,6 +18,7 @@ const NAV = [
   { path: '/flowcharts', label: 'Flowcharts', icon: 'workflow' },
   { path: '/audio', label: 'Audio Notes', icon: 'mic' },
   { path: '/drive', label: 'Drive', icon: 'hard-drive' },
+  { path: '/mail', label: 'Mail', icon: 'mail', admin: true },
   { path: '/trash', label: 'Trash', icon: 'trash-2' },
 ];
 
@@ -43,7 +44,7 @@ function sidebarHtml() {
       <button class="btn ghost icon sm sidebar-toggle" data-act="collapse" data-tip="Collapse sidebar" data-tip-pos="right" aria-label="Toggle sidebar">${icon('panel-left-close')}</button></div>
     <div class="sidebar-new"><button class="btn primary" data-act="create">${icon('plus')}<span class="btn-label">Create new</span></button></div>
     <nav class="sidebar-scroll" aria-label="Main">
-      ${NAV.map((n) => html`<a class="nav-item" href="#${n.path}" data-path="${n.path}" data-tip="${n.label}" data-tip-pos="right">${icon(n.icon)}<span class="nav-label">${n.label}</span></a>`)}
+      ${NAV.filter((n) => !n.admin || state.user.role === 'admin').map((n) => html`<a class="nav-item" href="#${n.path}" data-path="${n.path}" data-tip="${n.label}" data-tip-pos="right">${icon(n.icon)}<span class="nav-label">${n.label}</span>${n.admin ? html`<span class="count"></span>` : ''}</a>`)}
       <div class="nav-cats">
         <div class="nav-section"><span>Categories</span><a class="btn ghost icon xs" href="#/settings/categories" data-tip="Manage">${icon('settings-2', 'sm')}</a></div>
         ${cats.slice(0, 12).map((c) => html`<a class="nav-item" href="#/notes?category=${c.id}" data-cat="${c.id}"><span class="dot" style="background:${c.color}"></span><span class="nav-label">${c.name}</span><span class="count">${c.count || ''}</span></a>`)}

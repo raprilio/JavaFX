@@ -139,6 +139,20 @@ return [
     ['POST', 'notifications/clear', 'NotificationsController::clear', 'auth'],
 
     // Admin
+    // Admin mailbox (Hostinger Mail API) — MailController enforces the full admin role.
+    ['GET', 'mail/status', 'MailController::status', 'auth'],
+    ['POST', 'mail/settings', 'MailController::saveSettings', 'auth'],
+    ['GET', 'mail/folders', 'MailController::folders', 'auth'],
+    ['GET', 'mail/messages', 'MailController::messages', 'auth'],
+    ['GET', 'mail/message', 'MailController::message', 'auth'],
+    ['GET', 'mail/html', 'MailController::html', 'auth'],
+    ['GET', 'mail/attachment', 'MailController::attachment', 'auth'],
+    ['GET', 'mail/source', 'MailController::source', 'auth'],
+    ['POST', 'mail/flags', 'MailController::flags', 'auth'],
+    ['POST', 'mail/move', 'MailController::move', 'auth'],
+    ['POST', 'mail/delete', 'MailController::delete', 'auth'],
+    ['POST', 'mail/send', 'MailController::send', 'auth'],
+    ['POST', 'mail/save-to-drive', 'MailController::saveToDrive', 'auth'],
     ['GET', 'admin/stats', 'AdminController::stats', 'view_stats'],
     ['GET', 'admin/activity', 'AdminController::activity', 'view_stats'],
     ['GET', 'admin/users', 'AdminController::users', 'manage_users'],

@@ -54,8 +54,9 @@ final class Uploader
      * @param array  $file    entry from $_FILES
      * @param array  $kinds   allowed kinds, e.g. ['image'] or ['audio'] or ['image','audio','document','archive']
      * @param string $subdir  folder under uploads/, e.g. "u12" or "branding"
+     * @param bool   $local   the file is a temp file written by the app itself (e.g. an e-mail attachment), not an HTTP upload
      */
-    public static function store(array $file, array $kinds, string $subdir, bool $makeThumb = true): array
+    public static function store(array $file, array $kinds, string $subdir, bool $makeThumb = true, bool $local = false): array
     {
         if (!isset($file['error']) || is_array($file['error'])) {
             throw new HttpException('Invalid upload.', 400);
@@ -69,7 +70,7 @@ final class Uploader
             };
             throw new HttpException($msg, 422);
         }
-        if (!is_uploaded_file($file['tmp_name']) && PHP_SAPI !== 'cli') {
+        if (!$local && !is_uploaded_file($file['tmp_name']) && PHP_SAPI !== 'cli') {
             throw new HttpException('Invalid upload.', 400);
         }
 
@@ -131,7 +132,7 @@ final class Uploader
             $re = self::reencode($file['tmp_name'], $dest, $ext, self::MAX_IMAGE_DIMENSION);
             if ($re) {
                 [$width, $height] = $re;
-            } elseif (!move_uploaded_file($file['tmp_name'], $dest) && !copy($file['tmp_name'], $dest)) {
+            } elseif (!($local ? copy($file['tmp_name'], $dest) : move_uploaded_file($file['tmp_name'], $dest)) && !copy($file['tmp_name'], $dest)) {
                 throw new HttpException('Could not save the file.', 500);
             }
             if ($makeThumb) {
@@ -141,7 +142,7 @@ final class Uploader
                 }
             }
         } else {
-            if (!@move_uploaded_file($file['tmp_name'], $dest) && !(PHP_SAPI === 'cli' && copy($file['tmp_name'], $dest))) {
+            if (!($local ? copy($file['tmp_name'], $dest) : @move_uploaded_file($file['tmp_name'], $dest)) && !(PHP_SAPI === 'cli' && copy($file['tmp_name'], $dest))) {
                 throw new HttpException('Could not save the file.', 500);
             }
         }

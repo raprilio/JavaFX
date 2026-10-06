@@ -9,7 +9,7 @@ defined('SN_APP') || exit;
  */
 final class Settings
 {
-    private const SECRET_KEYS = ['smtp_password'];
+    private const SECRET_KEYS = ['smtp_password', 'hmail_token'];
     private const PUBLIC_KEYS = [
         'app_name', 'app_tagline', 'logo_path', 'favicon_path', 'background_path',
         'default_theme', 'default_accent', 'allow_registration', 'allow_note_sharing',

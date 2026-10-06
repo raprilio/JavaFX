@@ -131,6 +131,13 @@ Login sebagai admin → **Admin → Email & reminders** → isi → **Save SMTP*
 
 ---
 
+## 7b. Mail admin (Hostinger Mail API) — opsional
+
+1. hPanel → **Emails** → pilih domain → bagian *email provisioning / Mail API* → buat **API token**. Token berlaku untuk semua mailbox di order email tersebut — rahasiakan.
+2. Login SmartNotes sebagai **Admin** → menu **Mail** → tempel token → **Connect**. Token diverifikasi ke Hostinger sebelum disimpan (terenkripsi dengan `app.key`).
+3. Alternatif: taruh di `app/config.php`: `'hostinger_mail' => ['token' => '...']`.
+4. Server butuh akses keluar ke `https://api.mail.hostinger.com` (ekstensi PHP **curl** disarankan).
+
 ## 8. Batas upload
 
 Aplikasi punya batas per jenis file (Admin → General): gambar 8 MB, audio 25 MB, file lain 20 MB (bisa diubah). PHP juga punya batas sendiri:

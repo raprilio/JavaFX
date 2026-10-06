@@ -36,6 +36,7 @@ route('/flowcharts/:id', () => import('./views/flowchart.js'), { flush: true });
 route('/audio', () => import('./views/audio.js'));
 route('/drive', () => import('./views/drive.js'));
 route('/files', () => import('./views/drive.js'));
+route('/mail', () => import('./views/mail.js'));
 route('/search', () => import('./views/search.js'));
 route('/trash', () => import('./views/trash.js'));
 route('/settings', () => import('./views/settings.js'));

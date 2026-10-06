@@ -16,7 +16,7 @@ function commands() {
   const nav = [
     ['Dashboard', 'layout-dashboard', '/'], ['Notes', 'notebook-pen', '/notes'], ['Tasks', 'square-check-big', '/tasks'], ['Calendar', 'calendar-days', '/calendar'],
     ['Meetings', 'users', '/meetings'], ['Mind maps', 'network', '/mindmaps'], ['Flowcharts', 'workflow', '/flowcharts'], ['Audio notes', 'mic', '/audio'],
-    ['Drive', 'hard-drive', '/drive'], ['Trash', 'trash-2', '/trash'], ['Settings', 'settings', '/settings'], ['Advanced search', 'search', '/search'],
+    ['Drive', 'hard-drive', '/drive'], ...(state.user?.role === 'admin' ? [['Mail', 'mail', '/mail']] : []), ['Trash', 'trash-2', '/trash'], ['Settings', 'settings', '/settings'], ['Advanced search', 'search', '/search'],
   ].map(([label, ic, path]) => ({ label: `Go to ${label}`, icon: ic, run: () => navigate(path), group: 'Navigate' }));
   const create = CREATE_ITEMS.map((c) => ({ label: c.label === 'Task' ? 'New task' : c.label === 'Schedule' ? 'New schedule' : c.label === 'Audio note' ? 'Record audio note' : c.label.startsWith('New') ? c.label : `New ${c.label.toLowerCase()}`, icon: c.icon, run: c.run, group: 'Create' }));
   create.push({ label: 'New meeting', icon: 'users', run: () => newMeeting(), group: 'Create' });
