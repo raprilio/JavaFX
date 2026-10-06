@@ -64,14 +64,14 @@ $userMenu = [
     <style><?= theme_css() ?></style>
     <?= $extraHead ?? '' ?>
 </head>
-<body class="layout-<?= e($layout) ?>">
+<body class="layout-<?= e($layout) ?> <?= e(branding_body_classes()) ?>">
 <div id="toast-stack" class="toast-stack" aria-live="polite"></div>
 
 <?php if ($layout === 'admin' && $me): ?>
 <div class="app-shell">
     <aside class="sidebar" id="sidebar">
-        <a class="brand" href="<?= e(url('admin/index.php')) ?>">
-            <img src="<?= e($logoUrl) ?>" alt="" width="40" height="40" class="brand-logo">
+        <a class="brand <?= logo_is_wide() ? 'brand-wide' : '' ?>" href="<?= e(url('admin/index.php')) ?>">
+            <img src="<?= e($logoUrl) ?>" alt="" class="<?= e(logo_class()) ?>">
             <span class="min-w-0"><span class="d-block text-truncate"><?= e(app_name()) ?></span><small class="text-truncate d-block"><?= e(setting('institution_name')) ?></small></span>
         </a>
         <nav class="side-nav">
@@ -123,7 +123,7 @@ $userMenu = [
 <nav class="user-nav sticky-top">
     <div class="container-xl d-flex align-items-center gap-2">
         <a class="brand me-auto min-w-0" href="<?= e(url('dashboard.php')) ?>">
-            <img src="<?= e($logoUrl) ?>" alt="" width="38" height="38" class="brand-logo">
+            <img src="<?= e($logoUrl) ?>" alt="" class="<?= e(logo_class()) ?>">
             <span class="min-w-0"><span class="d-block text-truncate"><?= e(app_name()) ?></span><small class="text-truncate d-block"><?= e(setting('institution_name')) ?></small></span>
         </a>
         <div class="d-none d-lg-flex align-items-center gap-1 me-2">

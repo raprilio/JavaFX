@@ -42,7 +42,7 @@ require __DIR__ . '/includes/header.php';
 ?>
 <section class="hero mb-4 fade-in">
     <div class="position-relative d-flex align-items-center gap-3 gap-md-4" style="z-index:1">
-        <img src="<?= e(app_logo_url()) ?>" alt="" class="hero-logo d-none d-sm-block">
+        <img src="<?= e(app_logo_url()) ?>" alt="" class="<?= e(logo_class('hero-logo')) ?> d-none d-sm-block">
         <div class="min-w-0">
             <div class="small-caps" style="color:var(--gold)"><?= e($greet) ?> · <?= e(tanggal_id()) ?></div>
             <h1 class="mt-1 mb-1">Selamat Datang, <?= e($firstName) ?> 👋</h1>

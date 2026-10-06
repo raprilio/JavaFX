@@ -23,7 +23,7 @@ require __DIR__ . '/includes/header.php';
 ?>
 <div class="container py-5" style="max-width:560px">
     <div class="text-center mb-4">
-        <img src="<?= e(app_logo_url()) ?>" class="auth-logo mb-3" alt="">
+        <img src="<?= e(app_logo_url()) ?>" class="<?= e(logo_class('auth-logo')) ?> mb-3" alt="">
         <div class="small-caps"><?= e(institution_full()) ?></div>
         <h1 class="h4 fw-800 mt-2">Verifikasi Sertifikat</h1>
     </div>

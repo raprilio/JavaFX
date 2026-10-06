@@ -13,6 +13,10 @@ const SETTING_DEFAULTS = [
     'institution_name'         => 'Dinas Kependudukan dan Pencatatan Sipil',
     'institution_region'       => 'Kabupaten / Kota',
     'logo'                     => '',
+    'logo_plate'               => '0',
+    'login_wallpaper'          => '',
+    'wallpaper_overlay'        => '55',
+    'wallpaper_sidebar'        => '0',
     'primary_color'            => '#2f6bff',
     'accent_color'             => '#d4a72c',
     'pretest_enabled'          => '1',
@@ -151,6 +155,46 @@ function app_logo_url(): string
     return url('assets/images/logo.svg');
 }
 
+/** Kelas CSS logo: tanpa latar (PNG transparan tampil apa adanya) atau dengan plat putih. */
+function logo_class(string $base = 'brand-logo'): string
+{
+    return $base . (setting_on('logo_plate') ? ' logo-plate' : '');
+}
+
+/** Logo lebar (wordmark, rasio >= 1.8:1) disusun di atas nama aplikasi pada sidebar. */
+function logo_is_wide(): bool
+{
+    static $wide = null;
+    if ($wide === null) {
+        $p = app_logo_path();
+        $d = $p ? @getimagesize($p) : false;
+        $wide = $d !== false && $d[1] > 0 && $d[0] / $d[1] >= 1.8;
+    }
+    return $wide;
+}
+
+function app_wallpaper_url(): ?string
+{
+    $w = setting('login_wallpaper');
+    if ($w !== '' && preg_match('/^wall-[a-f0-9]{16}\.(png|jpg|webp)$/', $w) && is_file(APP_ROOT . '/uploads/branding/' . $w)) {
+        return url('uploads/branding/' . $w);
+    }
+    return null;
+}
+
+/** Kelas <body> untuk fitur branding (wallpaper login / sidebar). */
+function branding_body_classes(): string
+{
+    $c = [];
+    if (app_wallpaper_url()) {
+        $c[] = 'has-wallpaper';
+        if (setting_on('wallpaper_sidebar')) {
+            $c[] = 'sidebar-wallpaper';
+        }
+    }
+    return implode(' ', $c);
+}
+
 function app_logo_path(): ?string
 {
     $logo = setting('logo');
@@ -176,7 +220,11 @@ function theme_css(): string
     $a = valid_hex_color(setting('accent_color'), '#d4a72c');
     return ':root{--blue:' . $p . ';--bs-primary:' . $p . ';--bs-primary-rgb:' . hex_to_rgb($p)
         . ';--bs-link-color:' . $p . ';--bs-link-color-rgb:' . hex_to_rgb($p)
-        . ';--primary-rgb:' . hex_to_rgb($p) . ';--gold:' . $a . ';--accent-rgb:' . hex_to_rgb($a) . '}';
+        . ';--primary-rgb:' . hex_to_rgb($p) . ';--gold:' . $a . ';--accent-rgb:' . hex_to_rgb($a)
+        . (($w = app_wallpaper_url()) !== null
+            ? ";--wallpaper:url('" . str_replace(["'", '\\', '(', ')'], '', $w) . "');--wall-ov:" . (max(0, min(90, (int) setting('wallpaper_overlay'))) / 100)
+            : '')
+        . '}';
 }
 
 /* ------------------------------------------------------------------ */

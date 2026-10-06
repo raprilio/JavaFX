@@ -85,16 +85,46 @@ $chk = fn (string $k) => $s[$k] === '1' ? 'checked' : '';
         <div class="card-x mb-3">
             <div class="card-x-header"><h2><i class="bi bi-image me-1"></i>Logo Aplikasi</h2></div>
             <div class="card-x-body">
-                <label class="logo-drop d-block" id="logoDrop">
-                    <img src="<?= e(app_logo_url()) ?>" alt="Logo" id="logoPreview">
+                <label class="logo-drop checker d-block" id="logoDrop">
+                    <img src="<?= e(app_logo_url()) ?>" alt="Logo" id="logoPreview" class="<?= $s['logo_plate'] === '1' ? 'logo-plate' : '' ?>">
                     <div class="small text-muted mt-3"><i class="bi bi-cloud-arrow-up"></i> Klik atau seret file ke sini</div>
-                    <div class="small text-muted">PNG / JPG / WEBP · maks 1 MB · disarankan 512×512 latar transparan</div>
+                    <div class="small text-muted">PNG transparan disarankan · JPG / WEBP · maks 2 MB · min 64 px</div>
                     <input type="file" name="logo" accept="image/png,image/jpeg,image/webp" class="d-none" id="logoInput">
                 </label>
+                <div class="small text-muted mt-3 mb-1">Pratinjau di latar gelap (sidebar & login):</div>
+                <div class="logo-preview-dark"><img src="<?= e(app_logo_url()) ?>" alt="" id="logoPreviewDark" class="<?= $s['logo_plate'] === '1' ? 'logo-plate' : '' ?>"></div>
+                <div class="form-check form-switch mt-3">
+                    <input class="form-check-input" type="checkbox" name="logo_plate" value="1" id="swPlate" <?= $chk('logo_plate') ?>>
+                    <label class="form-check-label fw-semibold" for="swPlate">Latar putih di belakang logo</label>
+                    <div class="small text-muted">Aktifkan hanya jika logo berwarna gelap sehingga tidak terlihat di latar navy.</div>
+                </div>
                 <?php if ($s['logo'] !== ''): ?>
-                    <button type="button" class="btn btn-soft-danger btn-sm w-100 mt-3" id="btnRemoveLogo"><i class="bi bi-trash"></i> Hapus logo (pakai default)</button>
+                    <button type="button" class="btn btn-soft-danger btn-sm w-100 mt-2" id="btnRemoveLogo"><i class="bi bi-trash"></i> Hapus logo (pakai default)</button>
                 <?php endif; ?>
-                <p class="small text-muted mt-3 mb-0">Logo dipakai di sidebar, halaman login, halaman ujian, favicon, laporan PDF, dan sertifikat.</p>
+            </div>
+        </div>
+
+        <div class="card-x mb-3">
+            <div class="card-x-header"><h2><i class="bi bi-card-image me-1"></i>Wallpaper Panel Kiri</h2></div>
+            <div class="card-x-body">
+                <?php $wall = app_wallpaper_url(); ?>
+                <label class="wall-drop" id="wallDrop" style="--o: <?= e((string) ((int) $s['wallpaper_overlay'] / 100)) ?>">
+                    <img src="<?= e($wall ?? '') ?>" alt="" id="wallPreview" class="<?= $wall ? '' : 'd-none' ?>">
+                    <span class="wall-ov" id="wallOv"></span>
+                    <span class="wall-hint"><i class="bi bi-cloud-arrow-up"></i> <?= $wall ? 'Klik / seret untuk mengganti' : 'Klik / seret foto ke sini' ?></span>
+                    <input type="file" name="wallpaper" accept="image/png,image/jpeg,image/webp" class="d-none" id="wallInput">
+                </label>
+                <div class="small text-muted mt-2">JPG / PNG / WEBP · maks 4 MB · min 800×500 · disarankan 1920×1080. Tampil di panel kiri halaman login, dan menjadi latar penuh + kartu kaca di HP.</div>
+                <label class="form-label mt-3 d-flex">Kegelapan overlay <span class="ms-auto text-muted" id="ovVal"><?= (int) $s['wallpaper_overlay'] ?>%</span></label>
+                <input type="range" class="form-range" name="wallpaper_overlay" min="0" max="90" step="5" value="<?= (int) $s['wallpaper_overlay'] ?>" id="ovRange">
+                <div class="form-text mt-0">Semakin tinggi, teks semakin mudah dibaca. Di mode terang overlay berwarna putih, di mode gelap berwarna navy.</div>
+                <div class="form-check form-switch mt-3">
+                    <input class="form-check-input" type="checkbox" name="wallpaper_sidebar" value="1" id="swWallSide" <?= $chk('wallpaper_sidebar') ?>>
+                    <label class="form-check-label fw-semibold" for="swWallSide">Pakai juga di sidebar admin</label>
+                </div>
+                <?php if ($wall): ?>
+                    <button type="button" class="btn btn-soft-danger btn-sm w-100 mt-2" id="btnRemoveWall"><i class="bi bi-trash"></i> Hapus wallpaper</button>
+                <?php endif; ?>
             </div>
         </div>
 

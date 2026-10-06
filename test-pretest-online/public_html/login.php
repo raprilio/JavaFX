@@ -55,25 +55,25 @@ require __DIR__ . '/includes/header.php';
 ?>
 <div class="auth-wrap">
     <section class="auth-side">
-        <div class="brand">
-            <img src="<?= e($logoUrl) ?>" width="48" height="48" alt="" class="brand-logo">
+        <div class="brand auth-brand">
+            <img src="<?= e($logoUrl) ?>" alt="" class="<?= e(logo_class()) ?>">
             <span><?= e(app_name()) ?><small class="d-block"><?= e(institution_full()) ?></small></span>
         </div>
         <div>
-            <span class="badge rounded-pill mb-3" style="background:rgba(255,255,255,.1);color:var(--gold);font-weight:600;padding:.5rem .9rem"><i class="bi bi-patch-check me-1"></i><?= e(app_tagline()) ?></span>
+            <span class="auth-chip mb-3"><i class="bi bi-patch-check me-1"></i><?= e(app_tagline()) ?></span>
             <h1>Uji pengetahuan.<br><span>Tingkatkan pelayanan.</span></h1>
-            <p class="mb-4" style="color:#c7d0e6;max-width:460px"><?= e(setting('login_message')) ?></p>
-            <div class="feature"><i class="bi bi-cloud-check"></i><div><strong class="text-white d-block">Jawaban tersimpan otomatis</strong>Setiap jawaban langsung disimpan ke server — aman dari putus koneksi.</div></div>
-            <div class="feature"><i class="bi bi-shield-lock"></i><div><strong class="text-white d-block">Aman & terawasi</strong>Timer diverifikasi server, hasil Test resmi hanya untuk administrator.</div></div>
-            <div class="feature"><i class="bi bi-graph-up-arrow"></i><div><strong class="text-white d-block">Analitik kompetensi</strong>Statistik per bidang, ranking, serta laporan Excel & PDF.</div></div>
+            <p class="auth-lead mb-4"><?= e(setting('login_message')) ?></p>
+            <div class="feature"><i class="bi bi-cloud-check"></i><div><strong class="d-block">Jawaban tersimpan otomatis</strong>Setiap jawaban langsung disimpan ke server — aman dari putus koneksi.</div></div>
+            <div class="feature"><i class="bi bi-shield-lock"></i><div><strong class="d-block">Aman & terawasi</strong>Timer diverifikasi server, hasil Test resmi hanya untuk administrator.</div></div>
+            <div class="feature"><i class="bi bi-graph-up-arrow"></i><div><strong class="d-block">Analitik kompetensi</strong>Statistik per bidang, ranking, serta laporan Excel & PDF.</div></div>
         </div>
-        <small style="color:#6f80aa">© <?= date('Y') ?> <?= e(institution_full()) ?></small>
+        <small class="auth-copy">© <?= date('Y') ?> <?= e(institution_full()) ?></small>
     </section>
     <section class="auth-form">
         <button class="btn btn-icon btn-light auth-theme" data-theme-toggle aria-label="Ganti tema"><i class="bi bi-moon-stars"></i></button>
         <div class="inner fade-in">
             <div class="text-center mb-4">
-                <img src="<?= e($logoUrl) ?>" class="auth-logo mb-3" alt="Logo">
+                <img src="<?= e($logoUrl) ?>" class="<?= e(logo_class('auth-logo')) ?> mb-3" alt="Logo">
                 <div class="small-caps"><?= e(setting('institution_name')) ?></div>
                 <?php if (setting('institution_region') !== ''): ?><div class="small text-muted"><?= e(setting('institution_region')) ?></div><?php endif; ?>
             </div>

@@ -126,7 +126,7 @@ require __DIR__ . '/includes/header.php';
 ?>
 <div class="exam-topbar">
     <div class="container-xl d-flex align-items-center gap-3">
-        <img src="<?= e(app_logo_url()) ?>" width="34" height="34" alt="" class="brand-logo d-none d-sm-block">
+        <img src="<?= e(app_logo_url()) ?>" alt="" class="<?= e(logo_class()) ?> d-none d-sm-block">
         <div class="min-w-0">
             <div class="title text-truncate"><?= e($exam['title']) ?></div>
             <small class="text-white-50 text-truncate d-block"><?= e(type_label($exam['type'])) ?> · <?= e($me['name']) ?></small>
