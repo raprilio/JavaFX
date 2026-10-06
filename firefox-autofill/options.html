@@ -1,0 +1,53 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Form Auto Fill – Pengaturan</title>
+  <style>
+    body { font: 14px system-ui, sans-serif; max-width: 720px; margin: 24px auto; padding: 0 16px; color: #172b4d; }
+    h1 { font-size: 20px; }
+    label.block { display: block; font-weight: 600; margin: 16px 0 4px; }
+    small { color: #5e6c84; }
+    input[type=text] { width: 100%; box-sizing: border-box; padding: 7px 8px; border: 2px solid #dfe1e6; border-radius: 4px; font: inherit; }
+    input[type=text]:focus { border-color: #4c9aff; outline: none; }
+    table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+    th { text-align: left; font-size: 12px; color: #5e6c84; padding: 4px; }
+    td { padding: 4px; vertical-align: middle; }
+    td.label-col { width: 35%; }
+    td.act { width: 90px; white-space: nowrap; }
+    button { padding: 7px 12px; border: 0; border-radius: 4px; cursor: pointer; font: inherit; background: #ebecf0; }
+    button.icon { padding: 4px 8px; }
+    #save { background: #0052cc; color: #fff; font-weight: 600; }
+    .row { display: flex; gap: 8px; margin-top: 16px; align-items: center; }
+    #msg { color: #00875a; }
+  </style>
+</head>
+<body>
+  <h1>Form Auto Fill – Pengaturan</h1>
+
+  <label class="block" for="url">Pola URL website</label>
+  <input type="text" id="url">
+  <small>Pakai <code>*</code> sebagai wildcard. Contoh: <code>https://perusahaan.atlassian.net/servicedesk/customer/portal/12/*</code></small>
+
+  <label class="block"><input type="checkbox" id="autorun"> Isi otomatis saat halaman dibuka</label>
+  <small>Kalau dimatikan, isi lewat tombol di ikon add-on.</small>
+
+  <label class="block">Field yang diisi (berurutan dari atas)</label>
+  <small>Label = teks label persis di form (tanpa *). Nilai = teks yang diketik/dipilih. Kosongkan nilai untuk melewati field.
+    Urutan penting: Category harus di atas Subcategory.</small>
+  <table>
+    <thead><tr><th>Label</th><th>Nilai</th><th></th></tr></thead>
+    <tbody id="fields"></tbody>
+  </table>
+  <div class="row"><button id="add">+ Tambah field</button></div>
+
+  <div class="row">
+    <button id="save">Simpan</button>
+    <button id="reset">Kembalikan bawaan</button>
+    <span id="msg"></span>
+  </div>
+
+  <script src="defaults.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>
