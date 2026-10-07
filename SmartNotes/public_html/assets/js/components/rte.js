@@ -17,12 +17,19 @@ function toolbarHtml(opts) {
     ${b('foreColor', 'baseline', 'Text color')}${b('hiliteColor', 'highlighter', 'Highlight')}<span class="sep"></span>
     ${b('align', 'align-left', 'Alignment')}${b('insertUnorderedList', 'list', 'Bullet list')}${b('insertOrderedList', 'list-ordered', 'Numbered list')}${b('checklist', 'list-checks', 'Checklist')}<span class="sep"></span>
     ${b('quote', 'quote', 'Quote')}${b('code', 'code', 'Code block')}${b('link', 'link', 'Link')}${b('table', 'table', 'Table')}${b('hr', 'minus', 'Divider')}${b('removeFormat', 'remove-formatting', 'Clear formatting')}
+    ${opts.draw ? html`<span class="sep"></span><button type="button" class="btn draw-btn" data-cmd="draw" data-tip="Handwriting (pen / S Pen)" aria-label="Handwriting">${icon('pen-line', 'sm')}<span class="hide-sm">Write</span></button>` : ''}
     ${opts.media ? html`<span class="sep"></span>${b('image', 'image-plus', 'Insert image')}${b('audio', 'mic', 'Record / attach audio')}${b('file', 'paperclip', 'Attach file')}` : ''}`;
 }
 
-export function createRTE({ content = '', placeholder = 'Start writing…', media = true, onChange, onImages, onAudio, onFiles, onImageOpen } = {}) {
+export function createRTE({ content = '', placeholder = 'Start writing…', media = true, onChange, onImages, onAudio, onFiles, onImageOpen, onDraw, onDrawingOpen } = {}) {
   const toolbar = h('<div class="fmt-bar" role="toolbar" aria-label="Formatting"></div>');
-  toolbar.innerHTML = String(toolbarHtml({ media }));
+  toolbar.innerHTML = String(toolbarHtml({ media, draw: !!onDraw }));
+  // Handwriting figures open the pen editor (or the image viewer when there is no editor callback).
+  const openImg = (img) => {
+    const fig = img.closest('figure.sn-drawing');
+    if (fig && onDrawingOpen) onDrawingOpen(fig, img);
+    else onImageOpen?.(img);
+  };
   const editor = h(`<div class="rte" contenteditable="true" spellcheck="true" data-placeholder="${esc(placeholder)}"></div>`);
   editor.innerHTML = content || '';
   let savedRange = null;
@@ -110,10 +117,10 @@ export function createRTE({ content = '', placeholder = 'Start writing…', medi
     $$('img.selected', editor).forEach((x) => x !== img && x.classList.remove('selected'));
     if (img) {
       img.classList.add('selected');
-      if (e.detail >= 2 || matchMedia('(pointer: coarse)').matches) onImageOpen?.(img);
+      if (e.detail >= 2 || matchMedia('(pointer: coarse)').matches || img.closest('figure.sn-drawing')) openImg(img);
     }
   });
-  editor.addEventListener('dblclick', (e) => { const img = e.target.closest('img'); if (img) onImageOpen?.(img); });
+  editor.addEventListener('dblclick', (e) => { const img = e.target.closest('img'); if (img && !img.closest('figure.sn-drawing')) openImg(img); });
 
   // ---------------------------------------------------------- keyboard
   editor.addEventListener('keydown', (e) => {
@@ -283,6 +290,7 @@ export function createRTE({ content = '', placeholder = 'Start writing…', medi
       case 'image': save(); pick('image/jpeg,image/png,image/webp', true).then((f) => f.length && onImages?.(f)); break;
       case 'audio': save(); onAudio?.(null); break;
       case 'file': pick('', true).then((f) => f.length && onFiles?.(f)); break;
+      case 'draw': save(); onDraw?.(); break;
     }
   });
 

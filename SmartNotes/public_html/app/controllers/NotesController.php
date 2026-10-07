@@ -83,7 +83,9 @@ final class NotesController
                     (SELECT a.id FROM note_attachments a WHERE a.note_id = n.id AND a.file_kind = 'image' AND a.deleted_at IS NULL ORDER BY a.id LIMIT 1) AS cover_id,
                     (SELECT COUNT(*) FROM note_attachments a WHERE a.note_id = n.id AND a.deleted_at IS NULL) AS attachment_count,
                     (SELECT COUNT(*) FROM audio_notes au WHERE au.note_id = n.id AND au.deleted_at IS NULL) AS audio_count,
-                    (SELECT COUNT(*) FROM note_shares s WHERE s.note_id = n.id) AS share_count
+                    (SELECT COUNT(*) FROM note_shares s WHERE s.note_id = n.id) AS share_count,
+                    (SELECT d.id FROM note_drawings d WHERE d.note_id = n.id AND d.deleted_at IS NULL ORDER BY d.id LIMIT 1) AS drawing_id,
+                    (SELECT d.version FROM note_drawings d WHERE d.note_id = n.id AND d.deleted_at IS NULL ORDER BY d.id LIMIT 1) AS drawing_v
              FROM notes n WHERE $whereSql ORDER BY $order LIMIT $perPage OFFSET " . (($page - 1) * $perPage),
             $params
         );
@@ -100,7 +102,7 @@ final class NotesController
 
     private static function cast(array $r): array
     {
-        foreach (['id', 'category_id', 'checklist_total', 'checklist_done', 'cover_id', 'attachment_count', 'audio_count', 'share_count', 'owner_id'] as $k) {
+        foreach (['id', 'category_id', 'checklist_total', 'checklist_done', 'cover_id', 'attachment_count', 'audio_count', 'share_count', 'owner_id', 'drawing_id', 'drawing_v'] as $k) {
             if (array_key_exists($k, $r) && $r[$k] !== null) {
                 $r[$k] = (int) $r[$k];
             }
@@ -118,6 +120,7 @@ final class NotesController
     {
         $r['excerpt'] = '';
         $r['cover_id'] = null;
+        $r['drawing_id'] = null;
         $r['checklist_total'] = 0;
         $r['checklist_done'] = 0;
         $r['locked'] = true;
@@ -306,6 +309,7 @@ final class NotesController
         }
         if (array_key_exists('content', $in)) {
             self::refreshType($id, $userId);
+            DrawingsController::syncNote($id, $data['content']);
         }
     }
 
@@ -385,6 +389,11 @@ final class NotesController
             'checklist_done' => $n['checklist_done'],
             'is_locked' => $n['is_locked'],
         ]);
+        // Handwriting is copied too, so editing the copy never changes the original.
+        $copied = DrawingsController::copyForNote($id, $new, $u['id'], (string) $n['content']);
+        if ($copied !== $n['content']) {
+            DB::run('UPDATE notes SET content = ? WHERE id = ?', [$copied, $new]);
+        }
         TagsController::sync('note', $new, $u['id'], TagsController::forItems('note', [$id])[$id] ?? []);
         Activity::log('note.duplicate', 'note', $new, 'Duplicated note #' . $id);
         Http::ok(self::payload($new, $u['id']));

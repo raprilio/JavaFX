@@ -543,7 +543,7 @@ mark.hl { background: color-mix(in srgb, var(--warning) 30%, transparent); color
 .hero { display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap; margin: 4px 0 22px; }
 .hero h1 { font-size: 28px; font-weight: 740; letter-spacing: -.035em; }
 .hero p { color: var(--text-2); margin: 4px 0 0; }
-.quick-create { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; margin-bottom: var(--gap); }
+.quick-create { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 12px; margin-bottom: var(--gap); }
 .qc {
   display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding: 16px; border-radius: 16px; border: 1px solid var(--border); background: var(--bg-elev);
   cursor: pointer; transition: transform var(--t) var(--ease), box-shadow var(--t), border-color var(--t); text-align: left; font-weight: 600; position: relative; overflow: hidden;
@@ -866,7 +866,7 @@ svg .edge-path.selected { stroke: var(--accent) !important; }
    Responsive
    ===================================================================== */
 @media (max-width: 1280px) {
-  .quick-create { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .quick-create { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .editor-shell { grid-template-columns: minmax(0, 1fr) 260px; }
 }
 @media (max-width: 1100px) {
@@ -916,7 +916,7 @@ svg .edge-path.selected { stroke: var(--accent) !important; }
   .page-head h1, .hero h1 { font-size: 23px; }
   .grid-2, .grid-3, .grid-4 { grid-template-columns: minmax(0, 1fr); }
   .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .quick-create { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .quick-create { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
   .qc { padding: 12px; gap: 8px; font-size: 13px; align-items: center; text-align: center; }
   .qc small { display: none; }
   .notes-grid { columns: 2 150px; column-gap: 10px; }
@@ -1144,3 +1144,46 @@ svg .edge-path.selected { stroke: var(--accent) !important; }
 .dash-opt input { accent-color: var(--accent); }
 .dash-opt-ic { color: var(--text-3); display: inline-flex; }
 @media (max-width: 520px) { .dash-opts { grid-template-columns: minmax(0, 1fr); } }
+
+/* ===================== v1.4 · Handwriting (pen / S Pen) ===================== */
+.rte figure.sn-drawing { margin: 10px 0; padding: 0; border-radius: 12px; cursor: pointer; position: relative; display: block; }
+.rte figure.sn-drawing img, .note-view figure.sn-drawing img { display: block; width: 100%; max-width: 100%; height: auto; border-radius: 12px; background: transparent; outline: 1px dashed transparent; transition: outline-color .15s; }
+.rte figure.sn-drawing:hover img, .rte figure.sn-drawing img.selected { outline-color: var(--border-strong, var(--border)); }
+.rte figure.sn-drawing::after { content: '✎'; position: absolute; top: 8px; right: 10px; font-size: 14px; color: var(--text-3); opacity: 0; transition: opacity .15s; }
+.rte figure.sn-drawing:hover::after { opacity: 1; }
+/* Ink is a transparent PNG with its real colours; in dark mode it sits on a light sheet (like a paper page) so every pen and highlighter colour stays readable. */
+[data-theme="dark"] figure.sn-drawing img { background: #f4f5f7; }
+[data-theme="dark"] .nc-cover.nc-ink { background-color: #f4f5f7; }
+.nc-cover.nc-ink { background-size: cover; background-position: top center; background-color: transparent; }
+.fmt-bar .draw-btn { gap: 6px; color: var(--accent); font-weight: 600; }
+
+.draw-root { position: fixed; inset: 0; z-index: 400; display: flex; flex-direction: column; background: var(--bg-soft); animation: fadeIn .16s var(--ease); }
+.draw-root.closing { opacity: 0; transition: opacity .15s; }
+.draw-bar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; padding-top: max(8px, env(safe-area-inset-top)); background: var(--bg-elev); border-bottom: 1px solid var(--border); flex-wrap: nowrap; }
+.draw-tools { flex: 1; display: flex; align-items: center; gap: 6px; overflow-x: auto; scrollbar-width: none; justify-content: center; min-width: 0; }
+.draw-tools::-webkit-scrollbar { display: none; }
+.draw-tools .btn-group .btn.active { background: var(--accent); color: var(--accent-contrast); }
+.draw-sep { width: 1px; height: 24px; background: var(--border); flex: none; margin: 0 2px; }
+.draw-colors, .draw-sizes { display: flex; align-items: center; gap: 4px; flex: none; }
+.draw-color { width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--bg-elev); background: var(--c); box-shadow: 0 0 0 1px var(--border); cursor: pointer; flex: none; padding: 0; }
+.draw-color.on { box-shadow: 0 0 0 2px var(--accent); }
+.draw-size { width: 30px; height: 30px; border-radius: 8px; border: 0; background: none; display: grid; place-items: center; cursor: pointer; flex: none; }
+.draw-size span { display: block; border-radius: 50%; background: var(--text-2); }
+.draw-size.on { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.draw-size.on span { background: var(--accent); }
+.draw-tools .btn.active { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.draw-scroll { flex: 1; overflow: auto; overscroll-behavior: contain; padding: 12px; -webkit-overflow-scrolling: touch; }
+.draw-paper { position: relative; margin: 0 auto; background-color: #fff; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,.08), 0 12px 30px -18px rgba(0,0,0,.35); --line: 40px; }
+.draw-paper[data-bg="lines"] { background-image: linear-gradient(to bottom, transparent calc(var(--line) - 1px), #e2e8f0 calc(var(--line) - 1px)); background-size: 100% var(--line); }
+.draw-paper[data-bg="grid"] { background-image: linear-gradient(to bottom, #edf1f6 1px, transparent 1px), linear-gradient(to right, #edf1f6 1px, transparent 1px); background-size: var(--line) var(--line); }
+.draw-paper[data-bg="dots"] { background-image: radial-gradient(circle, #cbd5e1 1.2px, transparent 1.4px); background-size: var(--line) var(--line); }
+.draw-paper canvas { position: absolute; left: 0; top: 0; }
+.draw-paper canvas[data-live] { touch-action: none; cursor: crosshair; }
+.draw-paper.erasing canvas[data-live] { cursor: cell; }
+.draw-hint { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom)); transform: translate(-50%, 20px); background: #111827; color: #fff; padding: 9px 14px; border-radius: 12px; font-size: 13px; opacity: 0; pointer-events: none; transition: .2s var(--ease); max-width: calc(100vw - 32px); text-align: center; }
+.draw-hint.show { opacity: .94; transform: translate(-50%, 0); }
+@media (max-width: 767px) {
+  .draw-bar { gap: 4px; padding-inline: 6px; }
+  .draw-tools { justify-content: flex-start; }
+  .draw-scroll { padding: 6px; }
+}

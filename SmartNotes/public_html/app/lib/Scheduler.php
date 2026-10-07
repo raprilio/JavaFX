@@ -345,6 +345,7 @@ final class Scheduler
         }
         Settings::set('last_housekeeping', today());
         $purged = Trash::purgeOlderThan(Settings::int('trash_auto_delete_days', 0));
+        DrawingsController::purgeRemoved();
         DB::run('DELETE FROM login_attempts WHERE created_at < ?', [date('Y-m-d H:i:s', time() - 7 * 86400)]);
         DB::run('DELETE FROM remember_tokens WHERE expires_at < NOW()');
         DB::run('DELETE FROM password_resets WHERE expires_at < ?', [date('Y-m-d H:i:s', time() - 7 * 86400)]);

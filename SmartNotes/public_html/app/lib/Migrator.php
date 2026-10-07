@@ -9,7 +9,7 @@ defined('SN_APP') || exit;
  */
 final class Migrator
 {
-    public const VERSION = 3;
+    public const VERSION = 4;
 
     public static function run(): void
     {
@@ -27,6 +27,9 @@ final class Migrator
             }
             if ($current < 3) {
                 self::v3();
+            }
+            if ($current < 4) {
+                self::v4();
             }
             Settings::set('schema_version', (string) self::VERSION);
         } finally {
@@ -133,5 +136,22 @@ final class Migrator
         }
         self::addColumn('user_settings', 'dashboard_hidden', 'TEXT NULL');
         DB::run("INSERT IGNORE INTO settings (setting_key, setting_value) VALUES ('max_video_mb', '100')");
+    }
+
+    /** v1.4: handwriting / pen drawings inside notes (vector JSON + PNG files in uploads/). */
+    private static function v4(): void
+    {
+        if (!self::hasTable('note_drawings')) {
+            DB::pdo()->exec("CREATE TABLE `note_drawings` (
+              `id` INT UNSIGNED NOT NULL AUTO_INCREMENT, `user_id` INT UNSIGNED NOT NULL, `note_id` INT UNSIGNED NOT NULL,
+              `data_path` VARCHAR(255) NOT NULL, `png_path` VARCHAR(255) NOT NULL,
+              `width` SMALLINT UNSIGNED NOT NULL DEFAULT 0, `height` SMALLINT UNSIGNED NOT NULL DEFAULT 0, `stroke_count` INT UNSIGNED NOT NULL DEFAULT 0,
+              `file_size` INT UNSIGNED NOT NULL DEFAULT 0, `version` INT UNSIGNED NOT NULL DEFAULT 1,
+              `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, `deleted_at` DATETIME NULL,
+              PRIMARY KEY (`id`), KEY `idx_draw_note` (`note_id`, `deleted_at`), KEY `idx_draw_user` (`user_id`),
+              CONSTRAINT `fk_draw_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+              CONSTRAINT `fk_draw_note` FOREIGN KEY (`note_id`) REFERENCES `notes` (`id`) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+        }
     }
 }

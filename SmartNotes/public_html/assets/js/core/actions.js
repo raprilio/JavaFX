@@ -4,10 +4,10 @@ import { navigate } from './router.js';
 import { toast, toastError, prompt } from './ui.js';
 import { emit } from './store.js';
 
-export async function newNote(fields = {}) {
+export async function newNote(fields = {}, { draw = false } = {}) {
   try {
     const n = await api.post('notes', fields);
-    navigate(`/notes/${n.id}?new=1`);
+    navigate(`/notes/${n.id}?new=1${draw ? '&draw=1' : ''}`);
     return n;
   } catch (e) { toastError(e); }
 }
@@ -59,6 +59,7 @@ export async function newRecording(opts = {}) {
 
 export const CREATE_ITEMS = [
   { key: 'note', label: 'New note', icon: 'notebook-pen', color: '#6366f1', sub: 'Text, checklist, images', run: () => newNote() },
+  { key: 'handwriting', label: 'Handwriting', icon: 'pen-line', color: '#0d9488', sub: 'Write with a pen or S Pen', run: () => newNote({}, { draw: true }) },
   { key: 'task', label: 'Task', icon: 'square-check-big', color: '#10b981', sub: 'With due date & reminder', run: () => newTask() },
   { key: 'mindmap', label: 'Mind map', icon: 'network', color: '#f59e0b', sub: 'Visual brainstorming', run: () => newMindmap() },
   { key: 'flowchart', label: 'Flowchart', icon: 'workflow', color: '#0ea5e9', sub: 'Process diagrams', run: () => newFlowchart() },

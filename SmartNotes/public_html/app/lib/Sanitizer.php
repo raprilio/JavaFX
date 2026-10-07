@@ -18,8 +18,8 @@ final class Sanitizer
         'blockquote' => ['style'], 'pre' => ['class', 'spellcheck'], 'code' => ['class'],
         'a' => ['href', 'title', 'target', 'rel'],
         'table' => ['class', 'style'], 'thead' => [], 'tbody' => [], 'tr' => [], 'th' => ['style', 'colspan', 'rowspan'], 'td' => ['style', 'colspan', 'rowspan'],
-        'img' => ['src', 'alt', 'class', 'data-file-id', 'width', 'style'],
-        'figure' => ['class', 'data-file-id', 'data-audio-id', 'contenteditable'], 'figcaption' => [],
+        'img' => ['src', 'alt', 'class', 'data-file-id', 'data-drawing-id', 'width', 'style'],
+        'figure' => ['class', 'data-file-id', 'data-audio-id', 'data-drawing-id', 'contenteditable'], 'figcaption' => [],
         'font' => ['color', 'size'],
     ];
     private const DROP_WITH_CONTENT = ['script', 'style', 'iframe', 'object', 'embed', 'svg', 'math', 'template', 'noscript', 'form', 'input', 'button', 'textarea', 'select', 'link', 'meta', 'base', 'head', 'title', 'audio', 'video', 'source'];
@@ -106,7 +106,7 @@ final class Sanitizer
                     break;
                 case 'src':
                     // Only images served by our own API are allowed.
-                    if (!preg_match('#^api/index\.php\?route=files/\d+/(raw|thumb)(&v=[a-f0-9]{1,12})?$#', $value)) {
+                    if (!preg_match('#^api/index\.php\?route=(files/\d+/(raw|thumb)(&v=[a-f0-9]{1,12})?|drawings/\d+/png(&v=\d{1,9})?)$#', $value)) {
                         $el->removeAttribute('src');
                     }
                     break;

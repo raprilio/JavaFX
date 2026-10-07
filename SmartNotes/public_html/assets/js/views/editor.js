@@ -14,6 +14,7 @@ import { openTaskForm, refreshTags } from '../components/forms.js';
 import { openShareDialog } from '../components/share.js';
 import { openFilePreview } from '../components/filePreview.js';
 import { renderLockScreen, unlockNotes, toggleNoteLock, lockNow } from '../components/notePin.js';
+import { openDrawingEditor } from '../components/drawPad.js';
 
 export default {
   title: 'Note',
@@ -111,6 +112,8 @@ export default {
       onAudio: isOwner ? (list) => (list ? uploadAudios(list) : record()) : undefined,
       onFiles: isOwner ? (list) => uploadFiles(list) : undefined,
       media: isOwner && !trashed,
+      onDraw: isOwner && !trashed ? () => drawNew() : undefined,
+      onDrawingOpen: (fig, img) => openDrawing(fig, img),
       onImageOpen: (img) => {
         const fid = +img.dataset.fileId || +(img.getAttribute('src').match(/files\/(\d+)/) || [])[1];
         const k = images.findIndex((x) => x.id === fid);
@@ -245,6 +248,47 @@ export default {
       }
       save();
     }
+    // ------------------------------------------------------------ handwriting (pen)
+    const drawingForm = (r) => {
+      const fd = new FormData();
+      fd.append('data', JSON.stringify(r.data));
+      fd.append('png', r.blob, 'handwriting.png');
+      return fd;
+    };
+    const figureHtml = (d) => `<figure class="sn-drawing" data-drawing-id="${d.id}" contenteditable="false"><img src="${d.png_url}" data-drawing-id="${d.id}" alt="Handwriting"></figure><p><br></p>`;
+    async function drawNew() {
+      const r = await openDrawingEditor({ title: 'Handwriting' });
+      if (!r?.data) return;
+      const fd = drawingForm(r);
+      fd.append('note_id', id);
+      try {
+        const d = await api.upload('drawings', fd);
+        rte.insertHTML(figureHtml(d));
+        save();
+      } catch (e) { toastError(e); }
+    }
+    async function openDrawing(fig, img) {
+      const did = +fig.dataset.drawingId;
+      if (!isOwner || readOnly) {
+        openImageViewer([{ id: did, name: 'Handwriting', url: img.getAttribute('src'), download_url: img.getAttribute('src') }], 0);
+        return;
+      }
+      let d;
+      try { d = await api.get(`drawings/${did}`); } catch (e) { return toastError(e); }
+      const r = await openDrawingEditor({ data: d.data, title: 'Handwriting' });
+      if (!r) return;
+      if (r.remove) {
+        fig.remove();
+        markDirty();
+        return;
+      }
+      try {
+        const u = await api.upload(`drawings/${did}`, drawingForm(r));
+        fig.querySelectorAll('img').forEach((im) => im.setAttribute('src', u.png_url));
+        markDirty();
+      } catch (e) { toastError(e); }
+    }
+
     async function uploadFiles(list) {
       for (const file of list) {
         if (/^image\/(jpeg|png|webp)$/.test(file.type)) { await uploadImages([file], true); continue; }
@@ -446,7 +490,8 @@ export default {
       }
       return true;
     };
-    if (isNew) setTimeout(() => titleEl.focus(), 50);
+    if (isNew && ctx.query.draw === '1' && isOwner) setTimeout(() => drawNew(), 80);
+    else if (isNew) setTimeout(() => titleEl.focus(), 50);
     setTitle(note.title || 'Untitled note');
 
     return () => {

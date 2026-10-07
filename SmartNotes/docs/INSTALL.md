@@ -183,6 +183,8 @@ File backup disimpan di `storage/backups/` (tidak bisa diakses publik). Simpan s
 2. Upload ulang semua file **kecuali** `app/config.php`, `uploads/`, dan `storage/`.
 3. Buka aplikasi. Perubahan skema dijalankan **otomatis** oleh migrator saat request pertama (tidak perlu phpMyAdmin). Versi skema tersimpan di tabel `settings` (`schema_version`).
 
+**Upgrade ke v1.4** (tulisan tangan dengan pena): timpa file; migrasi skema v4 otomatis menambah tabel `note_drawings`. File tulisan tangan disimpan di `uploads/u<id>/drawings/`. Butuh ekstensi PHP **GD** (sudah dipakai untuk gambar).
+
 **Upgrade ke v1.3** (PIN catatan, meeting berbagi, video, dashboard yang bisa diatur): cukup timpa file, migrasi skema v3 berjalan otomatis (menambah `note_pins`, `meeting_shares`, kolom `notes.is_locked`, `meetings.share_all`, `user_settings.dashboard_hidden`, jenis file `video`). Data lama tidak diubah. Naikkan batas upload PHP bila ingin mengunggah video (bagian 8).
 
 **Upgrade v1.0 → v1.1** (Drive, catatan berbagi, kontrol akun, tata letak logo):

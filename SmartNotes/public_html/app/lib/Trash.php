@@ -70,6 +70,7 @@ final class Trash
             DB::run("DELETE FROM note_attachments WHERE {$type}_id = ? AND user_id = ?", [$id, $userId]);
         }
         if ($type === 'note') {
+            array_push($files, ...DrawingsController::filesOfNote($id));
             foreach (DB::all('SELECT file_path FROM audio_notes WHERE note_id = ? AND user_id = ?', [$id, $userId]) as $f) {
                 $files[] = $f['file_path'];
             }

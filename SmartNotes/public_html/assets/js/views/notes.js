@@ -15,7 +15,7 @@ function card(n, selecting, selected) {
   const cat = state.categories.note.find((c) => c.id === n.category_id);
   return html`<article class="note-card ${selected ? 'selected' : ''}" data-id="${n.id}" data-nc="${n.color || ''}" tabindex="0">
     <label class="nc-select" ${selecting ? '' : raw('hidden')}><input type="checkbox" ${selected ? 'checked' : ''} data-select></label>
-    ${n.cover_id ? html`<div class="nc-cover" style="background-image:url('api/index.php?route=files/${n.cover_id}/thumb')"></div>` : ''}
+    ${n.cover_id ? html`<div class="nc-cover" style="background-image:url('api/index.php?route=files/${n.cover_id}/thumb')"></div>` : n.drawing_id ? html`<div class="nc-cover nc-ink" style="background-image:url('api/index.php?route=drawings/${n.drawing_id}/png&v=${n.drawing_v}')"></div>` : ''}
     <div class="nc-main">
       ${n.is_pinned ? html`<span class="nc-pin">${icon('pin', 'sm')}</span>` : ''}
       ${n.title ? html`<h3>${n.title}</h3>` : ''}

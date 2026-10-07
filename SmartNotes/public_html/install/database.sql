@@ -417,6 +417,27 @@ CREATE TABLE IF NOT EXISTS `note_shares` (
   CONSTRAINT `fk_share_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `note_drawings` (
+  `id`            INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `user_id`       INT UNSIGNED NOT NULL,
+  `note_id`       INT UNSIGNED NOT NULL,
+  `data_path`     VARCHAR(255) NOT NULL COMMENT 'Vector strokes (JSON file under uploads/)',
+  `png_path`      VARCHAR(255) NOT NULL COMMENT 'Rendered PNG under uploads/',
+  `width`         SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+  `height`        SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+  `stroke_count`  INT UNSIGNED NOT NULL DEFAULT 0,
+  `file_size`     INT UNSIGNED NOT NULL DEFAULT 0,
+  `version`       INT UNSIGNED NOT NULL DEFAULT 1,
+  `created_at`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `deleted_at`    DATETIME NULL COMMENT 'Set when the drawing is removed from the note text (purged after 7 days)',
+  PRIMARY KEY (`id`),
+  KEY `idx_draw_note` (`note_id`, `deleted_at`),
+  KEY `idx_draw_user` (`user_id`),
+  CONSTRAINT `fk_draw_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_draw_note` FOREIGN KEY (`note_id`) REFERENCES `notes` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `note_pins` (
   `user_id`          INT UNSIGNED NOT NULL,
   `pin_hash`         VARCHAR(255) NOT NULL COMMENT 'password_hash() of the notes PIN',
@@ -700,7 +721,7 @@ INSERT IGNORE INTO `settings` (`setting_key`, `setting_value`) VALUES
 ('smtp_encryption', 'tls'),
 ('smtp_from_name', 'SmartNotes'),
 ('smtp_from_email', ''),
-('schema_version', '3'),
+('schema_version', '4'),
 ('allow_note_sharing', '1'),
 ('logo_display', 'logo'),
 ('logo_height', '34'),
