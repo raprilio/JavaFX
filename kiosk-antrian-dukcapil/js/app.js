@@ -381,7 +381,7 @@
     return '<div class="home">' +
       '<section class="hero">' +
         '<span class="hero-kicker">Layanan Administrasi Kependudukan</span>' +
-        '<h1>Selamat datang 👋<br>Ambil nomor antrian di sini</h1>' +
+        '<h1>Selamat datang 👋<br>Ambil antrian di sini</h1>' +
         '<p>Tiga langkah mudah: pilih layanan, cek kelengkapan dokumen, lalu tiket tercetak otomatis.</p>' +
         cta +
         '<div class="hero-chips">' + chips + '</div>' +

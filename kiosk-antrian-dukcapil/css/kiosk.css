@@ -76,10 +76,11 @@ svg { width: 1.5rem; height: 1.5rem; fill: none; stroke: currentColor; stroke-wi
 .app {
   height: 100vh;
   height: 100dvh;
-  display: grid;
-  grid-template-rows: auto auto 1fr auto;
-  grid-template-columns: minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
 }
+.app > * { flex: none; min-width: 0; }
+.app > .screen { flex: 1 1 auto; min-height: 0; }
 .topbar {
   display: flex; align-items: center; justify-content: space-between; gap: 1rem;
   padding: .85rem clamp(1rem, 3vw, 2rem);
