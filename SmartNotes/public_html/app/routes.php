@@ -62,6 +62,11 @@ return [
     ['GET', 'users/directory', 'SharesController::directory', 'auth'],
 
     // Drive
+    // Sharing of audio, mind maps, flowcharts, Drive files/folders and tagged calendar events
+    ['GET', 'shares/{type}/{id}', 'ItemSharesController::index', 'auth'],
+    ['POST', 'shares/{type}/{id}', 'ItemSharesController::store', 'auth'],
+    ['POST', 'shares/{type}/{id}/{id}/remove', 'ItemSharesController::remove', 'auth'],
+    ['POST', 'shares/{type}/{id}/leave', 'ItemSharesController::leave', 'auth'],
     ['GET', 'drive', 'DriveController::index', 'auth'],
     ['GET', 'drive/folders', 'DriveController::folders', 'auth'],
     ['POST', 'drive/folders', 'DriveController::createFolder', 'auth'],

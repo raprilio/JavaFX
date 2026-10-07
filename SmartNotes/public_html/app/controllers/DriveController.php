@@ -52,10 +52,91 @@ final class DriveController
         return $out;
     }
 
+    /** "Shared with me": files & folders other users shared, and the inside of a shared folder (read-only). */
+    private static function sharedIndex(int $uid): never
+    {
+        $folderId = V::id(Http::query('folder'));
+        $q = V::str(Http::query('q'), 100);
+        $like = $q !== null ? '%' . addcslashes($q, '%_\\') . '%' : null;
+        if ($folderId) {
+            Shares::require('folder', $folderId, $uid);
+            $folderWhere = 'f.parent_id = ?';
+            $folderParams = [$folderId];
+            $fileWhere = 'a.folder_id = ? AND a.deleted_at IS NULL';
+            $fileParams = [$folderId];
+            // Breadcrumb: from the folder up to the topmost folder this user can see.
+            $path = [];
+            for ($i = 0, $f = $folderId; $f && $i < 40; $i++) {
+                $row = DB::one('SELECT id, name, parent_id FROM drive_folders WHERE id = ?', [$f]);
+                if (!$row) {
+                    break;
+                }
+                array_unshift($path, ['id' => (int) $row['id'], 'name' => $row['name']]);
+                $direct = DB::val("SELECT 1 FROM item_shares WHERE item_type = 'folder' AND item_id = ? AND user_id = ?", [$f, $uid]);
+                if ($direct || !$row['parent_id'] || !Shares::folderShared((int) $row['parent_id'], $uid)) {
+                    break;
+                }
+                $f = (int) $row['parent_id'];
+            }
+        } else {
+            $folderWhere = "EXISTS (SELECT 1 FROM item_shares s WHERE s.item_type = 'folder' AND s.item_id = f.id AND s.user_id = ?)";
+            $folderParams = [$uid];
+            $fileWhere = "EXISTS (SELECT 1 FROM item_shares s WHERE s.item_type = 'file' AND s.item_id = a.id AND s.user_id = ?) AND a.deleted_at IS NULL";
+            $fileParams = [$uid];
+            $path = [];
+        }
+        if ($like) {
+            $folderWhere .= ' AND f.name LIKE ?';
+            $folderParams[] = $like;
+            $fileWhere .= ' AND (a.original_name LIKE ? OR a.description LIKE ?)';
+            array_push($fileParams, $like, $like);
+        }
+        if (in_array(Http::query('kind'), ['image', 'audio', 'video', 'document', 'archive', 'other'], true)) {
+            $fileWhere .= ' AND a.file_kind = ?';
+            $fileParams[] = Http::query('kind');
+        } elseif (Http::query('kind') === 'pdf') {
+            $fileWhere .= " AND a.mime_type = 'application/pdf'";
+        }
+        $folders = DB::all(
+            "SELECT f.id, f.name, f.color, f.updated_at, o.name AS owner_name,
+                    (SELECT COUNT(*) FROM note_attachments a WHERE a.folder_id = f.id AND a.deleted_at IS NULL) AS file_count,
+                    (SELECT COUNT(*) FROM drive_folders c WHERE c.parent_id = f.id) AS folder_count
+             FROM drive_folders f JOIN users o ON o.id = f.user_id WHERE $folderWhere ORDER BY f.name LIMIT 500",
+            $folderParams
+        );
+        foreach ($folders as &$f) {
+            $f['id'] = (int) $f['id'];
+            $f['file_count'] = (int) $f['file_count'];
+            $f['folder_count'] = (int) $f['folder_count'];
+            $f['shared'] = true;
+        }
+        unset($f);
+        $rows = DB::all("SELECT a.*, o.name AS owner_name FROM note_attachments a JOIN users o ON o.id = a.user_id WHERE $fileWhere ORDER BY a.original_name LIMIT 1000", $fileParams);
+        $items = FilesController::presentMany($rows);
+        foreach ($items as $i => &$it) {
+            $it['shared'] = true;
+            $it['owner_name'] = $rows[$i]['owner_name'];
+        }
+        unset($it);
+        Http::ok([
+            'view' => 'shared',
+            'folder' => $folderId ? ['id' => $folderId, 'path' => $path] : null,
+            'folders' => $folders,
+            'items' => $items,
+            'total' => count($items),
+            'page' => 1,
+            'per_page' => 1000,
+            'summary' => null,
+        ]);
+    }
+
     public static function index(): void
     {
         $u = Auth::require();
         $uid = $u['id'];
+        if (Http::query('view') === 'shared') {
+            self::sharedIndex($uid);
+        }
         $view = V::enum(Http::query('view'), ['drive', 'starred', 'recent', 'all'], 'drive');
         $folderId = $view === 'drive' ? self::ownedFolder(V::id(Http::query('folder')), $uid) : null;
         $q = V::str(Http::query('q'), 100);
@@ -109,7 +190,9 @@ final class DriveController
         $w = implode(' AND ', $where);
         $total = (int) DB::val("SELECT COUNT(*) FROM note_attachments a WHERE $w", $params);
         $rows = DB::all(
-            "SELECT a.*, n.title AS note_title, f.name AS folder_name FROM note_attachments a
+            "SELECT a.*, n.title AS note_title, f.name AS folder_name,
+                    (SELECT COUNT(*) FROM item_shares s WHERE s.item_type = 'file' AND s.item_id = a.id) AS share_count
+             FROM note_attachments a
              LEFT JOIN notes n ON n.id = a.note_id LEFT JOIN drive_folders f ON f.id = a.folder_id
              WHERE $w ORDER BY a.is_starred DESC, $sort, a.id DESC LIMIT $perPage OFFSET " . (($page - 1) * $perPage),
             $params
@@ -117,6 +200,7 @@ final class DriveController
         $items = FilesController::presentMany($rows);
         foreach ($items as $i => &$it) {
             $it['folder_name'] = $rows[$i]['folder_name'];
+            $it['share_count'] = (int) $rows[$i]['share_count'];
         }
         unset($it);
 
@@ -125,7 +209,8 @@ final class DriveController
             $folders = DB::all(
                 'SELECT f.id, f.name, f.color, f.updated_at,
                         (SELECT COUNT(*) FROM note_attachments a WHERE a.folder_id = f.id AND a.deleted_at IS NULL) AS file_count,
-                        (SELECT COUNT(*) FROM drive_folders c WHERE c.parent_id = f.id) AS folder_count
+                        (SELECT COUNT(*) FROM drive_folders c WHERE c.parent_id = f.id) AS folder_count,
+                        (SELECT COUNT(*) FROM item_shares s WHERE s.item_type = \'folder\' AND s.item_id = f.id) AS share_count
                  FROM drive_folders f WHERE f.user_id = ? AND ' . ($folderId ? 'f.parent_id = ?' : 'f.parent_id IS NULL') . ' ORDER BY f.name',
                 $folderId ? [$uid, $folderId] : [$uid]
             );
@@ -133,6 +218,7 @@ final class DriveController
                 $f['id'] = (int) $f['id'];
                 $f['file_count'] = (int) $f['file_count'];
                 $f['folder_count'] = (int) $f['folder_count'];
+                $f['share_count'] = (int) $f['share_count'];
             }
             unset($f);
         }
@@ -202,6 +288,7 @@ final class DriveController
             DB::run('UPDATE note_attachments SET folder_id = ? WHERE folder_id = ? AND user_id = ?', [$parent, $id, $u['id']]);
             DB::run('UPDATE drive_folders SET parent_id = ? WHERE parent_id = ? AND user_id = ?', [$parent, $id, $u['id']]);
             DB::run('DELETE FROM drive_folders WHERE id = ? AND user_id = ?', [$id, $u['id']]);
+            Shares::purge('folder', $id);
         });
         Activity::log('drive.folder_delete', 'folder', $id, 'Deleted folder');
         Http::ok();

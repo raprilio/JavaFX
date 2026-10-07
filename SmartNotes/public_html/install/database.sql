@@ -417,6 +417,21 @@ CREATE TABLE IF NOT EXISTS `note_shares` (
   CONSTRAINT `fk_share_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `item_shares` (
+  `id`          INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `item_type`   VARCHAR(20) NOT NULL COMMENT 'audio | mindmap | flowchart | file | folder | event',
+  `item_id`     INT UNSIGNED NOT NULL,
+  `owner_id`    INT UNSIGNED NOT NULL,
+  `user_id`     INT UNSIGNED NOT NULL COMMENT 'Recipient / tagged user',
+  `permission`  ENUM('view','edit') NOT NULL DEFAULT 'view',
+  `created_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_item_share` (`item_type`, `item_id`, `user_id`),
+  KEY `idx_item_share_user` (`user_id`, `item_type`),
+  CONSTRAINT `fk_ishare_owner` FOREIGN KEY (`owner_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_ishare_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `note_drawings` (
   `id`            INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `user_id`       INT UNSIGNED NOT NULL,
@@ -479,6 +494,8 @@ CREATE TABLE IF NOT EXISTS `mindmaps` (
   `description`     TEXT NULL,
   `viewport`        VARCHAR(120) NULL COMMENT 'JSON {x,y,zoom}',
   `last_opened_at`  DATETIME NULL,
+  `updated_by`      INT UNSIGNED NULL COMMENT 'Last editor (owner or a user it is shared with)',
+  `revision`        INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Incremented on every save (conflict detection)',
   `created_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `deleted_at`      DATETIME NULL,
@@ -539,6 +556,8 @@ CREATE TABLE IF NOT EXISTS `flowcharts` (
   `viewport`        VARCHAR(120) NULL COMMENT 'JSON {x,y,zoom}',
   `settings_json`   TEXT NULL COMMENT 'JSON {grid,snap}',
   `last_opened_at`  DATETIME NULL,
+  `updated_by`      INT UNSIGNED NULL COMMENT 'Last editor (owner or a user it is shared with)',
+  `revision`        INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Incremented on every save (conflict detection)',
   `created_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `deleted_at`      DATETIME NULL,
@@ -721,7 +740,7 @@ INSERT IGNORE INTO `settings` (`setting_key`, `setting_value`) VALUES
 ('smtp_encryption', 'tls'),
 ('smtp_from_name', 'SmartNotes'),
 ('smtp_from_email', ''),
-('schema_version', '4'),
+('schema_version', '5'),
 ('allow_note_sharing', '1'),
 ('logo_display', 'logo'),
 ('logo_height', '34'),

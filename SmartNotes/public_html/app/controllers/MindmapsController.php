@@ -14,8 +14,14 @@ final class MindmapsController
     public static function index(): void
     {
         $u = Auth::require();
-        $params = [$u['id']];
-        $where = 'm.user_id = ? AND m.deleted_at IS NULL';
+        // Own items plus items other users shared with me (scope: mine | shared).
+        $sharedSql = "EXISTS (SELECT 1 FROM item_shares s WHERE s.item_type = 'mindmap' AND s.item_id = m.id AND s.user_id = ?)";
+        $where = match (Http::query('scope')) {
+            'mine' => 'm.user_id = ?',
+            'shared' => $sharedSql,
+            default => "(m.user_id = ? OR $sharedSql)",
+        } . ' AND m.deleted_at IS NULL';
+        $params = Http::query('scope') === 'mine' || Http::query('scope') === 'shared' ? [$u['id']] : [$u['id'], $u['id']];
         if ($q = V::str(Http::query('q'), 100)) {
             $where .= ' AND (m.title LIKE ? OR m.description LIKE ?)';
             $like = '%' . addcslashes($q, '%_\\') . '%';
@@ -25,28 +31,37 @@ final class MindmapsController
             "SELECT m.id, m.title, m.description, m.created_at, m.updated_at, m.last_opened_at,
                     (SELECT COUNT(*) FROM mindmap_nodes n WHERE n.mindmap_id = m.id) AS node_count,
                     (SELECT n.label FROM mindmap_nodes n WHERE n.mindmap_id = m.id AND n.parent_id IS NULL ORDER BY n.id LIMIT 1) AS root_label
-             FROM mindmaps m WHERE $where ORDER BY m.updated_at DESC LIMIT 500",
-            $params
+                    , m.user_id AS owner_id, o.name AS owner_name,
+                    (SELECT COUNT(*) FROM item_shares s2 WHERE s2.item_type = 'mindmap' AND s2.item_id = m.id) AS share_count,
+                    (SELECT s3.permission FROM item_shares s3 WHERE s3.item_type = 'mindmap' AND s3.item_id = m.id AND s3.user_id = ?) AS my_permission
+             FROM mindmaps m JOIN users o ON o.id = m.user_id WHERE $where ORDER BY m.updated_at DESC LIMIT 500",
+            array_merge([$u['id']], $params)
         );
         foreach ($rows as &$r) {
             $r['id'] = (int) $r['id'];
+            $r['shared'] = (int) $r['owner_id'] !== $u['id'];
+            $r['access'] = $r['shared'] ? ($r['my_permission'] ?: 'view') : 'owner';
+            $r['share_count'] = (int) $r['share_count'];
+            if (!$r['shared']) {
+                $r['owner_name'] = null;
+            }
+            unset($r['owner_id'], $r['my_permission']);
             $r['node_count'] = (int) $r['node_count'];
         }
         Http::ok($rows);
     }
 
-    private static function find(int $id, int $userId): array
+    /** @return array{0: array, 1: string} [row, 'owner'|'edit'|'view'] */
+    private static function access(int $id, int $userId, string $need = 'view'): array
     {
-        $m = DB::one('SELECT * FROM mindmaps WHERE id = ? AND user_id = ? AND deleted_at IS NULL', [$id, $userId]);
-        if (!$m) {
-            throw new HttpException('Mind map not found.', 404);
-        }
-        return $m;
+        [, $role] = Shares::require('mindmap', $id, $userId, $need);
+        return [DB::one('SELECT * FROM mindmaps WHERE id = ?', [$id]), $role];
     }
+
 
     public static function payload(int $id, int $userId): array
     {
-        $m = self::find($id, $userId);
+        [$m, $role] = self::access($id, $userId);
         $nodes = DB::all('SELECT * FROM mindmap_nodes WHERE mindmap_id = ? ORDER BY sort_order, id', [$id]);
         $keyById = [];
         foreach ($nodes as $n) {
@@ -79,6 +94,11 @@ final class MindmapsController
             'viewport' => json_decode_array($m['viewport']) ?: null,
             'created_at' => $m['created_at'],
             'updated_at' => $m['updated_at'],
+            'access' => $role,
+            'revision' => (int) $m['revision'],
+            'owner' => DB::one('SELECT id, name FROM users WHERE id = ?', [$m['user_id']]),
+            'updated_by_name' => $m['updated_by'] && (int) $m['updated_by'] !== $userId ? DB::val('SELECT name FROM users WHERE id = ?', [$m['updated_by']]) : null,
+            'shares' => $role === 'owner' ? Shares::list('mindmap', $id) : [],
             'nodes' => $outNodes,
             'edges' => array_values(array_filter($edges, static fn($e) => $e['source'] && $e['target'])),
         ];
@@ -87,8 +107,10 @@ final class MindmapsController
     public static function show(int $id): void
     {
         $u = Auth::require();
-        self::find($id, $u['id']);
-        DB::run('UPDATE mindmaps SET last_opened_at = NOW(), updated_at = updated_at WHERE id = ?', [$id]);
+        [, $role] = self::access($id, $u['id']);
+        if ($role === 'owner') {
+            DB::run('UPDATE mindmaps SET last_opened_at = NOW(), updated_at = updated_at WHERE id = ?', [$id]);
+        }
         Http::ok(self::payload($id, $u['id']));
     }
 
@@ -108,9 +130,19 @@ final class MindmapsController
     public static function save(int $id): void
     {
         $u = Auth::require();
-        self::find($id, $u['id']);
+        [$cur, $role] = self::access($id, $u['id'], 'edit');
         $in = Http::body();
-        DB::tx(static function () use ($id, $in) {
+        // Shared editing: never overwrite a newer version saved by someone else.
+        $base = isset($in['base_revision']) ? V::int($in['base_revision'], 0) : null;
+        if ($base !== null && isset($in['nodes']) && (int) $cur['revision'] !== $base && $cur['updated_by'] !== null && (int) $cur['updated_by'] !== $u['id']) {
+            $who = (string) DB::val('SELECT name FROM users WHERE id = ?', [$cur['updated_by']]);
+            throw new HttpException("This mind map was just changed by $who. Reload to get the latest version.", 409);
+        }
+        if ($role !== 'owner') {
+            unset($in['viewport']); // each collaborator keeps their own zoom; the owner's saved view stays
+        }
+        $ts = now();
+        DB::tx(static function () use ($id, $in, $ts, $u) {
             $meta = [];
             if (array_key_exists('title', $in)) {
                 $meta['title'] = V::str($in['title'], 255) ?? 'Untitled mind map';
@@ -125,13 +157,15 @@ final class MindmapsController
                     'zoom' => max(0.1, min(4, V::float($in['viewport']['zoom'] ?? 1, 1))),
                 ]);
             }
-            $meta['updated_at'] = now();
+            $meta['updated_at'] = $ts;
+            $meta['updated_by'] = $u['id'];
+            $meta['revision'] = (int) DB::val('SELECT revision FROM mindmaps WHERE id = ? FOR UPDATE', [$id]) + 1;
             DB::update('mindmaps', $meta, 'id = ?', [$id]);
             if (isset($in['nodes']) && is_array($in['nodes'])) {
                 self::saveGraph($id, $in['nodes'], is_array($in['edges'] ?? null) ? $in['edges'] : []);
             }
         });
-        Http::ok(['id' => $id, 'updated_at' => now()]);
+        Http::ok(['id' => $id, 'updated_at' => $ts, 'revision' => (int) DB::val('SELECT revision FROM mindmaps WHERE id = ?', [$id])]);
     }
 
     public static function saveGraph(int $mapId, array $nodes, array $edges): void

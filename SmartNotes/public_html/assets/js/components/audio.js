@@ -277,7 +277,8 @@ export function audioItemHtml(a, { actions = true } = {}) {
     <button class="play-btn" data-play aria-label="Play">${icon('play')}</button>
     <div class="grow" style="min-width:0">
       <div class="row" style="gap:8px;margin-bottom:2px"><b class="truncate" data-title style="font-weight:600">${a.title}</b>
-        ${a.note_title ? html`<a class="tag" href="#/notes/${a.note_id}">${icon('notebook-pen', 'sm')} ${a.note_title}</a>` : ''}</div>
+        ${a.note_title ? html`<a class="tag" href="#/notes/${a.note_id}">${icon('notebook-pen', 'sm')} ${a.note_title}</a>` : ''}
+        ${a.shared ? html`<span class="badge info">${icon('user', 'sm')} ${a.owner_name}</span>` : a.share_count ? html`<span class="badge info" data-tip="Shared with ${a.share_count}">${icon('users', 'sm')} ${a.share_count}</span>` : ''}</div>
       <div class="wave" data-wave>${bars.map((v) => html`<span style="height:${Math.max(12, Math.round(v * 100))}%"></span>`)}</div>
     </div>
     <div class="audio-time"><span data-cur>0:00</span> / ${fmtDuration(a.duration)}<div class="tiny subtle">${fmtBytes(a.size)} · ${timeAgo(a.created_at)}</div></div>

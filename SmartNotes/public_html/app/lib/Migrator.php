@@ -9,7 +9,7 @@ defined('SN_APP') || exit;
  */
 final class Migrator
 {
-    public const VERSION = 4;
+    public const VERSION = 5;
 
     public static function run(): void
     {
@@ -30,6 +30,9 @@ final class Migrator
             }
             if ($current < 4) {
                 self::v4();
+            }
+            if ($current < 5) {
+                self::v5();
             }
             Settings::set('schema_version', (string) self::VERSION);
         } finally {
@@ -153,5 +156,24 @@ final class Migrator
               CONSTRAINT `fk_draw_note` FOREIGN KEY (`note_id`) REFERENCES `notes` (`id`) ON DELETE CASCADE
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
         }
+    }
+
+    /** v1.5: sharing of audio, mind maps, flowcharts, Drive files/folders and tagged calendar events. */
+    private static function v5(): void
+    {
+        if (!self::hasTable('item_shares')) {
+            DB::pdo()->exec("CREATE TABLE `item_shares` (
+              `id` INT UNSIGNED NOT NULL AUTO_INCREMENT, `item_type` VARCHAR(20) NOT NULL, `item_id` INT UNSIGNED NOT NULL,
+              `owner_id` INT UNSIGNED NOT NULL, `user_id` INT UNSIGNED NOT NULL, `permission` ENUM('view','edit') NOT NULL DEFAULT 'view',
+              `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              PRIMARY KEY (`id`), UNIQUE KEY `uq_item_share` (`item_type`, `item_id`, `user_id`), KEY `idx_item_share_user` (`user_id`, `item_type`),
+              CONSTRAINT `fk_ishare_owner` FOREIGN KEY (`owner_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+              CONSTRAINT `fk_ishare_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+        }
+        self::addColumn('mindmaps', 'updated_by', 'INT UNSIGNED NULL');
+        self::addColumn('flowcharts', 'updated_by', 'INT UNSIGNED NULL');
+        self::addColumn('mindmaps', 'revision', 'INT UNSIGNED NOT NULL DEFAULT 0');
+        self::addColumn('flowcharts', 'revision', 'INT UNSIGNED NOT NULL DEFAULT 0');
     }
 }

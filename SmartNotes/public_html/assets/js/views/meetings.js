@@ -100,6 +100,8 @@ async function renderDetail(el, ctx) {
           <div class="card card-pad" data-attachments></div>
         </div>
         <div class="col" style="gap:var(--gap)">
+          ${m.tagged?.length ? html`<div class="card card-pad"><div class="section-title">${icon('at-sign', 'sm')} Tagged users <span class="subtle small">${m.tagged.length}</span></div>
+            <div class="tagged-list">${m.tagged.map((t) => html`<span class="participant"><span class="avatar sm">${initials(t.name)}</span>${t.name}<span class="subtle tiny">${t.email}</span></span>`)}</div></div>` : ''}
           <div class="card card-pad"><div class="section-title">${icon('users', 'sm')} Participants <span class="subtle small">${m.participants.length}</span></div>
             ${m.participants.length ? m.participants.map((p) => html`<span class="participant"><span class="avatar sm">${initials(p.name)}</span>${p.name}${p.email && p.email !== p.name ? html`<span class="subtle tiny">${p.email}</span>` : ''}</span>`) : html`<p class="small subtle">No participants added.</p>`}</div>
           <div class="card card-pad"><div class="row between mb-2"><div class="section-title" style="margin:0">${icon('square-check-big', 'sm')} Action items</div>${isOwner ? html`<button class="btn sm" data-a="task">${icon('plus', 'sm')} Task</button>` : ''}</div>

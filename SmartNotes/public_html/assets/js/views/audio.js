@@ -8,12 +8,14 @@ import { audioItemHtml, bindAudioPlayers, uploadAudioFile, peaksFromFile, stopAu
 import { newRecording } from '../core/actions.js';
 import { pickFiles } from '../components/attachments.js';
 import { noteOptions } from '../components/forms.js';
+import { openItemShare, leaveShared } from '../components/itemShare.js';
 
 export default {
   title: 'Audio Notes',
   async render(el, ctx) {
     let items = [];
     let q = ctx.query.q || '';
+    let view = ctx.query.view === 'shared' ? 'shared' : 'mine';
     el.innerHTML = String(html`
       <div class="page-head"><div><h1>Audio notes</h1><p data-sub>Record ideas and meetings directly from your browser.</p></div>
         <div class="row"><button class="btn" data-act="upload">${icon('upload', 'sm')} Upload audio</button>
@@ -22,18 +24,19 @@ export default {
         <button class="rec-main" data-act="record" aria-label="Start recording" style="width:60px;height:60px">${icon('mic')}</button>
         <div class="grow" style="min-width:200px"><b style="font-size:16px">Quick voice note</b><p class="small muted" style="margin:2px 0 0">Tap to start recording. Pause, resume, listen back and save — recordings are stored on the server and available on all your devices.</p></div>
       </div>
-      <div class="toolbar"><div class="input-icon" style="width:min(300px,100%)">${icon('search', 'sm')}<input class="input sm" type="search" placeholder="Search recordings…" value="${q}" data-search></div></div>
+      <div class="toolbar"><div class="chips">${[['mine', 'My recordings', 'mic'], ['shared', 'Shared with me', 'users']].map(([v, l, i]) => html`<button class="chip ${view === v ? 'active' : ''}" data-view="${v}">${icon(i, 'sm')} ${l}</button>`)}</div><div class="grow"></div><div class="input-icon" style="width:min(300px,100%)">${icon('search', 'sm')}<input class="input sm" type="search" placeholder="Search recordings…" value="${q}" data-search></div></div>
       <div data-list>${skeletonRows(4)}</div>`);
     const list = el.querySelector('[data-list]');
 
     async function load() {
       try {
-        const r = await api.get('audio', { q, per_page: 100 });
+        const r = await api.get('audio', { q, per_page: 100, view: view === 'shared' ? 'shared' : '' });
         items = r.items;
         const total = items.reduce((s, a) => s + a.duration, 0);
         el.querySelector('[data-sub]').textContent = `${r.total} recording${r.total === 1 ? '' : 's'} · ${fmtDuration(total)} total`;
         list.innerHTML = items.length ? items.map((a) => String(audioItemHtml(a))).join('')
-          : String(empty({ icon: 'mic', title: q ? 'No recordings found' : 'No audio notes yet', text: 'Record a voice memo or upload MP3, WAV, M4A, OGG or WEBM files.', action: recorderSupported() ? '<button class="btn primary" data-act="record">Start recording</button>' : '' }));
+          : view === 'shared' ? String(empty({ icon: 'users', title: 'Nothing shared with you yet', text: 'When a colleague shares a recording with you, it appears here.' }))
+            : String(empty({ icon: 'mic', title: q ? 'No recordings found' : 'No audio notes yet', text: 'Record a voice memo or upload MP3, WAV, M4A, OGG or WEBM files.', action: recorderSupported() ? '<button class="btn primary" data-act="record">Start recording</button>' : '' }));
         if (ctx.query.play) {
           const it = list.querySelector(`[data-audio="${ctx.query.play}"]`);
           it?.scrollIntoView({ block: 'center' });
@@ -72,10 +75,26 @@ export default {
       const act = e.target.closest('[data-act]')?.dataset.act;
       if (act === 'record') return newRecording();
       if (act === 'upload') return upload();
+      const vb = e.target.closest('[data-view]');
+      if (vb) {
+        view = vb.dataset.view;
+        el.querySelectorAll('[data-view]').forEach((c) => c.classList.toggle('active', c === vb));
+        setQuery({ q, view: view === 'shared' ? 'shared' : '' });
+        stopAudio();
+        return load();
+      }
       const more = e.target.closest('[data-more]');
       if (!more) return;
       const a = items.find((x) => x.id === +more.closest('.audio-item').dataset.audio);
+      if (a.shared) {
+        return menu(more, [
+          { label: 'Download', icon: 'download', onClick: () => window.open(a.url, '_blank', 'noopener') },
+          { divider: true },
+          { label: 'Remove from my list', icon: 'log-out', danger: true, onClick: async () => { try { await leaveShared('audio', a.id); load(); } catch (err) { toastError(err); } } },
+        ], { align: 'end' });
+      }
       menu(more, [
+        { label: 'Share…', icon: 'users', onClick: async () => { if ((await openItemShare({ type: 'audio', id: a.id, title: a.title })) !== null) load(); } },
         { label: 'Rename', icon: 'pencil', onClick: async () => {
           const t = await prompt({ title: 'Rename recording', label: 'Title', value: a.title });
           if (!t) return;
@@ -91,7 +110,7 @@ export default {
         } },
       ], { align: 'end' });
     });
-    const search = debounce(() => { setQuery({ q }); load(); }, 300);
+    const search = debounce(() => { setQuery({ q, view: view === 'shared' ? 'shared' : '' }); load(); }, 300);
     el.querySelector('[data-search]').addEventListener('input', (e) => { q = e.target.value.trim(); search(); });
     await load();
     const off = on('audio:changed', load);

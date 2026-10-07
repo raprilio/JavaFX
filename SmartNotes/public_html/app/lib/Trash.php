@@ -91,6 +91,9 @@ final class Trash
         if (isset(self::REMINDABLE[$type])) {
             DB::run('DELETE FROM reminders WHERE remindable_type = ? AND remindable_id = ?', [self::REMINDABLE[$type], $id]);
         }
+        if (isset(Shares::TYPES[$type])) {
+            Shares::purge($type, $id);
+        }
         DB::run("DELETE FROM `$t` WHERE id = ? AND user_id = ?", [$id, $userId]);
         Uploader::delete(...$files);
     }

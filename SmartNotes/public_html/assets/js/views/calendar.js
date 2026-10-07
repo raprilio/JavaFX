@@ -34,9 +34,14 @@ export default {
     const calEl = el.querySelector('[data-cal]');
     calEl.innerHTML = '';
 
+    // Deep link from a "tagged you" notification: #/calendar?event=ID
+    let linked = null;
+    if (q0.event) {
+      try { linked = await api.get(`events/${+q0.event}`); } catch (e) { toastError(e); }
+    }
     const cal = new FC.Calendar(calEl, {
       initialView,
-      initialDate: q0.date || undefined,
+      initialDate: linked ? linked.start_at.slice(0, 10) : q0.date || undefined,
       headerToolbar: false,
       height: 'auto',
       contentHeight: 'auto',
@@ -105,6 +110,13 @@ export default {
       eventResize: (info) => move(info),
     });
     cal.render();
+    if (linked) {
+      setQuery({ view: cal.view.type, date: ymd(cal.getDate()) });
+      showDetails({
+        ...linked, type: 'event', start: linked.start_at, end: linked.end_at,
+        shared: linked.access !== 'owner', owner_name: linked.owner?.name,
+      });
+    }
 
     function createMenu(jsEvent, start, end, allDay) {
       const point = jsEvent ? { x: jsEvent.clientX, y: jsEvent.clientY } : el.querySelector('[data-act="new"]');
@@ -157,10 +169,13 @@ export default {
           ${it.meeting_url ? html`<div class="row small">${icon('video', 'sm')} <a href="${it.meeting_url}" target="_blank" rel="noopener" class="truncate">${it.meeting_url}</a></div>` : ''}
           ${it.priority ? html`<div class="row small">${icon('flag', 'sm')} Priority: <span class="badge prio prio-${it.priority}">${it.priority}</span> · ${String(it.status).replace('_', ' ')}</div>` : ''}
           ${it.description ? html`<p class="small muted" style="white-space:pre-line;margin:0">${it.description}</p>` : ''}
+          ${it.tagged?.length ? html`<div class="row small" style="flex-wrap:wrap;gap:6px">${icon('at-sign', 'sm')} ${it.tagged.map((t) => html`<span class="badge">${t.name}</span>`)}</div>` : ''}
+          ${it.shared ? html`<div class="share-banner" style="margin:0">${icon('at-sign', 'sm')}<span>${it.type === 'meeting' ? 'Shared' : 'Tagged'} by <b>${it.owner_name}</b> · view only</span></div>` : ''}
         </div>`,
         actions: [
           ...(it.meeting_url ? [{ label: 'Join', icon: 'video', onClick: () => { window.open(it.meeting_url, '_blank', 'noopener'); return false; } }] : []),
-          { label: 'Open', variant: 'primary', icon: 'square-pen', value: 'open' },
+          // Tagged events belong to someone else: there is nothing to open for editing.
+          ...(it.shared && it.type === 'event' ? [{ label: 'Close', variant: 'primary' }] : [{ label: 'Open', variant: 'primary', icon: 'square-pen', value: 'open' }]),
         ],
       });
       m.result.then(async (v) => {
@@ -188,12 +203,6 @@ export default {
       if (act === 'meeting') { const m = await openMeetingForm(null, {}); if (m?.id) cal.refetchEvents(); }
     });
 
-    if (q0.event) {
-      try {
-        const ev = await api.get(`events/${q0.event}`);
-        showDetails({ ...ev, type: 'event', start: ev.start_at, end: ev.end_at }, null);
-      } catch { /* ignore */ }
-    }
     const offs = [on('calendar:changed', () => cal.refetchEvents()), on('tasks:changed', () => cal.refetchEvents())];
     return () => { offs.forEach((f) => f()); cal.destroy(); };
   },

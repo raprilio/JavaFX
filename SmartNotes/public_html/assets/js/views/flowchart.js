@@ -4,6 +4,7 @@ import { api } from '../core/api.js';
 import { navigate } from '../core/router.js';
 import { shell } from '../core/shell.js';
 import { toast, toastError, menu, confirm, prompt } from '../core/ui.js';
+import { openItemShare } from '../components/itemShare.js';
 import { createStage, svgEl, wrapText, textBlock, themeColors, exportPng, exportSvg, exportPdf, safeName } from '../components/canvas.js';
 
 const SHAPES = {
@@ -50,6 +51,13 @@ export default {
       return;
     }
     ctx.setTitle(data.title);
+    // Sharing: 'owner' | 'edit' | 'view'. Viewers can look, export and make a copy; nothing they do is saved.
+    const access = data.access || 'owner';
+    const canEdit = access !== 'view';
+    const isOwner = access === 'owner';
+    let revision = data.revision ?? 0;
+    let conflict = false;
+    let shareCount = (data.shares || []).length;
     let nodes = data.nodes.map((n) => ({ ...n, style: n.style || {} }));
     let edges = data.edges.map((e) => ({ ...e, style: e.style || {} }));
     const settings = { grid: true, snap: true, ...(data.settings || {}) };
@@ -61,19 +69,21 @@ export default {
     let clipboard = null;
     const mobile = matchMedia('(max-width: 767px)').matches;
 
-    el.innerHTML = String(html`<div class="canvas-page">
+    el.innerHTML = String(html`<div class="canvas-page ${canEdit ? '' : 'readonly'}">
       <div class="canvas-bar">
         <a class="btn ghost icon sm" href="#/flowcharts" data-tip="Back">${icon('arrow-left')}</a>
-        <input class="title-input" value="${data.title}" data-title maxlength="255" aria-label="Title">
-        <span class="save-state" data-save><span class="d"></span><span data-save-text>Saved</span></span>
+        <input class="title-input" value="${data.title}" data-title maxlength="255" aria-label="Title" ${canEdit ? '' : 'readonly'}>
+        <span class="save-state" data-save><span class="d"></span><span data-save-text>${canEdit ? 'Saved' : 'View only'}</span></span>
+        ${isOwner ? html`<button class="btn ghost sm ${shareCount ? 'active' : ''}" data-a="share" data-tip="Share with users">${icon('users', 'sm')}<span class="hide-sm">Share</span><span data-share-count>${shareCount || ''}</span></button>`
+          : html`<span class="badge info shared-by">${icon('user', 'sm')} ${data.owner?.name} · ${canEdit ? 'can edit' : 'view only'}</span>${canEdit ? '' : html`<button class="btn sm" data-a="copy">${icon('copy', 'sm')}<span class="hide-sm">Make a copy</span></button>`}`}
         <div class="grow"></div>
-        <button class="btn ghost icon sm" data-a="undo" data-tip="Undo (Ctrl+Z)">${icon('undo-2', 'sm')}</button>
-        <button class="btn ghost icon sm" data-a="redo" data-tip="Redo (Ctrl+Y)">${icon('redo-2', 'sm')}</button>
+        <button class="btn ghost icon sm" data-a="undo" data-edit data-tip="Undo (Ctrl+Z)">${icon('undo-2', 'sm')}</button>
+        <button class="btn ghost icon sm" data-a="redo" data-edit data-tip="Redo (Ctrl+Y)">${icon('redo-2', 'sm')}</button>
         <span class="divider-v"></span>
-        <button class="btn ghost icon sm ${settings.grid ? 'active' : ''}" data-a="grid" data-tip="Grid">${icon('grid-3x3', 'sm')}</button>
-        <button class="btn ghost icon sm ${settings.snap ? 'active' : ''}" data-a="snap" data-tip="Snap to grid">${icon('magnet', 'sm')}</button>
-        <button class="btn ghost icon sm" data-a="duplicate" data-tip="Duplicate (Ctrl+D)">${icon('copy', 'sm')}</button>
-        <button class="btn ghost icon sm" data-a="delete" data-tip="Delete (Del)">${icon('trash-2', 'sm')}</button>
+        <button class="btn ghost icon sm ${settings.grid ? 'active' : ''}" data-a="grid" data-edit data-tip="Grid">${icon('grid-3x3', 'sm')}</button>
+        <button class="btn ghost icon sm ${settings.snap ? 'active' : ''}" data-a="snap" data-edit data-tip="Snap to grid">${icon('magnet', 'sm')}</button>
+        <button class="btn ghost icon sm" data-a="duplicate" data-edit data-tip="Duplicate (Ctrl+D)">${icon('copy', 'sm')}</button>
+        <button class="btn ghost icon sm" data-a="delete" data-edit data-tip="Delete (Del)">${icon('trash-2', 'sm')}</button>
         <button class="btn ghost icon sm" data-a="export" data-tip="Export">${icon('download', 'sm')}</button>
         <button class="btn ghost icon sm" data-a="panel" data-tip="Inspector">${icon('panel-right', 'sm')}</button>
       </div>
@@ -89,7 +99,7 @@ export default {
       </div></div>`);
     const $ = (s) => el.querySelector(s);
     const stageEl = $('[data-stage]');
-    const stage = createStage(stageEl, { grid: settings.grid, onChange: (vp) => { $('[data-zoom]').textContent = Math.round(vp.zoom * 100) + '%'; vpDirty = true; } });
+    const stage = createStage(stageEl, { grid: settings.grid, onChange: (vp) => { $('[data-zoom]').textContent = Math.round(vp.zoom * 100) + '%'; if (isOwner) vpDirty = true; } });
     const gEdges = svgEl('g'), gNodes = svgEl('g'), gTemp = svgEl('g', { class: 'ui-only' });
     stage.viewport.append(gEdges, gNodes, gTemp);
     const marker = svgEl('marker', { id: 'fc-arrow', viewBox: '0 0 10 10', refX: 9, refY: 5, markerWidth: 8, markerHeight: 8, orient: 'auto-start-reverse' });
@@ -112,7 +122,7 @@ export default {
     const snapshot = () => JSON.stringify({ nodes, edges });
     const pushHistory = () => { undoStack.push(snapshot()); if (undoStack.length > 100) undoStack.shift(); redoStack.length = 0; };
     const restoreSnap = (s) => { const d = JSON.parse(s); nodes = d.nodes; edges = d.edges; };
-    function change(fn) { pushHistory(); fn(); render(); markDirty(); }
+    function change(fn) { if (!canEdit) return; pushHistory(); fn(); render(); markDirty(); }
 
     // ------------------------------------------------------------ render
     function edgeGeom(e) {
@@ -259,6 +269,7 @@ export default {
       render();
     }
     function editLabel(k) {
+      if (!canEdit) return;
       const n = byKey(k);
       const g = gNodes.querySelector(`[data-key="${CSS.escape(k)}"] .body`);
       if (!n || !g) return;
@@ -375,6 +386,7 @@ export default {
       render();
     });
     gEdges.addEventListener('dblclick', async (e) => {
+      if (!canEdit) return;
       const g = e.target.closest('[data-edge]');
       if (!g) return;
       const ed = edges.find((x) => x.key === g.dataset.edge);
@@ -389,6 +401,7 @@ export default {
     });
     stageEl.addEventListener('dragover', (e) => { if (e.dataTransfer.types.includes('text/x-shape')) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } });
     stageEl.addEventListener('drop', (e) => {
+      if (!canEdit) return;
       const t = e.dataTransfer.getData('text/x-shape');
       if (!t) return;
       e.preventDefault();
@@ -408,6 +421,7 @@ export default {
     // ------------------------------------------------------------ keyboard
     const onKey = (e) => {
       if (e.target.closest('input, textarea, select, [contenteditable="true"]') || document.querySelector('.modal-root')) return;
+      if (!canEdit && e.key !== ' ' && e.key !== 'Escape') return;
       const mod = e.ctrlKey || e.metaKey;
       const k = e.key.toLowerCase();
       if (mod && k === 'z') { e.preventDefault(); return e.shiftKey ? redo() : undo(); }
@@ -434,7 +448,7 @@ export default {
     function redo() { if (!redoStack.length) return; undoStack.push(snapshot()); restoreSnap(redoStack.pop()); render(); markDirty(); }
 
     // ------------------------------------------------------------ toolbar & panel
-    el.addEventListener('click', (e) => {
+    el.addEventListener('click', async (e) => {
       for (const [attr, prop] of [['fill', 'fill'], ['stroke', 'stroke'], ['text', 'text']]) {
         const b = e.target.closest(`[data-${attr}]`);
         if (b && selected.size) return change(() => nodes.forEach((n) => { if (selected.has(n.key)) n.style = { ...n.style, [prop]: b.dataset[attr] || undefined }; }));
@@ -444,6 +458,12 @@ export default {
       const a = e.target.closest('[data-a]')?.dataset.a;
       if (!a) return;
       switch (a) {
+        case 'share': {
+          const n = await openItemShare({ type: 'flowchart', id, title: $('[data-title]').value });
+          if (n !== null) { shareCount = n; const b = e.target.closest('[data-a]'); b.classList.toggle('active', n > 0); b.querySelector('[data-share-count]').textContent = n || ''; }
+          break;
+        }
+        case 'copy': { const r = await api.post(`flowcharts/${id}/duplicate`).catch(toastError); if (r) { toast('Copied to your account — you can edit the copy', 'success'); navigate(`/flowcharts/${r.id}`); } break; }
         case 'undo': undo(); break;
         case 'redo': redo(); break;
         case 'grid': settings.grid = !settings.grid; stage.setGrid(settings.grid); e.target.closest('[data-a]').classList.toggle('active', settings.grid); markDirty(); renderPanel(); break;
@@ -465,8 +485,8 @@ export default {
             { label: 'Export as SVG', icon: 'file-code', onClick: clean(() => exportSvg(stage, bbox(), bg, name)) },
             { label: 'Export as PDF', icon: 'file-text', onClick: clean(() => exportPdf(stage, bbox(), bg, name)) },
             { divider: true },
-            { label: 'Duplicate flowchart', icon: 'copy', onClick: async () => { await save(); const r = await api.post(`flowcharts/${id}/duplicate`).catch(toastError); if (r) navigate(`/flowcharts/${r.id}`); } },
-            { label: 'Move to trash', icon: 'trash-2', danger: true, onClick: async () => { if (await confirm({ title: 'Delete flowchart?', message: 'It will be moved to the trash.', confirmText: 'Delete' })) { await api.post(`items/flowchart/${id}/trash`).catch(toastError); ctx.beforeLeave = null; navigate('/flowcharts'); } } },
+            { label: isOwner ? 'Duplicate flowchart' : 'Make a copy', icon: 'copy', onClick: async () => { await save(); const r = await api.post(`flowcharts/${id}/duplicate`).catch(toastError); if (r) navigate(`/flowcharts/${r.id}`); } },
+            isOwner && { label: 'Move to trash', icon: 'trash-2', danger: true, onClick: async () => { if (await confirm({ title: 'Delete flowchart?', message: 'It will be moved to the trash.', confirmText: 'Delete' })) { await api.post(`items/flowchart/${id}/trash`).catch(toastError); ctx.beforeLeave = null; navigate('/flowcharts'); } } },
           ], { align: 'end' });
           break;
         }
@@ -498,16 +518,18 @@ export default {
     // ------------------------------------------------------------ persistence
     const saveEl = $('[data-save]');
     const setSave = (cls, t) => { saveEl.className = 'save-state ' + cls; $('[data-save-text]').textContent = t; };
-    function markDirty() { dirty = true; setSave('dirty', 'Unsaved'); autosave(); }
+    function markDirty() { if (!canEdit || conflict) return; dirty = true; setSave('dirty', 'Unsaved'); autosave(); }
     const autosave = debounce(() => save(), 1500);
     async function save() {
       autosave.cancel();
       if (saving) return autosave();
+      if (!canEdit || conflict) return;
       if (!dirty && !vpDirty) return;
       saving = true;
       setSave('saving', 'Saving…');
       try {
-        await api.post(`flowcharts/${id}`, {
+        const r = await api.post(`flowcharts/${id}`, {
+          base_revision: revision,
           title: $('[data-title]').value.trim() || 'Untitled flowchart',
           description: data.description || '',
           viewport: { ...stage.vp },
@@ -515,10 +537,18 @@ export default {
           nodes: nodes.map((n) => ({ key: n.key, type: n.type, label: n.label, x: n.x, y: n.y, w: n.w, h: n.h, style: n.style })),
           edges: edges.map((x) => ({ key: x.key, source: x.source, target: x.target, sourcePort: x.sourcePort, targetPort: x.targetPort, label: x.label, style: x.style })),
         });
+        revision = r.revision ?? revision;
         dirty = false;
         vpDirty = false;
         setSave('', 'Saved');
-      } catch (err) { setSave('error', 'Not saved'); toastError(err); } finally { saving = false; }
+      } catch (err) {
+        if (err.status === 409) {
+          // A collaborator saved first: never overwrite their work.
+          conflict = true;
+          setSave('error', 'Conflict — not saved');
+          toast(err.message, 'warning', { action: 'Reload', onAction: () => { dirty = false; vpDirty = false; location.reload(); }, timeout: 15000 });
+        } else { setSave('error', 'Not saved'); toastError(err); }
+      } finally { saving = false; }
     }
     shell.saveHandler = async () => { dirty = true; await save(); toast('Flowchart saved', 'success', { timeout: 1500 }); };
     ctx.beforeLeave = async () => { if (dirty || vpDirty) await save(); return true; };

@@ -1187,3 +1187,25 @@ svg .edge-path.selected { stroke: var(--accent) !important; }
   .draw-tools { justify-content: flex-start; }
   .draw-scroll { padding: 6px; }
 }
+
+/* ===================== v1.5 · Sharing everywhere + tagging ===================== */
+.canvas-page.readonly [data-edit], .canvas-page.readonly .canvas-palette { display: none !important; }
+.canvas-page.readonly .canvas-panel :is(input, textarea, select, button) { pointer-events: none; opacity: .65; }
+/* Viewers keep the inspector for reading; editing actions are hidden (collapse/expand and closing the panel stay). */
+.canvas-page.readonly .canvas-panel button[data-a]:not([data-a="collapse"]):not([data-a="panel"]) { display: none; }
+.canvas-page.readonly .canvas-panel button:is([data-a="collapse"], [data-a="panel"]) { pointer-events: auto; opacity: 1; }
+.canvas-page.readonly .title-input { cursor: default; }
+.canvas-page.readonly .canvas-hint { display: none; }
+.canvas-bar .shared-by { white-space: nowrap; }
+.share-item-title { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px; background: var(--bg-soft); min-width: 0; }
+.user-picker { position: relative; }
+.up-box { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 42px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-elev); cursor: text; }
+.up-box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+.up-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 4px 3px 8px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 13%, transparent); color: var(--accent); font-size: 13px; font-weight: 600; }
+.up-chip button { border: 0; background: none; color: inherit; display: grid; place-items: center; padding: 2px; border-radius: 50%; cursor: pointer; }
+.up-chip button:hover { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+.up-input { flex: 1; min-width: 140px; border: 0; outline: 0; background: none; color: var(--text); font: inherit; font-size: 14px; padding: 4px; }
+.up-drop { position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 30; background: var(--bg-elev); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow-lg, 0 18px 40px -18px rgba(0,0,0,.35)); padding: 4px; max-height: 280px; overflow-y: auto; }
+.up-opt { display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 8px; border: 0; background: none; border-radius: 8px; color: var(--text); text-align: left; cursor: pointer; font: inherit; }
+.up-opt:hover, .up-opt.active { background: var(--bg-hover); }
+.tagged-list { display: flex; flex-wrap: wrap; gap: 6px; }

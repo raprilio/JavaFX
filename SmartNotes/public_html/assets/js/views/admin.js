@@ -220,7 +220,7 @@ const tabs = {
         <div class="field"><label>Default accent color</label><div class="row">${ACCENTS.slice(0, 6).map((c) => html`<label><input type="radio" name="default_accent" value="${c}" class="sr-only" ${s.default_accent === c ? 'checked' : ''}><span class="accent-dot" style="--sw:${c};width:26px;height:26px"></span></label>`)}<input type="color" data-custom-accent value="${s.default_accent}"></div></div>
         <div class="field"><label>Default reminder (minutes before)</label><input class="input" type="number" min="0" max="10080" name="default_reminder_minutes" value="${s.default_reminder_minutes}"></div>
         <div class="field"><label>Self registration</label>${switchHtml('allow_registration', s.allow_registration === '1', 'Allow visitors to create accounts')}<span class="hint">Keep off so only administrators create accounts.</span></div>
-        <div class="field"><label>Note sharing</label>${switchHtml('allow_note_sharing', s.allow_note_sharing !== '0', 'Users may share notes with other users')}</div></div>`)}
+        <div class="field"><label>Sharing</label>${switchHtml('allow_note_sharing', s.allow_note_sharing !== '0', 'Users may share notes, audio, mind maps, flowcharts and Drive files with other users')}</div></div>`)}
       ${card('Uploads & trash', html`<div class="form-grid">
         <div class="field"><label>Max image size (MB)</label><input class="input" type="number" min="1" max="100" name="max_image_mb" value="${s.max_image_mb}"></div>
         <div class="field"><label>Max audio size (MB)</label><input class="input" type="number" min="1" max="200" name="max_audio_mb" value="${s.max_audio_mb}"></div>

@@ -120,10 +120,10 @@ final class SearchController
                 ], $rows);
             }
             if ($want('event')) {
-                $where = ['user_id = ?', 'deleted_at IS NULL', '(title LIKE ? OR description LIKE ? OR location LIKE ?)'];
-                $params = [$uid, $like, $like, $like];
-                $dateFilter('start_at', $where, $params);
-                $rows = DB::all('SELECT id, title, description, start_at, event_type, repeat_rule FROM calendar_events WHERE ' . implode(' AND ', $where) . " ORDER BY start_at DESC LIMIT $limit", $params);
+                $where = [EventsController::VISIBLE_SQL, 'e.deleted_at IS NULL', '(e.title LIKE ? OR e.description LIKE ? OR e.location LIKE ?)'];
+                $params = [$uid, $uid, $like, $like, $like];
+                $dateFilter('e.start_at', $where, $params);
+                $rows = DB::all('SELECT e.id, e.title, e.description, e.start_at, e.event_type, e.repeat_rule FROM calendar_events e WHERE ' . implode(' AND ', $where) . " ORDER BY e.start_at DESC LIMIT $limit", $params);
                 $groups['event'] = array_map(static fn($r) => [
                     'id' => (int) $r['id'], 'title' => $r['title'], 'snippet' => self::snippet((string) $r['description'], $q),
                     'date' => $r['start_at'], 'meta' => array_filter([$r['event_type'], $r['repeat_rule'] !== 'none' ? 'repeats ' . $r['repeat_rule'] : null]),

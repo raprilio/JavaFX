@@ -15,8 +15,14 @@ final class FlowchartsController
     public static function index(): void
     {
         $u = Auth::require();
-        $params = [$u['id']];
-        $where = 'f.user_id = ? AND f.deleted_at IS NULL';
+        // Own items plus items other users shared with me (scope: mine | shared).
+        $sharedSql = "EXISTS (SELECT 1 FROM item_shares s WHERE s.item_type = 'flowchart' AND s.item_id = f.id AND s.user_id = ?)";
+        $where = match (Http::query('scope')) {
+            'mine' => 'f.user_id = ?',
+            'shared' => $sharedSql,
+            default => "(f.user_id = ? OR $sharedSql)",
+        } . ' AND f.deleted_at IS NULL';
+        $params = Http::query('scope') === 'mine' || Http::query('scope') === 'shared' ? [$u['id']] : [$u['id'], $u['id']];
         if ($q = V::str(Http::query('q'), 100)) {
             $where .= ' AND (f.title LIKE ? OR f.description LIKE ?)';
             $like = '%' . addcslashes($q, '%_\\') . '%';
@@ -26,29 +32,38 @@ final class FlowchartsController
             "SELECT f.id, f.title, f.description, f.created_at, f.updated_at, f.last_opened_at,
                     (SELECT COUNT(*) FROM flowchart_nodes n WHERE n.flowchart_id = f.id) AS node_count,
                     (SELECT COUNT(*) FROM flowchart_edges e WHERE e.flowchart_id = f.id) AS edge_count
-             FROM flowcharts f WHERE $where ORDER BY f.updated_at DESC LIMIT 500",
-            $params
+                    , f.user_id AS owner_id, o.name AS owner_name,
+                    (SELECT COUNT(*) FROM item_shares s2 WHERE s2.item_type = 'flowchart' AND s2.item_id = f.id) AS share_count,
+                    (SELECT s3.permission FROM item_shares s3 WHERE s3.item_type = 'flowchart' AND s3.item_id = f.id AND s3.user_id = ?) AS my_permission
+             FROM flowcharts f JOIN users o ON o.id = f.user_id WHERE $where ORDER BY f.updated_at DESC LIMIT 500",
+            array_merge([$u['id']], $params)
         );
         foreach ($rows as &$r) {
             $r['id'] = (int) $r['id'];
+            $r['shared'] = (int) $r['owner_id'] !== $u['id'];
+            $r['access'] = $r['shared'] ? ($r['my_permission'] ?: 'view') : 'owner';
+            $r['share_count'] = (int) $r['share_count'];
+            if (!$r['shared']) {
+                $r['owner_name'] = null;
+            }
+            unset($r['owner_id'], $r['my_permission']);
             $r['node_count'] = (int) $r['node_count'];
             $r['edge_count'] = (int) $r['edge_count'];
         }
         Http::ok($rows);
     }
 
-    private static function find(int $id, int $userId): array
+    /** @return array{0: array, 1: string} [row, 'owner'|'edit'|'view'] */
+    private static function access(int $id, int $userId, string $need = 'view'): array
     {
-        $f = DB::one('SELECT * FROM flowcharts WHERE id = ? AND user_id = ? AND deleted_at IS NULL', [$id, $userId]);
-        if (!$f) {
-            throw new HttpException('Flowchart not found.', 404);
-        }
-        return $f;
+        [, $role] = Shares::require('flowchart', $id, $userId, $need);
+        return [DB::one('SELECT * FROM flowcharts WHERE id = ?', [$id]), $role];
     }
+
 
     public static function payload(int $id, int $userId): array
     {
-        $f = self::find($id, $userId);
+        [$f, $role] = self::access($id, $userId);
         $keyById = [];
         $nodes = [];
         foreach (DB::all('SELECT * FROM flowchart_nodes WHERE flowchart_id = ? ORDER BY id', [$id]) as $n) {
@@ -87,6 +102,11 @@ final class FlowchartsController
             'settings' => json_decode_array($f['settings_json']) ?: ['grid' => true, 'snap' => true],
             'created_at' => $f['created_at'],
             'updated_at' => $f['updated_at'],
+            'access' => $role,
+            'revision' => (int) $f['revision'],
+            'owner' => DB::one('SELECT id, name FROM users WHERE id = ?', [$f['user_id']]),
+            'updated_by_name' => $f['updated_by'] && (int) $f['updated_by'] !== $userId ? DB::val('SELECT name FROM users WHERE id = ?', [$f['updated_by']]) : null,
+            'shares' => $role === 'owner' ? Shares::list('flowchart', $id) : [],
             'nodes' => $nodes,
             'edges' => $edges,
         ];
@@ -95,8 +115,10 @@ final class FlowchartsController
     public static function show(int $id): void
     {
         $u = Auth::require();
-        self::find($id, $u['id']);
-        DB::run('UPDATE flowcharts SET last_opened_at = NOW(), updated_at = updated_at WHERE id = ?', [$id]);
+        [, $role] = self::access($id, $u['id']);
+        if ($role === 'owner') {
+            DB::run('UPDATE flowcharts SET last_opened_at = NOW(), updated_at = updated_at WHERE id = ?', [$id]);
+        }
         Http::ok(self::payload($id, $u['id']));
     }
 
@@ -121,10 +143,20 @@ final class FlowchartsController
     public static function save(int $id): void
     {
         $u = Auth::require();
-        self::find($id, $u['id']);
+        [$cur, $role] = self::access($id, $u['id'], 'edit');
         $in = Http::body();
-        DB::tx(static function () use ($id, $in) {
-            $meta = ['updated_at' => now()];
+        // Shared editing: never overwrite a newer version saved by someone else.
+        $base = isset($in['base_revision']) ? V::int($in['base_revision'], 0) : null;
+        if ($base !== null && isset($in['nodes']) && (int) $cur['revision'] !== $base && $cur['updated_by'] !== null && (int) $cur['updated_by'] !== $u['id']) {
+            $who = (string) DB::val('SELECT name FROM users WHERE id = ?', [$cur['updated_by']]);
+            throw new HttpException("This flowchart was just changed by $who. Reload to get the latest version.", 409);
+        }
+        if ($role !== 'owner') {
+            unset($in['viewport']); // each collaborator keeps their own zoom; the owner's saved view stays
+        }
+        $ts = now();
+        DB::tx(static function () use ($id, $in, $ts, $u) {
+            $meta = ['updated_at' => $ts, 'updated_by' => $u['id'], 'revision' => (int) DB::val('SELECT revision FROM flowcharts WHERE id = ? FOR UPDATE', [$id]) + 1];
             if (array_key_exists('title', $in)) {
                 $meta['title'] = V::str($in['title'], 255) ?? 'Untitled flowchart';
             }
@@ -146,7 +178,7 @@ final class FlowchartsController
                 self::saveGraph($id, $in['nodes'], is_array($in['edges'] ?? null) ? $in['edges'] : []);
             }
         });
-        Http::ok(['id' => $id, 'updated_at' => now()]);
+        Http::ok(['id' => $id, 'updated_at' => $ts, 'revision' => (int) DB::val('SELECT revision FROM flowcharts WHERE id = ?', [$id])]);
     }
 
     private static function style(mixed $s): ?string

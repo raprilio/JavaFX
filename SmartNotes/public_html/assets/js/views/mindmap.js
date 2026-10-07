@@ -5,6 +5,7 @@ import { api } from '../core/api.js';
 import { navigate } from '../core/router.js';
 import { shell } from '../core/shell.js';
 import { toast, toastError, menu, confirm, prompt } from '../core/ui.js';
+import { openItemShare } from '../components/itemShare.js';
 import { createStage, svgEl, wrapText, textBlock, themeColors, exportPng, exportSvg, exportPdf, safeName } from '../components/canvas.js';
 
 const COLORS = ['#6366f1', '#0ea5e9', '#14b8a6', '#22c55e', '#eab308', '#f97316', '#ef4444', '#ec4899', '#a855f7', '#64748b'];
@@ -21,6 +22,13 @@ export default {
       return;
     }
     ctx.setTitle(data.title);
+    // Sharing: 'owner' | 'edit' | 'view'. Viewers can look, export and make a copy; nothing they do is saved.
+    const access = data.access || 'owner';
+    const canEdit = access !== 'view';
+    const isOwner = access === 'owner';
+    let revision = data.revision ?? 0;
+    let conflict = false;
+    let shareCount = (data.shares || []).length;
     /** @type {Map<string, any>} */
     const nodes = new Map();
     data.nodes.forEach((n, i) => nodes.set(n.key, { ...n, order: n.order ?? i }));
@@ -31,20 +39,22 @@ export default {
     const sizes = new Map();
     const mobile = matchMedia('(max-width: 767px)').matches;
 
-    el.innerHTML = String(html`<div class="canvas-page">
+    el.innerHTML = String(html`<div class="canvas-page ${canEdit ? '' : 'readonly'}">
       <div class="canvas-bar">
         <a class="btn ghost icon sm" href="#/mindmaps" data-tip="Back">${icon('arrow-left')}</a>
-        <input class="title-input" value="${data.title}" data-title maxlength="255" aria-label="Title">
-        <span class="save-state" data-save><span class="d"></span><span data-save-text>Saved</span></span>
+        <input class="title-input" value="${data.title}" data-title maxlength="255" aria-label="Title" ${canEdit ? '' : 'readonly'}>
+        <span class="save-state" data-save><span class="d"></span><span data-save-text>${canEdit ? 'Saved' : 'View only'}</span></span>
+        ${isOwner ? html`<button class="btn ghost sm ${shareCount ? 'active' : ''}" data-a="share" data-tip="Share with users">${icon('users', 'sm')}<span class="hide-sm">Share</span><span data-share-count>${shareCount || ''}</span></button>`
+          : html`<span class="badge info shared-by">${icon('user', 'sm')} ${data.owner?.name} · ${canEdit ? 'can edit' : 'view only'}</span>${canEdit ? '' : html`<button class="btn sm" data-a="copy">${icon('copy', 'sm')}<span class="hide-sm">Make a copy</span></button>`}`}
         <div class="grow"></div>
-        <button class="btn ghost icon sm" data-a="undo" data-tip="Undo (Ctrl+Z)">${icon('undo-2', 'sm')}</button>
-        <button class="btn ghost icon sm" data-a="redo" data-tip="Redo (Ctrl+Y)">${icon('redo-2', 'sm')}</button>
+        <button class="btn ghost icon sm" data-a="undo" data-edit data-tip="Undo (Ctrl+Z)">${icon('undo-2', 'sm')}</button>
+        <button class="btn ghost icon sm" data-a="redo" data-edit data-tip="Redo (Ctrl+Y)">${icon('redo-2', 'sm')}</button>
         <span class="divider-v"></span>
-        <button class="btn ghost sm" data-a="child" data-tip="Add child (Tab)">${icon('git-branch-plus', 'sm')}<span class="hide-sm">Child</span></button>
-        <button class="btn ghost sm" data-a="sibling" data-tip="Add sibling (Enter)">${icon('plus', 'sm')}<span class="hide-sm">Sibling</span></button>
-        <button class="btn ghost icon sm" data-a="parent" data-tip="Add parent">${icon('arrow-up-from-dot', 'sm')}</button>
-        <button class="btn ghost icon sm" data-a="connect" data-tip="Connect two nodes">${icon('spline', 'sm')}</button>
-        <button class="btn ghost icon sm" data-a="layout" data-tip="Auto layout">${icon('wand-sparkles', 'sm')}</button>
+        <button class="btn ghost sm" data-a="child" data-edit data-tip="Add child (Tab)">${icon('git-branch-plus', 'sm')}<span class="hide-sm">Child</span></button>
+        <button class="btn ghost sm" data-a="sibling" data-edit data-tip="Add sibling (Enter)">${icon('plus', 'sm')}<span class="hide-sm">Sibling</span></button>
+        <button class="btn ghost icon sm" data-a="parent" data-edit data-tip="Add parent">${icon('arrow-up-from-dot', 'sm')}</button>
+        <button class="btn ghost icon sm" data-a="connect" data-edit data-tip="Connect two nodes">${icon('spline', 'sm')}</button>
+        <button class="btn ghost icon sm" data-a="layout" data-edit data-tip="Auto layout">${icon('wand-sparkles', 'sm')}</button>
         <button class="btn ghost icon sm" data-a="export" data-tip="Export">${icon('download', 'sm')}</button>
         <button class="btn ghost icon sm" data-a="panel" data-tip="Inspector">${icon('panel-right', 'sm')}</button>
       </div>
@@ -298,6 +308,7 @@ export default {
 
     // ------------------------------------------------------------ mutations
     function change(fn, { layout = false } = {}) {
+      if (!canEdit) return;
       pushHistory();
       fn();
       if (layout) autoLayout();
@@ -386,6 +397,7 @@ export default {
     // ------------------------------------------------------------ label editing
     let editor = null;
     function editLabel(k, isNew = false) {
+      if (!canEdit) return;
       const n = nodes.get(k);
       if (!n) return;
       editor?.commit();
@@ -510,6 +522,7 @@ export default {
     // ------------------------------------------------------------ keyboard
     const onKey = (e) => {
       if (e.target.closest('input, textarea, [contenteditable="true"]') || document.querySelector('.modal-root')) return;
+      if (!canEdit && e.key !== ' ' && e.key !== 'Escape') return;
       const mod = e.ctrlKey || e.metaKey;
       if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); return e.shiftKey ? redo() : undo(); }
       if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); return redo(); }
@@ -559,6 +572,12 @@ export default {
       if (!a) return;
       const target = sel || roots()[0]?.key;
       switch (a) {
+        case 'share': {
+          const n = await openItemShare({ type: 'mindmap', id, title: $('[data-title]').value });
+          if (n !== null) { shareCount = n; const b = e.target.closest('[data-a]'); b.classList.toggle('active', n > 0); b.querySelector('[data-share-count]').textContent = n || ''; }
+          break;
+        }
+        case 'copy': { const r = await api.post(`mindmaps/${id}/duplicate`).catch(toastError); if (r) { toast('Copied to your account — you can edit the copy', 'success'); navigate(`/mindmaps/${r.id}`); } break; }
         case 'undo': undo(); break;
         case 'redo': redo(); break;
         case 'child': addChild(target); break;
@@ -584,8 +603,8 @@ export default {
             { label: 'Export as SVG', icon: 'file-code', onClick: () => exportSvg(stage, bbox(), bg, name) },
             { label: 'Export as PDF', icon: 'file-text', onClick: () => exportPdf(stage, bbox(), bg, name).then(() => toast('PDF exported', 'success')).catch(toastError) },
             { divider: true },
-            { label: 'Duplicate mind map', icon: 'copy', onClick: async () => { await save(); const r = await api.post(`mindmaps/${id}/duplicate`).catch(toastError); if (r) navigate(`/mindmaps/${r.id}`); } },
-            { label: 'Move to trash', icon: 'trash-2', danger: true, onClick: async () => { if (await confirm({ title: 'Delete mind map?', message: 'It will be moved to the trash.', confirmText: 'Delete' })) { await api.post(`items/mindmap/${id}/trash`).catch(toastError); ctx.beforeLeave = null; navigate('/mindmaps'); } } },
+            { label: isOwner ? 'Duplicate mind map' : 'Make a copy', icon: 'copy', onClick: async () => { await save(); const r = await api.post(`mindmaps/${id}/duplicate`).catch(toastError); if (r) navigate(`/mindmaps/${r.id}`); } },
+            isOwner && { label: 'Move to trash', icon: 'trash-2', danger: true, onClick: async () => { if (await confirm({ title: 'Delete mind map?', message: 'It will be moved to the trash.', confirmText: 'Delete' })) { await api.post(`items/mindmap/${id}/trash`).catch(toastError); ctx.beforeLeave = null; navigate('/mindmaps'); } } },
           ], { align: 'end' });
           break;
         }
@@ -603,12 +622,14 @@ export default {
     // ------------------------------------------------------------ persistence
     const saveEl = $('[data-save]');
     const setSave = (cls, t) => { saveEl.className = 'save-state ' + cls; $('[data-save-text]').textContent = t; };
-    function markViewport() { vpDirty = true; }
-    function markDirty() { dirty = true; setSave('dirty', 'Unsaved'); autosave(); }
+    // Only the owner's zoom/position is remembered; collaborators keep their own view.
+    function markViewport() { if (isOwner) vpDirty = true; }
+    function markDirty() { if (!canEdit || conflict) return; dirty = true; setSave('dirty', 'Unsaved'); autosave(); }
     const autosave = debounce(() => save(), 1500);
     async function save() {
       autosave.cancel();
       if (saving) return autosave();
+      if (!canEdit || conflict) return;
       if (!dirty && !vpDirty) return;
       saving = true;
       setSave('saving', 'Saving…');
@@ -617,19 +638,28 @@ export default {
         const walk = (list) => list.forEach((n, i) => { n.order = i; ordered.push(n); walk(children(n.key)); });
         walk(roots());
         nodes.forEach((n) => { if (!ordered.includes(n)) ordered.push(n); });
-        await api.post(`mindmaps/${id}`, {
+        const r = await api.post(`mindmaps/${id}`, {
+          base_revision: revision,
           title: $('[data-title]').value.trim() || 'Untitled mind map',
           description: data.description || '',
           viewport: { ...stage.vp },
           nodes: ordered.map((n) => ({ key: n.key, parent: n.parent && nodes.has(n.parent) ? n.parent : null, label: n.label, x: Math.round(n.x * 100) / 100, y: Math.round(n.y * 100) / 100, w: sizes.get(n.key)?.w, h: sizes.get(n.key)?.h, color: n.color, icon: n.icon, notes: n.notes, collapsed: !!n.collapsed, order: n.order })),
           edges: links.map((l) => ({ source: l.source, target: l.target, type: 'link', label: l.label })),
         });
+        revision = r.revision ?? revision;
         dirty = false;
         vpDirty = false;
         setSave('', 'Saved');
       } catch (err) {
-        setSave('error', 'Not saved');
-        toastError(err);
+        if (err.status === 409) {
+          // A collaborator saved first: never overwrite their work.
+          conflict = true;
+          setSave('error', 'Conflict — not saved');
+          toast(err.message, 'warning', { action: 'Reload', onAction: () => { dirty = false; vpDirty = false; location.reload(); }, timeout: 15000 });
+        } else {
+          setSave('error', 'Not saved');
+          toastError(err);
+        }
       } finally { saving = false; }
     }
     shell.saveHandler = async () => { dirty = true; await save(); toast('Mind map saved', 'success', { timeout: 1500 }); };

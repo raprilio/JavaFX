@@ -6,8 +6,9 @@ import { setQuery } from '../core/router.js';
 import { toast, toastError, menu, confirm, prompt, empty, modal, contextMenu, PALETTE } from '../core/ui.js';
 import { uploadFile, pickFiles } from '../components/attachments.js';
 import { openFilePreview, openFileDetails } from '../components/filePreview.js';
+import { openItemShare, leaveShared } from '../components/itemShare.js';
 
-const VIEWS = [['drive', 'My Drive', 'hard-drive'], ['starred', 'Starred', 'star'], ['recent', 'Recent', 'clock'], ['all', 'All files', 'files']];
+const VIEWS = [['drive', 'My Drive', 'hard-drive'], ['shared', 'Shared with me', 'users'], ['starred', 'Starred', 'star'], ['recent', 'Recent', 'clock'], ['all', 'All files', 'files']];
 const KINDS = [['', 'All types'], ['pdf', 'PDF'], ['image', 'Images'], ['video', 'Videos'], ['document', 'Documents'], ['audio', 'Audio'], ['archive', 'Archives']];
 
 /** Flat folder list -> indented options for selects. */
@@ -70,17 +71,22 @@ export default {
 
     function crumbs() {
       const c = el.querySelector('[data-crumbs]');
-      if (f.view !== 'drive') { c.innerHTML = ''; return; }
       const path = data.folder?.path || [];
+      if (f.view === 'shared') {
+        c.innerHTML = String(html`<a href="#" data-goto="">${icon('users', 'sm')} Shared with me</a>${path.map((p) => html`${icon('chevron-right', 'sm')}<a href="#" data-goto="${p.id}">${p.name}</a>`)}`);
+        return;
+      }
+      if (f.view !== 'drive') { c.innerHTML = ''; return; }
       c.innerHTML = String(html`<a href="#" data-goto="" data-drop-folder="">${icon('hard-drive', 'sm')} My Drive</a>${path.map((p) => html`${icon('chevron-right', 'sm')}<a href="#" data-goto="${p.id}" data-drop-folder="${p.id}">${p.name}</a>`)}`);
     }
 
     function fileCard(x) {
-      return html`<div class="file-card" data-id="${x.id}" draggable="true" tabindex="0">
+      return html`<div class="file-card" data-id="${x.id}" draggable="${x.shared ? 'false' : 'true'}" tabindex="0">
         <div class="fc-thumb">${x.kind === 'image' ? html`<img src="${x.thumb_url}" alt="" loading="lazy">` : x.kind === 'video' ? html`<video src="${x.url}#t=0.5" preload="metadata" muted playsinline tabindex="-1"></video><span class="fc-play">${icon('play', 'sm')}</span>` : fileBadge(x.name)}
           ${x.preview === 'pdf' ? html`<span class="badge danger fc-type">PDF</span>` : ''}</div>
         <div class="fc-info"><div class="row" style="gap:6px"><div class="fc-name grow" title="${x.name}">${x.name}</div>${x.is_starred ? html`<span style="color:var(--warning)">${icon('star', 'sm')}</span>` : ''}</div>
           <div class="fc-sub">${fmtBytes(x.size)} · ${timeAgo(x.created_at)}${f.view !== 'drive' && x.folder_name ? html` · ${icon('folder', 'sm')} ${x.folder_name}` : ''}</div>
+          ${x.shared ? html`<div class="mt-1"><span class="badge info">${icon('user', 'sm')} ${x.owner_name}</span></div>` : x.share_count ? html`<div class="mt-1"><span class="badge info" data-tip="Shared with ${x.share_count}">${icon('users', 'sm')} ${x.share_count}</span></div>` : ''}
           ${x.tags?.length ? html`<div class="row wrap mt-1" style="gap:4px">${x.tags.slice(0, 3).map((t) => html`<span class="tag">#${t}</span>`)}</div>` : ''}</div>
         <button class="btn icon xs fc-menu" data-more aria-label="More">${icon('more-vertical', 'sm')}</button></div>`;
     }
@@ -95,10 +101,10 @@ export default {
 
     function paint() {
       crumbs();
-      el.querySelector('[data-sub]').textContent = `${data.summary.count} file${data.summary.count === 1 ? '' : 's'} · ${fmtBytes(data.summary.size)} used`;
+      el.querySelector('[data-sub]').textContent = data.summary ? `${data.summary.count} file${data.summary.count === 1 ? '' : 's'} · ${fmtBytes(data.summary.size)} used` : 'Files and folders colleagues shared with you (view & download).';
       const folders = data.folders || [];
       if (!folders.length && !data.items.length) {
-        body.innerHTML = String(empty({
+        body.innerHTML = String(f.view === 'shared' ? empty({ icon: 'users', title: f.folder ? 'This folder is empty' : 'Nothing shared with you yet', text: 'When a colleague shares a file or folder with you, it appears here.' }) : empty({
           icon: f.view === 'starred' ? 'star' : 'hard-drive',
           title: f.q || f.tag || f.kind ? 'No files found' : f.view === 'starred' ? 'No starred files' : f.folder ? 'This folder is empty' : 'Your Drive is empty',
           text: 'Upload important documents (PDF, images, Office files). Add #tags so they show up in notes with the same tag.',
@@ -111,7 +117,8 @@ export default {
         ${folders.length ? html`<div class="label mb-1">Folders</div><div class="folder-grid mb-3">${folders.map((d) => html`
           <div class="folder-card" data-folder="${d.id}" data-drop-folder="${d.id}" tabindex="0" style="--fc:${d.color || 'var(--accent)'}">
             <span class="folder-ic">${icon('folder', 'lg')}</span><div class="grow" style="min-width:0"><div class="truncate" style="font-weight:600">${d.name}</div>
-            <div class="tiny subtle">${d.file_count} file${d.file_count === 1 ? '' : 's'}${d.folder_count ? ` · ${d.folder_count} folder${d.folder_count > 1 ? 's' : ''}` : ''}</div></div>
+            <div class="tiny subtle">${d.file_count} file${d.file_count === 1 ? '' : 's'}${d.folder_count ? ` · ${d.folder_count} folder${d.folder_count > 1 ? 's' : ''}` : ''}${d.shared ? ` · ${d.owner_name}` : ''}</div></div>
+            ${d.share_count ? html`<span class="badge info" data-tip="Shared with ${d.share_count}">${icon('users', 'sm')} ${d.share_count}</span>` : ''}
             <button class="btn ghost icon xs" data-folder-more aria-label="More">${icon('more-vertical', 'sm')}</button></div>`)}</div>` : ''}
         ${data.items.length ? html`${folders.length ? html`<div class="label mb-1">Files</div>` : ''}
           ${f.layout === 'grid' ? html`<div class="file-grid">${data.items.map(fileCard)}</div>`
@@ -154,7 +161,16 @@ export default {
     }
 
     function fileMenu(anchor, x) {
+      if (x.shared) {
+        const ro = [
+          { label: 'Preview', icon: 'eye', onClick: () => openFilePreview(x, data.items) },
+          { label: 'Download', icon: 'download', onClick: () => (window.location.href = x.download_url) },
+          ...(f.folder ? [] : [{ divider: true }, { label: 'Remove from my list', icon: 'log-out', danger: true, onClick: async () => { try { await leaveShared('file', x.id); load(); } catch (e) { toastError(e); } } }]),
+        ];
+        return anchor instanceof Event ? contextMenu(anchor, ro) : menu(anchor, ro, { align: 'end' });
+      }
       const items = [
+        { label: 'Share…', icon: 'users', onClick: async () => { if ((await openItemShare({ type: 'file', id: x.id, title: x.name })) !== null) load(); } },
         { label: 'Preview', icon: 'eye', onClick: () => openFilePreview(x, data.items) },
         { label: 'Details, tags & links', icon: 'info', onClick: () => details(x) },
         { label: x.is_starred ? 'Remove star' : 'Add star', icon: 'star', onClick: async () => { await api.post(`files/${x.id}`, { is_starred: !x.is_starred }).catch(toastError); load(); } },
@@ -170,8 +186,16 @@ export default {
       return anchor instanceof Event ? contextMenu(anchor, items) : menu(anchor, items, { align: 'end' });
     }
     function folderMenu(anchor, d) {
+      if (d.shared) {
+        const ro = [
+          { label: 'Open', icon: 'folder-open', onClick: () => openFolder(d.id) },
+          ...(f.folder ? [] : [{ divider: true }, { label: 'Remove from my list', icon: 'log-out', danger: true, onClick: async () => { try { await leaveShared('folder', d.id); load(); } catch (e) { toastError(e); } } }]),
+        ];
+        return anchor instanceof Event ? contextMenu(anchor, ro) : menu(anchor, ro, { align: 'end' });
+      }
       const items = [
         { label: 'Open', icon: 'folder-open', onClick: () => openFolder(d.id) },
+        { label: 'Share…', icon: 'users', onClick: async () => { if ((await openItemShare({ type: 'folder', id: d.id, title: d.name })) !== null) load(); } },
         { label: 'Rename', icon: 'pencil', onClick: async () => { const n = await prompt({ title: 'Rename folder', value: d.name }); if (n) { await api.post(`drive/folders/${d.id}`, { name: n }).catch(toastError); load(); } } },
         { label: 'Color', icon: 'palette', onClick: () => {
           const wrap = h(`<div class="swatches">${PALETTE.map((c) => `<button class="swatch" data-c="${c}" style="--sw:${c}"></button>`).join('')}</div>`);
@@ -191,8 +215,8 @@ export default {
     }
     function openFolder(id) {
       f.folder = id ? +id : null;
-      f.view = 'drive';
-      el.querySelectorAll('[data-view]').forEach((c) => c.classList.toggle('active', c.dataset.view === 'drive'));
+      if (f.view !== 'shared') f.view = 'drive';
+      el.querySelectorAll('[data-view]').forEach((c) => c.classList.toggle('active', c.dataset.view === f.view));
       load();
     }
 
@@ -246,7 +270,7 @@ export default {
     let dragId = null;
     el.addEventListener('dragstart', (e) => {
       const card = e.target.closest('.file-card');
-      if (!card) return;
+      if (!card || f.view === 'shared') return;
       dragId = +card.dataset.id;
       e.dataTransfer.setData('text/x-file', String(dragId));
       e.dataTransfer.effectAllowed = 'move';

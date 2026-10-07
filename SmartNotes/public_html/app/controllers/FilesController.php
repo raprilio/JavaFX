@@ -80,6 +80,10 @@ final class FilesController
             && DB::val('SELECT s.id FROM note_shares s JOIN notes n ON n.id = s.note_id AND n.deleted_at IS NULL WHERE s.note_id = ? AND s.user_id = ?', [$r['note_id'], $userId])) {
             return $r;
         }
+        // Drive files shared directly or through a shared folder.
+        if ($r && !$r['deleted_at'] && Shares::role('file', $id, $userId)) {
+            return $r;
+        }
         // Attachments of a meeting shared with this user.
         if ($r && !$r['deleted_at'] && $r['meeting_id']
             && DB::val('SELECT m.id FROM meetings m WHERE m.id = ? AND m.deleted_at IS NULL AND ' . MeetingsController::visibleSql('m'), [$r['meeting_id'], $userId, $userId])) {
@@ -200,7 +204,12 @@ final class FilesController
     {
         $u = Auth::require();
         $r = self::readable($id, $u['id']);
-        Http::ok(self::presentOne((int) $r['id']));
+        $out = self::presentOne((int) $r['id']);
+        $out['access'] = (int) $r['user_id'] === $u['id'] ? 'owner' : 'view';
+        if ($out['access'] !== 'owner') {
+            $out['owner_name'] = DB::val('SELECT name FROM users WHERE id = ?', [$r['user_id']]);
+        }
+        Http::ok($out);
     }
 
     public static function raw(int $id): void

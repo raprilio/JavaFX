@@ -20,13 +20,14 @@ final class Agenda
 
         if (in_array('event', $types, true)) {
             $rows = DB::all(
-                "SELECT id, title, description, event_type, start_at, end_at, all_day, location, meeting_url, color,
-                        repeat_rule, repeat_until, reminder_minutes, status, note_id, task_id
-                 FROM calendar_events
-                 WHERE user_id = ? AND deleted_at IS NULL
-                   AND ((repeat_rule = 'none' AND start_at <= ? AND end_at >= ?)
-                     OR (repeat_rule <> 'none' AND start_at <= ? AND (repeat_until IS NULL OR repeat_until >= ?)))",
-                [$userId, date('Y-m-d H:i:s', $toTs), date('Y-m-d H:i:s', $fromTs), date('Y-m-d H:i:s', $toTs), date('Y-m-d', $fromTs)]
+                // Own events + events this user is tagged in (read-only for them).
+                "SELECT e.id, e.user_id, e.title, e.description, e.event_type, e.start_at, e.end_at, e.all_day, e.location, e.meeting_url, e.color,
+                        e.repeat_rule, e.repeat_until, e.reminder_minutes, e.status, e.note_id, e.task_id, o.name AS owner_name
+                 FROM calendar_events e JOIN users o ON o.id = e.user_id
+                 WHERE " . EventsController::VISIBLE_SQL . " AND e.deleted_at IS NULL
+                   AND ((e.repeat_rule = 'none' AND e.start_at <= ? AND e.end_at >= ?)
+                     OR (e.repeat_rule <> 'none' AND e.start_at <= ? AND (e.repeat_until IS NULL OR e.repeat_until >= ?)))",
+                [$userId, $userId, date('Y-m-d H:i:s', $toTs), date('Y-m-d H:i:s', $fromTs), date('Y-m-d H:i:s', $toTs), date('Y-m-d', $fromTs)]
             );
             foreach ($rows as $r) {
                 foreach (Recurrence::between($r['start_at'], $r['end_at'], $r['repeat_rule'], $r['repeat_until'], $fromTs, $toTs) as [$s, $e]) {
@@ -46,6 +47,8 @@ final class Agenda
                         'repeat_rule' => $r['repeat_rule'],
                         'status' => $r['status'],
                         'is_recurring_instance' => $r['repeat_rule'] !== 'none' && $s !== strtotime($r['start_at']),
+                        'shared' => (int) $r['user_id'] !== $userId,
+                        'owner_name' => (int) $r['user_id'] !== $userId ? $r['owner_name'] : null,
                     ];
                 }
             }

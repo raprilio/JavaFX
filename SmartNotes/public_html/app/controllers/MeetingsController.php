@@ -140,6 +140,9 @@ final class MeetingsController
         $m['shared'] = $role !== 'owner';
         $m['owner'] = DB::one('SELECT id, name, email FROM users WHERE id = ?', [$ownerId]);
         $m['participants'] = DB::all('SELECT id, name, email, status FROM meeting_participants WHERE meeting_id = ? ORDER BY id', [$id]);
+        $m['tagged'] = array_map(static fn($t) => ['id' => (int) $t['id'], 'name' => $t['name'], 'email' => $t['email']], DB::all(
+            'SELECT u.id, u.name, u.email FROM meeting_shares s JOIN users u ON u.id = s.user_id WHERE s.meeting_id = ? ORDER BY u.name', [$id]
+        ));
         $m['tasks'] = array_map([TasksController::class, 'present'], DB::all(
             'SELECT id, title, status, priority, due_date, due_time FROM tasks WHERE meeting_id = ? AND user_id = ? AND deleted_at IS NULL ORDER BY sort_order, id',
             [$id, $ownerId]
@@ -265,6 +268,9 @@ final class MeetingsController
             self::syncParticipants($id, Http::input('participants'));
             return $id;
         });
+        if (Http::has('tag_user_ids')) {
+            self::syncTags($id, $u, V::ids(Http::input('tag_user_ids')));
+        }
         Scheduler::sync('meeting', $id);
         Activity::log('meeting.create', 'meeting', $id, $data['title']);
         Http::ok(self::payload($id, $u['id']));
@@ -281,9 +287,35 @@ final class MeetingsController
                 self::syncParticipants($id, Http::input('participants'));
             }
         });
+        if (Http::has('tag_user_ids')) {
+            self::syncTags($id, $u, V::ids(Http::input('tag_user_ids')));
+        }
         Scheduler::sync('meeting', $id);
         self::announceChanges($id, $before, $u['name']);
         Http::ok(self::payload($id, $u['id']));
+    }
+
+    /** "Tag users" field of the meeting form: exactly these users can see it (newly tagged users are notified). */
+    private static function syncTags(int $id, array $u, array $ids): void
+    {
+        $ids = array_values(array_filter(array_unique($ids), static fn($x) => $x !== (int) $u['id']));
+        if ($ids) {
+            DB::run('DELETE FROM meeting_shares WHERE meeting_id = ? AND user_id NOT IN (' . DB::in($ids) . ')', array_merge([$id], $ids));
+        } else {
+            DB::run('DELETE FROM meeting_shares WHERE meeting_id = ?', [$id]);
+        }
+        $new = [];
+        foreach ($ids as $rid) {
+            if (!DB::val("SELECT 1 FROM users WHERE id = ? AND status = 'active' AND deleted_at IS NULL", [$rid])) {
+                continue;
+            }
+            if (DB::run('INSERT IGNORE INTO meeting_shares (meeting_id, owner_id, user_id) VALUES (?, ?, ?)', [$id, $u['id'], $rid])->rowCount()) {
+                $new[] = DB::one('SELECT u.id, u.name, u.email, COALESCE(s.email_notifications, 1) AS email_on, COALESCE(s.notify_meeting, 1) AS n_meeting FROM users u LEFT JOIN user_settings s ON s.user_id = u.id WHERE u.id = ?', [$rid]);
+            }
+        }
+        if ($new && !(int) DB::val('SELECT share_all FROM meetings WHERE id = ?', [$id])) {
+            self::announce($id, $u['name'], $new, 'shared');
+        }
     }
 
     /** Tell people a shared meeting was rescheduled or cancelled. */

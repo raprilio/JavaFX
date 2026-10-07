@@ -5,6 +5,7 @@ import { state, emit } from '../core/store.js';
 import { modal, toast, toastError, formData, showFieldErrors, PALETTE, confirm } from '../core/ui.js';
 import { tagInput, normalizeTag, parseParticipant, formatParticipant } from './tagInput.js';
 import { mountAttachments } from './attachments.js';
+import { userPicker } from './userPicker.js';
 
 export const REMINDERS = [
   ['', 'No reminder'], ['0', 'At time of event'], ['5', '5 minutes before'], ['10', '10 minutes before'], ['15', '15 minutes before'],
@@ -124,6 +125,7 @@ export async function openEventForm(ev = null, defaults = {}) {
   const end = parseDate(ev?.end_at || defaults.end) || new Date(start.getTime() + 3600000);
   const e0 = { event_type: 'event', repeat_rule: 'none', all_day: false, reminder_minutes: state.settings?.default_reminder ?? 30, ...defaults, ...(ev || {}) };
   const people = tagInput({ value: (e0.participants || []).map(formatParticipant), placeholder: 'Name or email, press Enter', normalize: (v) => v.trim() });
+  const tagged = userPicker({ value: e0.tagged || [], placeholder: 'Tag colleagues — it appears in their calendar too' });
   const form = h(String(html`<form autocomplete="off">
     <div class="field"><input class="input" name="title" value="${e0.title || ''}" placeholder="Event title" style="font-size:16px;font-weight:600;height:46px" autofocus></div>
     <div class="row wrap mb-2">
@@ -142,12 +144,14 @@ export async function openEventForm(ev = null, defaults = {}) {
       <div class="field" data-until><label>Repeat until</label><input class="input" type="date" name="repeat_until" value="${e0.repeat_until || ''}"></div>
       <div class="field"><label>Reminder</label><select class="select" name="reminder_minutes">${reminderOptions(e0.reminder_minutes)}</select></div>
       <div class="field"><label>Status</label><select class="select" name="status">${opt([['scheduled', 'Scheduled'], ['completed', 'Completed'], ['cancelled', 'Cancelled']], e0.status || 'scheduled')}</select></div>
-      <div class="field span-2"><label>Participants</label><div data-slot="people"></div></div>
+      <div class="field span-2"><label>${icon('at-sign', 'sm')} Tag users <span class="subtle small">— they see it in their calendar and get the reminder</span></label><div data-slot="tagged"></div></div>
+      <div class="field span-2"><label>Other participants <span class="subtle small">(people without an account)</span></label><div data-slot="people"></div></div>
       <div class="field span-2"><label>Color</label>${colorRow('color', e0.color)}</div>
       <div class="field span-2"><label>Description</label><textarea class="textarea" name="description" rows="3">${e0.description || ''}</textarea></div>
       <div class="field span-2"><label>Related note</label><select class="select" name="note_id"><option>Loading…</option></select></div>
     </div></form>`));
   form.querySelector('[data-slot="people"]').appendChild(people.el);
+  form.querySelector('[data-slot="tagged"]').appendChild(tagged.el);
   bindColorRow(form, 'color');
   noteOptions(e0.note_id).then((o) => (form.querySelector('[name="note_id"]').innerHTML = String(o)));
   const syncUi = () => {
@@ -190,7 +194,7 @@ export async function openEventForm(ev = null, defaults = {}) {
             end_at: `${d.end_date || d.start_date} ${allDay ? '23:59' : d.end_time || d.start_time || '00:00'}:00`,
             location: d.location, meeting_url: d.meeting_url, repeat_rule: d.repeat_rule, repeat_until: d.repeat_rule === 'none' ? null : d.repeat_until || null,
             reminder_minutes: d.reminder_minutes === '' ? null : +d.reminder_minutes, status: d.status, color: d.color || null,
-            note_id: d.note_id || null, participants: people.get().map(parseParticipant),
+            note_id: d.note_id || null, participants: people.get().map(parseParticipant), tag_user_ids: tagged.get(),
           };
           try {
             const saved = editing ? await api.post(`events/${e0.id}`, payload) : await api.post('events', payload);
@@ -220,6 +224,7 @@ export async function openMeetingForm(mt = null, defaults = {}) {
     reminder_minutes: state.settings?.default_reminder ?? 30, status: 'scheduled', ...defaults, ...(mt || {}),
   };
   const people = tagInput({ value: (d0.participants || []).map(formatParticipant), placeholder: 'Name <email>, press Enter', normalize: (v) => v.trim() });
+  const tagged = userPicker({ value: d0.tagged || [], placeholder: 'Tag colleagues — it appears in their meetings & calendar' });
   const form = h(String(html`<form autocomplete="off">
     <div class="field"><input class="input" name="title" value="${d0.title || ''}" placeholder="Meeting title, e.g. Meeting Project Dukcapil" style="font-size:16px;font-weight:600;height:46px" autofocus></div>
     <div class="form-grid">
@@ -229,13 +234,15 @@ export async function openMeetingForm(mt = null, defaults = {}) {
       <div class="field"><label>End time</label><input class="input" type="time" name="end_time" value="${(d0.end_time || '').slice(0, 5)}"></div>
       <div class="field"><label>Location</label><input class="input" name="location" value="${d0.location || ''}" placeholder="Meeting Room A"></div>
       <div class="field"><label>Meeting URL</label><input class="input" name="meeting_url" value="${d0.meeting_url || ''}" placeholder="https://zoom.us/j/…"></div>
-      <div class="field span-2"><label>Participants</label><div data-slot="people"></div></div>
+      <div class="field span-2"><label>${icon('at-sign', 'sm')} Tag users <span class="subtle small">— they see it in Meetings & Calendar and get the reminder</span></label><div data-slot="tagged"></div></div>
+      <div class="field span-2"><label>Other participants <span class="subtle small">(people without an account)</span></label><div data-slot="people"></div></div>
       <div class="field"><label>Reminder</label><select class="select" name="reminder_minutes">${reminderOptions(d0.reminder_minutes)}</select></div>
       <div class="field"><label>Related note</label><select class="select" name="note_id"><option>Loading…</option></select></div>
       <div class="field span-2"><label>Color</label>${colorRow('color', d0.color)}</div>
       <div class="field span-2"><label>Agenda / description</label><textarea class="textarea" name="description" rows="3">${d0.description || ''}</textarea></div>
     </div></form>`));
   form.querySelector('[data-slot="people"]').appendChild(people.el);
+  form.querySelector('[data-slot="tagged"]').appendChild(tagged.el);
   bindColorRow(form, 'color');
   noteOptions(d0.note_id).then((o) => (form.querySelector('[name="note_id"]').innerHTML = String(o)));
 
@@ -249,7 +256,7 @@ export async function openMeetingForm(mt = null, defaults = {}) {
         label: editing ? 'Save changes' : 'Schedule meeting', variant: 'primary', onClick: async () => {
           const d = formData(form);
           if (!d.title.trim()) { showFieldErrors(form, { title: 1 }); return false; }
-          const payload = { ...d, reminder_minutes: d.reminder_minutes === '' ? null : +d.reminder_minutes, color: d.color || null, note_id: d.note_id || null, participants: people.get().map(parseParticipant) };
+          const payload = { ...d, reminder_minutes: d.reminder_minutes === '' ? null : +d.reminder_minutes, color: d.color || null, note_id: d.note_id || null, participants: people.get().map(parseParticipant), tag_user_ids: tagged.get() };
           try {
             const saved = editing ? await api.post(`meetings/${d0.id}`, payload) : await api.post('meetings', payload);
             toast(editing ? 'Meeting updated' : 'Meeting scheduled', 'success');

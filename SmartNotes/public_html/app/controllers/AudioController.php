@@ -20,6 +20,9 @@ final class AudioController
             'created_at' => $r['created_at'],
             'updated_at' => $r['updated_at'],
             'url' => "api/index.php?route=audio/$id/raw",
+            'share_count' => (int) ($r['share_count'] ?? 0),
+            'shared' => !empty($r['shared']),
+            'owner_name' => $r['owner_name'] ?? null,
         ];
     }
 
@@ -34,7 +37,11 @@ final class AudioController
     public static function index(): void
     {
         $u = Auth::require();
-        $where = ['a.user_id = ?', 'a.deleted_at IS NULL' . NoteLock::fileFilter('a.note_id', $u['id'])];
+        // view=shared: recordings other users shared with me (read-only).
+        $shared = Http::query('view') === 'shared';
+        $where = $shared
+            ? ["EXISTS (SELECT 1 FROM item_shares s WHERE s.item_type = 'audio' AND s.item_id = a.id AND s.user_id = ?)", 'a.deleted_at IS NULL']
+            : ['a.user_id = ?', 'a.deleted_at IS NULL' . NoteLock::fileFilter('a.note_id', $u['id'])];
         $params = [$u['id']];
         if ($q = V::str(Http::query('q'), 100)) {
             $where[] = 'a.title LIKE ?';
@@ -49,7 +56,9 @@ final class AudioController
         $w = implode(' AND ', $where);
         $total = (int) DB::val("SELECT COUNT(*) FROM audio_notes a WHERE $w", $params);
         $rows = DB::all(
-            "SELECT a.*, n.title AS note_title FROM audio_notes a LEFT JOIN notes n ON n.id = a.note_id
+            "SELECT a.*, " . ($shared ? "NULL AS note_title, 1 AS shared, o.name AS owner_name" : 'n.title AS note_title') . ",
+                    (SELECT COUNT(*) FROM item_shares s2 WHERE s2.item_type = 'audio' AND s2.item_id = a.id) AS share_count
+             FROM audio_notes a LEFT JOIN notes n ON n.id = a.note_id LEFT JOIN users o ON o.id = a.user_id
              WHERE $w ORDER BY a.created_at DESC, a.id DESC LIMIT $perPage OFFSET " . (($page - 1) * $perPage),
             $params
         );
@@ -95,6 +104,9 @@ final class AudioController
         $r = DB::one('SELECT * FROM audio_notes WHERE id = ?', [$id]);
         $shared = $r && (int) $r['user_id'] !== $u['id'] && !$r['deleted_at'] && $r['note_id']
             && DB::val('SELECT s.id FROM note_shares s JOIN notes n ON n.id = s.note_id AND n.deleted_at IS NULL WHERE s.note_id = ? AND s.user_id = ?', [$r['note_id'], $u['id']]);
+        if ($r && !$shared && (int) $r['user_id'] !== $u['id'] && Shares::role('audio', $id, $u['id'])) {
+            $shared = true;
+        }
         if (!$r || ((int) $r['user_id'] !== $u['id'] && !$shared)) {
             throw new HttpException('Recording not found.', 404);
         }

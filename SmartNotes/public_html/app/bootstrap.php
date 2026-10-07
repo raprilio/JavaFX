@@ -8,7 +8,7 @@ if (defined('SN_APP')) {
     return;
 }
 define('SN_APP', true);
-define('SN_VERSION', '1.4.0');
+define('SN_VERSION', '1.5.0');
 define('SN_APP_DIR', __DIR__);
 define('SN_ROOT', dirname(__DIR__));
 
