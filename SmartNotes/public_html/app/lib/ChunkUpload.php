@@ -63,6 +63,7 @@ final class ChunkUpload
                 UploadPolicy::assertKind($kinds[0]);
             }
             // MP4/WebM may become audio or video: accept if the most generous allowed kind accepts it.
+            $allowed = array_reverse($allowed); // on a tie, name video (how Drive stores MP4/WebM)
             usort($allowed, static fn($x, $y) => (UploadPolicy::limitBytes($y) ?? PHP_INT_MAX) <=> (UploadPolicy::limitBytes($x) ?? PHP_INT_MAX));
             UploadPolicy::assertSize($allowed[0], $size);
             UploadPolicy::assertSpace($size);
