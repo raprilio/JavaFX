@@ -6,7 +6,8 @@ defined('SN_APP') || exit;
 /**
  * Minimal client for the Hostinger Mail API (https://api.mail.hostinger.com, OpenAPI v1.1).
  * Auth: order-scoped bearer token created in hPanel → Emails → email provisioning.
- * The token comes from config.php (hostinger_mail.token) or the settings table (encrypted).
+ * Tokens come from config.php (hostinger_mail.token) and/or the settings table (hmail_connections, encrypted):
+ * one token per Hostinger e-mail order, so several domains can be connected side by side.
  */
 final class HostingerMail
 {
@@ -18,31 +19,125 @@ final class HostingerMail
         return rtrim((string) Config::get('hostinger_mail.base_url', self::DEFAULT_BASE), '/');
     }
 
-    public static function tokenSource(): string
+    /** Token used by call()/binary() when none is passed: set by box() to the mailbox's own connection. */
+    private static ?string $current = null;
+    /** connection id => error message from the last mailbox lookup */
+    private static array $errors = [];
+
+    /**
+     * All API connections: [['id', 'label', 'token', 'order', 'source' => 'config'|'database', 'added_at']].
+     * Several are allowed because a Hostinger token only covers one e-mail order (one domain).
+     */
+    public static function connections(): array
     {
-        return (string) Config::get('hostinger_mail.token', '') !== '' ? 'config' : 'database';
+        $out = [];
+        $cfg = (string) Config::get('hostinger_mail.token', '');
+        if ($cfg !== '') {
+            $out[] = ['id' => 'config', 'label' => 'app/config.php', 'token' => $cfg, 'order' => null, 'source' => 'config', 'added_at' => null];
+        }
+        foreach (self::stored() as $c) {
+            $out[] = $c + ['source' => 'database'];
+        }
+        return $out;
     }
 
-    public static function token(): string
+    /** Connections saved from the UI (encrypted in settings). Migrates the single v1.2 token. */
+    private static function stored(): array
     {
-        $cfg = (string) Config::get('hostinger_mail.token', '');
-        return $cfg !== '' ? $cfg : (string) Settings::get('hmail_token', '');
+        $raw = Settings::get('hmail_connections');
+        if ($raw === null) {
+            $legacy = (string) Settings::get('hmail_token', '');
+            $list = $legacy !== '' ? [['id' => self::newId(), 'label' => 'Hostinger Mail', 'token' => $legacy, 'order' => null, 'added_at' => date('Y-m-d H:i:s')]] : [];
+            self::save($list);
+            Settings::set('hmail_token', '');
+            return $list;
+        }
+        $list = json_decode((string) $raw, true);
+        return is_array($list) ? array_values(array_filter($list, static fn($c) => is_array($c) && !empty($c['token']) && !empty($c['id']))) : [];
+    }
+
+    private static function save(array $list): void
+    {
+        Settings::set('hmail_connections', $list ? json_encode(array_values($list), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : '[]');
+        unset($_SESSION['hmail_me']);
+    }
+
+    private static function newId(): string
+    {
+        return 'c' . bin2hex(random_bytes(5));
+    }
+
+    /** Add a token (checked against Hostinger first). Returns the new connection with its mailboxes. */
+    public static function addConnection(string $token, string $label = ''): array
+    {
+        $me = self::me($token);
+        $list = self::stored();
+        foreach (self::connections() as $c) {
+            if ($c['token'] === $token || ($me['order'] && ($c['order'] ?? null) === $me['order'])) {
+                throw new HttpException('This e-mail order is already connected as "' . $c['label'] . '".', 422, ['token' => true]);
+            }
+        }
+        $first = $me['mailboxes'][0]['address'] ?? '';
+        $conn = [
+            'id' => self::newId(),
+            'label' => $label !== '' ? $label : ($first !== '' ? substr((string) strrchr($first, '@'), 1) : 'Hostinger Mail'),
+            'token' => $token,
+            'order' => $me['order'],
+            'added_at' => date('Y-m-d H:i:s'),
+        ];
+        $list[] = $conn;
+        self::save($list);
+        return $conn + ['mailboxes' => $me['mailboxes']];
+    }
+
+    /** Remove a saved connection. Returns its label. */
+    public static function removeConnection(string $id): string
+    {
+        if ($id === 'config') {
+            throw new HttpException('This token is defined in app/config.php. Remove it from that file.', 422);
+        }
+        $list = self::stored();
+        foreach ($list as $i => $c) {
+            if ($c['id'] === $id) {
+                array_splice($list, $i, 1);
+                self::save($list);
+                return (string) $c['label'];
+            }
+        }
+        throw new HttpException('Connection not found.', 404);
+    }
+
+    public static function renameConnection(string $id, string $label): void
+    {
+        $list = self::stored();
+        foreach ($list as &$c) {
+            if ($c['id'] === $id) {
+                $c['label'] = $label;
+                self::save($list);
+                return;
+            }
+        }
+        throw new HttpException('Connection not found.', 404);
+    }
+
+    public static function removeAll(): void
+    {
+        self::save([]);
     }
 
     public static function configured(): bool
     {
-        return self::token() !== '';
+        return self::connections() !== [];
     }
 
-    /** Mailboxes the token may manage: [['resourceId' => 'AC…', 'address' => '…'], …]. Cached in the session for 10 minutes. */
-    public static function mailboxes(bool $fresh = false, ?string $token = null): array
+    public static function errors(): array
     {
-        $token ??= self::token();
-        $key = substr(hash('sha256', $token), 0, 16);
-        $c = $_SESSION['hmail_me'] ?? null;
-        if (!$fresh && $token === self::token() && is_array($c) && ($c['k'] ?? '') === $key && ($c['t'] ?? 0) > time() - 600) {
-            return $c['list'];
-        }
+        return self::$errors;
+    }
+
+    /** Order id + mailboxes for one token (GET /api/v1/me). */
+    private static function me(string $token): array
+    {
         $r = self::call('GET', '/api/v1/me', [], null, $token);
         $list = [];
         foreach ((array) ($r['data']['mailboxes'] ?? []) as $m) {
@@ -50,27 +145,67 @@ final class HostingerMail
                 $list[] = ['resourceId' => $m['resourceId'], 'address' => (string) ($m['address'] ?? '')];
             }
         }
-        if ($token === self::token()) {
-            $_SESSION['hmail_me'] = ['k' => $key, 't' => time(), 'list' => $list];
-        }
-        return $list;
+        $order = $r['data']['orderResourceId'] ?? null;
+        return ['order' => is_string($order) ? $order : null, 'mailboxes' => $list];
     }
 
-    /** Path prefix for one mailbox; the id must be one the token can manage. */
+    /**
+     * Mailboxes of every connection: [['resourceId' => 'AC…', 'address' => '…', 'connection' => id, 'connection_label' => …], …].
+     * Cached per connection in the session for 10 minutes. A failing connection is skipped (see errors());
+     * when every connection fails the first error is thrown.
+     */
+    public static function mailboxes(bool $fresh = false): array
+    {
+        $all = [];
+        $seen = [];
+        $first = null;
+        self::$errors = [];
+        $conns = self::connections();
+        foreach ($conns as $c) {
+            $key = substr(hash('sha256', $c['token']), 0, 16);
+            $cache = $_SESSION['hmail_me'][$c['id']] ?? null;
+            try {
+                if (!$fresh && is_array($cache) && ($cache['k'] ?? '') === $key && ($cache['t'] ?? 0) > time() - 600) {
+                    $list = $cache['list'];
+                } else {
+                    $me = self::me($c['token']);
+                    $list = $me['mailboxes'];
+                    $_SESSION['hmail_me'][$c['id']] = ['k' => $key, 't' => time(), 'list' => $list];
+                }
+            } catch (HttpException $e) {
+                self::$errors[$c['id']] = $e->getMessage();
+                $first ??= $e;
+                continue;
+            }
+            foreach ($list as $m) {
+                if (!isset($seen[$m['resourceId']])) {
+                    $seen[$m['resourceId']] = true;
+                    $all[] = $m + ['connection' => $c['id'], 'connection_label' => $c['label']];
+                }
+            }
+        }
+        if ($first && count(self::$errors) === count($conns)) {
+            throw $first;
+        }
+        return $all;
+    }
+
+    /** Path prefix for one mailbox; also selects the token of the connection that owns it. */
     public static function box(string $mailboxId): string
     {
-        foreach (self::mailboxes() as $m) {
-            if ($m['resourceId'] === $mailboxId) {
-                return '/api/v1/mailboxes/' . rawurlencode($mailboxId);
+        foreach ([false, true] as $fresh) { // the list may be stale (mailbox added in hPanel a minute ago)
+            foreach (self::mailboxes($fresh) as $m) {
+                if ($m['resourceId'] === $mailboxId) {
+                    foreach (self::connections() as $c) {
+                        if ($c['id'] === $m['connection']) {
+                            self::$current = $c['token'];
+                        }
+                    }
+                    return '/api/v1/mailboxes/' . rawurlencode($mailboxId);
+                }
             }
         }
-        // The list may be stale (mailbox added in hPanel a minute ago).
-        foreach (self::mailboxes(true) as $m) {
-            if ($m['resourceId'] === $mailboxId) {
-                return '/api/v1/mailboxes/' . rawurlencode($mailboxId);
-            }
-        }
-        throw new HttpException('This mailbox is not available for the configured API token.', 404);
+        throw new HttpException('This mailbox is not available for the connected API tokens.', 404);
     }
 
     public static function folderPath(string $mailboxId, string $folder): string
@@ -101,7 +236,7 @@ final class HostingerMail
 
     private static function send(string $method, string $path, array $query, ?array $body, ?string $token, bool $binary): array
     {
-        $token ??= self::token();
+        $token ??= self::$current ?? (self::connections()[0]['token'] ?? '');
         if ($token === '') {
             throw new HttpException('The Hostinger Mail API token is not configured yet.', 422);
         }
@@ -197,7 +332,7 @@ final class HostingerMail
         $msg = is_array($j) ? (string) ($j['error'] ?? '') : '';
         $code = is_array($j) ? (string) ($j['code'] ?? '') : '';
         return match (true) {
-            $status === 401 => new HttpException('Hostinger rejected the API token. Create a new token in hPanel and save it in Mail → Connection.', 422, ['token' => true]),
+            $status === 401 => new HttpException('Hostinger rejected the API token. Create a new token in hPanel and add it in Mail → Settings → API connections.', 422, ['token' => true]),
             $status === 403 => new HttpException('The API token is not allowed to access this mailbox.' . ($msg ? " ($msg)" : ''), 403),
             $status === 404 => new HttpException($msg ?: 'Not found in the mailbox — it may have been moved or deleted.', 404),
             $status === 409 => new HttpException($msg ?: 'A folder with that name already exists.', 409),

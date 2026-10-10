@@ -49,6 +49,22 @@ final class ChunkUpload
         }
 
         $metaFile = $dir . '/meta.json';
+        $backup = ($in['purpose'] ?? '') === 'backup';
+        if (!is_file($metaFile) && $backup) {
+            // Backup restore (full admins): .sql / .sql.gz / .zip of any size; only the disk space is checked.
+            if ($index !== 0) {
+                throw new HttpException('This upload expired. Please upload the file again.', 410);
+            }
+            if (!Auth::isAdmin()) {
+                throw new HttpException('Only administrators can restore backups.', 403);
+            }
+            if (!preg_match('/\.(sql|gz|zip)$/i', $name)) {
+                throw new HttpException('Please upload a .sql, .sql.gz or .zip backup file.', 422);
+            }
+            UploadPolicy::assertSpace($size);
+            ensure_dir($dir);
+            self::writeMeta($metaFile, ['name' => $name, 'size' => $size, 'total' => $total, 'next' => 0, 'bytes' => 0, 'complete' => false, 'created' => time()]);
+        }
         if (!is_file($metaFile)) {
             if ($index !== 0) {
                 throw new HttpException('This upload expired. Please upload the file again.', 410);

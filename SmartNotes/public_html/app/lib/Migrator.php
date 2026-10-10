@@ -9,7 +9,7 @@ defined('SN_APP') || exit;
  */
 final class Migrator
 {
-    public const VERSION = 5;
+    public const VERSION = 6;
 
     public static function run(): void
     {
@@ -33,6 +33,9 @@ final class Migrator
             }
             if ($current < 5) {
                 self::v5();
+            }
+            if ($current < 6) {
+                self::v6();
             }
             Settings::set('schema_version', (string) self::VERSION);
         } finally {
@@ -175,5 +178,11 @@ final class Migrator
         self::addColumn('flowcharts', 'updated_by', 'INT UNSIGNED NULL');
         self::addColumn('mindmaps', 'revision', 'INT UNSIGNED NOT NULL DEFAULT 0');
         self::addColumn('flowcharts', 'revision', 'INT UNSIGNED NOT NULL DEFAULT 0');
+    }
+
+    /** v1.7: upload size limits removed (0 = no limit); files are only bounded by the hosting disk. */
+    private static function v6(): void
+    {
+        DB::run("UPDATE settings SET setting_value = '0' WHERE setting_key IN ('max_image_mb', 'max_audio_mb', 'max_video_mb', 'max_file_mb')");
     }
 }

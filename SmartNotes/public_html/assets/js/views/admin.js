@@ -5,6 +5,7 @@ import { state, can, emit } from '../core/store.js';
 import { toast, toastError, confirm, modal, formData, showFieldErrors, withLoading, switchHtml, ACCENTS, empty, prompt } from '../core/ui.js';
 import { pickFiles } from '../components/attachments.js';
 import { themeColors } from '../components/canvas.js';
+import { mailSettingsPanel } from '../components/mailConnections.js';
 import { brandHtml } from '../core/shell.js';
 
 const TABS = [
@@ -262,7 +263,7 @@ const tabs = {
     const byTotal = kindsUsed.reduce((a, [, v]) => a + v.size, 0);
     const topUsers = st.top_users.filter((u) => u.bytes > 0);
     el.innerHTML = String(html`<form data-form class="col" style="gap:18px">
-      <div class="share-banner" style="margin:0">${icon('infinity', 'sm')}<span><b>No storage quota.</b> Users can upload as much as they need — every file goes to the <code>uploads/</code> folder of your hosting (hPanel → File Manager), never into MySQL. The only ceiling is your hosting plan's disk space.</span></div>
+      <div class="share-banner" style="margin:0">${icon('infinity', 'sm')}<span><b>No upload limits and no storage quota.</b> Files of any size can be uploaded — every file goes to the <code>uploads/</code> folder of your hosting (hPanel → File Manager), never into MySQL. The only ceiling is your hosting plan's disk space.</span></div>
       ${card(html`${icon('hard-drive', 'sm')} Storage on this hosting`, html`
         <div class="stats-grid" style="margin-bottom:14px">
           <div class="card stat" style="--c:#6366f1"><div class="stat-value">${fmtBytes(st.uploads_bytes)}</div><div class="stat-label">Files in uploads/</div></div>
@@ -281,14 +282,14 @@ const tabs = {
         </div>
         ${topUsers.length ? html`<div class="label mt-3 mb-1">Largest users</div><div class="table-wrap"><table class="table"><tbody>${topUsers.map((u) => html`<tr><td>${u.name} <span class="subtle tiny">${u.email}</span></td><td style="text-align:right">${fmtBytes(u.bytes)}</td></tr>`)}</tbody></table></div>` : ''}
         ${st.pending_bytes ? html`<button type="button" class="btn sm mt-2" data-act="cleanup">${icon('trash-2', 'sm')} Remove unfinished uploads</button>` : ''}`)}
-      ${card(html`${icon('sliders-horizontal', 'sm')} What users may upload, and how big`, html`
-        <p class="small muted" style="margin-top:0">Turn a file type off to block it everywhere (Drive, note attachments, audio recordings). Leave the size at <b>0</b> for <b>no limit</b>. Profile photos and branding images are always allowed.</p>
+      ${card(html`${icon('sliders-horizontal', 'sm')} File types`, html`
+        <p class="small muted" style="margin-top:0">Turn a file type off to block it everywhere (Drive, note attachments, audio recordings). Size: <b>0 = no limit</b> (the default). Only enter a number if you ever want to cap a type. Profile photos and branding images are always allowed.</p>
         <div class="col" style="gap:10px">${KINDS.map(([k, label, ic, hint, key, def]) => html`<div class="upload-rule">
           <label class="switch"><input type="checkbox" name="upload_kinds[]" value="${k}" ${on.has(k) ? 'checked' : ''}><span class="track"></span></label>
           <div class="grow" style="min-width:0"><div class="row" style="gap:6px;font-weight:600">${icon(ic, 'sm')} ${label}</div><div class="tiny subtle">${hint}</div></div>
           ${key ? html`<div class="row" style="gap:6px"><input class="input sm" type="number" min="0" max="1048576" name="${key}" value="${mbVal(key, def)}" style="width:110px" aria-label="${label} max size in MB"><span class="small subtle">MB</span><span class="badge" data-unl="${key}">${mbVal(key, def) === 0 ? 'No limit' : ''}</span></div>` : html`<span class="small subtle">uses the Documents limit</span>`}
         </div>`)}</div>`)}
-      ${card(html`${icon('upload', 'sm')} Large files`, html`<p class="small muted" style="margin:0">Your server accepts at most <b>${st.server.upload_max_filesize}</b> per request (PHP <code>upload_max_filesize</code>, post <code>${st.server.post_max_size}</code>). SmartNotes sends bigger files automatically in pieces of <b>${fmtBytes(st.server.chunk_bytes)}</b>, retries a piece if the connection drops, and joins them on the server — so a 2 GB video works without changing PHP settings. Only the limits above apply.</p>`)}
+      ${card(html`${icon('upload', 'sm')} Large files`, html`<p class="small muted" style="margin:0">Your server accepts at most <b>${st.server.upload_max_filesize}</b> per request (PHP <code>upload_max_filesize</code>, post <code>${st.server.post_max_size}</code>). SmartNotes sends bigger files automatically in pieces of <b>${fmtBytes(st.server.chunk_bytes)}</b>, retries a piece if the connection drops, and joins them on the server — so a 2 GB video or a large backup works without changing PHP settings.</p>`)}
       <div><button class="btn primary" type="submit">Save upload settings</button></div></form>`);
     const form = el.querySelector('form');
     form.addEventListener('input', (e) => {
@@ -337,6 +338,7 @@ const tabs = {
         ${s.cron_url ? html`<div class="field"><label>Or call this URL from an external cron service:</label><div class="code-box">${s.cron_url}</div><span class="hint">The real token is in app/config.php (cron.token).</span></div>` : ''}
         <div class="setting-row"><div class="info"><b>Traffic-based fallback</b><span>Process reminders while users are active (keep enabled if you cannot add a cron job).</span></div>${switchHtml('web_cron_enabled', s.web_cron_enabled)}</div>
         <div class="row between mt-2"><span class="small">${s.last_cron_run ? html`Last run: <b>${fmtDateTime(s.last_cron_run)}</b> (${s.last_cron_source})` : 'The scheduler has not run yet.'}</span><button class="btn sm" data-a="run">${icon('play', 'sm')} Run now</button></div>`)}
+      ${state.user.role === 'admin' ? html`<div data-hmail></div>` : ''}
       ${card(html`${icon('inbox', 'sm')} E-mail log`, html`<div class="chips mb-2">${['', 'pending', 'sent', 'failed'].map((st) => html`<button class="chip ${st === '' ? 'active' : ''}" data-st="${st}">${st || 'All'} ${st && s.stats[st] ? html`<span class="subtle">${s.stats[st]}</span>` : ''}</button>`)}</div><div data-logs></div>`)}`);
     const form = el.querySelector('[data-form]');
     form.addEventListener('submit', async (e) => {
@@ -355,6 +357,16 @@ const tabs = {
         : String(empty({ icon: 'inbox', title: 'No e-mails', text: 'Reminder, agenda and test e-mails will be listed here.' }));
     };
     loadLogs();
+    const hm = el.querySelector('[data-hmail]');
+    if (hm) {
+      // Mailbox (Hostinger Mail API) connections — inbox for admins, separate from the SMTP used for reminders.
+      hm.innerHTML = String(card(html`${icon('mailbox', 'sm')} Mail inbox — Hostinger Mail API`, html`<div style="padding:20px;text-align:center"><span class="spinner"></span></div>`, html`<a class="btn ghost sm" href="#/mail">${icon('external-link', 'sm')} Open Mail</a>`));
+      api.get('mail/status').then((st) => {
+        const body = hm.querySelector('.card-body');
+        body.innerHTML = '<p class="small muted" style="margin-top:0">Read and answer company e-mail in the Mail menu. Add one API token per domain (Hostinger e-mail order); delete a token to disconnect it. SMTP above is only used for reminder e-mails.</p>';
+        body.appendChild(mailSettingsPanel({ status: st, compact: true }));
+      }).catch((err) => { hm.querySelector('.card-body').innerHTML = String(html`<p class="small" style="color:var(--danger)">${err.message}</p>`); });
+    }
     el.addEventListener('click', async (e) => {
       const a = e.target.closest('[data-a]')?.dataset.a;
       if (a === 'test') {

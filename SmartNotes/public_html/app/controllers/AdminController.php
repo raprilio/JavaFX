@@ -645,25 +645,43 @@ final class AdminController
         if (Http::input('confirm') !== 'RESTORE') {
             throw new HttpException('Type RESTORE to confirm.', 422);
         }
+        $me = Auth::require();
+        // Large backups arrive in pieces (uploads/chunk with purpose=backup) and are referenced by upload_token.
         $f = $_FILES['file'] ?? null;
-        if (!$f || $f['error'] !== UPLOAD_ERR_OK) {
-            throw new HttpException('Please upload a .sql, .sql.gz or .zip backup file (server limit ' . ini_get('upload_max_filesize') . ').', 422);
+        if ((!$f || $f['error'] === UPLOAD_ERR_NO_FILE) && ($token = (string) ($_POST['upload_token'] ?? '')) !== '') {
+            $f = ChunkUpload::take($me['id'], $token);
         }
+        if (!$f || $f['error'] !== UPLOAD_ERR_OK) {
+            throw new HttpException('Please upload a .sql, .sql.gz or .zip backup file.', 422);
+        }
+        @set_time_limit(0);
+        try {
+            [$data, $message] = self::restoreFrom($f, $me);
+        } finally {
+            if (!empty($f['chunk_dir'])) {
+                ChunkUpload::discard($f['chunk_dir']); // before Http::ok(), which exits
+            }
+        }
+        Http::ok($data, $message);
+    }
+
+    /** @return array{0: array, 1: string} response data and message */
+    private static function restoreFrom(array $f, array $me): array
+    {
         $name = strtolower((string) $f['name']);
         $isZip = str_ends_with($name, '.zip');
         if (!$isZip && !str_ends_with($name, '.sql') && !str_ends_with($name, '.sql.gz') && !str_ends_with($name, '.gz')) {
             throw new HttpException('Unsupported backup format.', 422);
         }
-        $me = Auth::require();
         if ($isZip) {
             $n = Backup::restoreUploads($f['tmp_name']);
             Activity::log('admin.restore', null, null, "Restored $n files from uploaded archive");
-            Http::ok(['files' => $n], "Restored $n files.");
+            return [['files' => $n], "Restored $n files."];
         }
         $safety = Backup::dumpDatabase(true);
         $n = Backup::restoreDatabase($f['tmp_name']);
         Activity::log('admin.restore', null, null, "Restored database from uploaded file ($n statements). Safety backup: $safety", DB::val('SELECT id FROM users WHERE id = ?', [$me['id']]) ? $me['id'] : null);
-        Http::ok(['statements' => $n, 'safety_backup' => $safety], 'Database restored. A safety backup of the previous state was created.');
+        return [['statements' => $n, 'safety_backup' => $safety], 'Database restored. A safety backup of the previous state was created.'];
     }
 
     public static function exportUser(int $id): void

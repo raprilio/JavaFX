@@ -8,6 +8,7 @@ import { toast, toastError, menu, confirm, modal, empty, withLoading } from '../
 import { openFilePreview } from '../components/filePreview.js';
 import { tagInput, normalizeTag } from '../components/tagInput.js';
 import { folderOptions } from './drive.js';
+import { mailSettingsPanel } from '../components/mailConnections.js';
 
 const SPECIAL = { '\\Sent': ['send', 'Sent'], '\\Drafts': ['file-pen', 'Drafts'], '\\Junk': ['octagon-alert', 'Spam'], '\\Trash': ['trash-2', 'Trash'], '\\Archive': ['archive', 'Archive'] };
 const POLL_MS = 120000;
@@ -61,86 +62,59 @@ export default {
       const ids = status.mailboxes.map((m) => m.resourceId);
       if (!ids.includes(s.mailbox)) s.mailbox = ids.includes(status.default_mailbox) ? status.default_mailbox : ids[0] || '';
       renderShell();
-      if (status.error) { setReader(html`<div class="mail-error">${icon('plug', 'lg')}<h3>Hostinger Mail API is not responding</h3><p>${status.error}</p><button class="btn" data-act="settings">${icon('settings-2', 'sm')} Connection settings</button></div>`); return; }
+      if (status.error) { setReader(html`<div class="mail-error">${icon('plug', 'lg')}<h3>Hostinger Mail API is not responding</h3><p>${status.error}</p><button class="btn" data-act="settings">${icon('settings-2', 'sm')} Mail settings & APIs</button></div>`); return; }
       await Promise.all([loadFolders(), loadList()]);
       timer = setInterval(() => { if (document.visibilityState === 'visible' && !document.querySelector('.modal-root')) { loadFolders(true); loadList(true); } }, POLL_MS);
     }
 
     function renderSetup() {
-      const fromConfig = status.source === 'config';
       el.innerHTML = String(html`
         <div class="page-head"><div><h1>Mail</h1><p>Read and answer the company mailbox right inside ${state.branding?.app_name || 'SmartNotes'}.</p></div></div>
         <div class="card mail-setup">
           <div class="mail-setup-ic">${icon('mailbox', 'xl')}</div>
           <h2>Connect your Hostinger mailbox</h2>
           ${status.error ? html`<p class="mail-setup-err">${icon('alert-triangle', 'sm')} ${status.error}</p>` : ''}
-          <ol class="steps">
-            <li>Open <b>hPanel → Emails</b>, choose your domain and open the <b>email provisioning / Mail API</b> section.</li>
-            <li>Create an <b>API token</b>. A token can read every mailbox of that e-mail order, so keep it secret.</li>
-            <li>Paste it below. It is stored encrypted and is only usable by administrators.</li>
-          </ol>
-          ${fromConfig ? html`<p class="small muted">The token is defined in <code>app/config.php</code> (<code>hostinger_mail.token</code>).</p>` : html`
-          <form class="row" data-form="token" style="align-items:flex-end">
-            <div class="field grow" style="margin:0"><label for="hm-token">API token</label><input class="input" id="hm-token" name="token" type="password" autocomplete="off" placeholder="Paste the Hostinger Mail API token" required></div>
-            <button class="btn primary" type="submit">${icon('plug', 'sm')} Connect</button>
-          </form>`}
+          <div data-panel></div>
         </div>`);
-      el.querySelector('[data-form="token"]')?.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const form = e.currentTarget;
-        await withLoading(form.querySelector('[type=submit]'), async () => {
-          try {
-            status = await api.post('mail/settings', { token: form.token.value.trim() });
-            toast(`Connected — ${status.mailboxes.length} mailbox${status.mailboxes.length === 1 ? '' : 'es'} found`, 'success');
-            boot();
-          } catch (err) { toastError(err); }
-        });
-      });
+      el.querySelector('[data-panel]').appendChild(mailSettingsPanel({
+        status,
+        onChange: (next) => { status = next; if (next.mailboxes.length) { s.mailbox = ''; boot(); } },
+      }));
     }
 
+    /** Mail → Settings: add / delete API connections, default mailbox, sender name. */
     async function openSettings() {
-      const st = status;
-      const body = h(String(html`<div class="col" style="gap:14px">
-        <div class="mail-conn ${st.error ? 'bad' : 'ok'}">${icon(st.error ? 'unplug' : 'plug', 'sm')} ${st.error ? st.error : html`Connected · token <code>${st.token_hint}</code>${st.source === 'config' ? ' (from config.php)' : ''}`}</div>
-        <div class="field" style="margin:0"><label>Default mailbox</label><select class="select" data-default>${st.mailboxes.map((m) => html`<option value="${m.resourceId}" ${m.resourceId === (st.default_mailbox || s.mailbox) ? 'selected' : ''}>${m.address}</option>`)}</select></div>
-        <div class="field" style="margin:0"><label>Sender display name</label><input class="input" data-name value="${st.display_name || ''}" maxlength="120" placeholder="e.g. PT Contoh Indonesia"></div>
-        ${st.source === 'config' ? '' : html`<div class="field" style="margin:0"><label>Replace API token</label><input class="input" type="password" data-token autocomplete="off" placeholder="Leave empty to keep the current token"></div>`}
-        <p class="small subtle">Mailboxes come from the token's e-mail order. Only users with the Admin role can open Mail; delegated admin permissions do not include it.</p>
-      </div>`));
-      const m = modal({
-        title: 'Mail connection', body, size: 'sm',
-        actions: [
-          ...(st.source === 'config' ? [] : [{ label: 'Disconnect', variant: 'danger ghost', left: true, onClick: async () => {
-            if (!(await confirm({ title: 'Disconnect the mailbox?', message: 'The API token is removed from SmartNotes. Your e-mails stay on Hostinger.', confirmText: 'Disconnect' }))) return false;
-            status = await api.post('mail/settings', { disconnect: true });
-            toast('Mailbox disconnected', 'success');
-            boot();
-          } }]),
-          { label: 'Cancel' },
-          { label: 'Save', variant: 'primary', onClick: async () => {
-            const payload = { default_mailbox: body.querySelector('[data-default]').value, display_name: body.querySelector('[data-name]').value };
-            const t = body.querySelector('[data-token]')?.value.trim();
-            if (t) payload.token = t;
-            status = await api.post('mail/settings', payload);
-            toast('Mail settings saved', 'success');
-            if (t) { s.mailbox = ''; boot(); }
-          } },
-        ],
-      });
-      return m;
+      let changed = false;
+      const before = status.connections.map((c) => c.id).join();
+      const body = mailSettingsPanel({ status, compact: false, onChange: (next) => { status = next; changed = true; } });
+      await modal({ title: 'Mail settings', body, size: 'lg', className: 'mail-settings-modal', actions: [{ label: 'Done', variant: 'primary' }] }).result;
+      if (!changed) return;
+      if (status.connections.map((c) => c.id).join() !== before || !status.mailboxes.some((m) => m.resourceId === s.mailbox)) {
+        s.mailbox = '';
+        boot();
+      }
     }
 
     // ---------------------------------------------------------------- layout
+    /** Mailbox switcher options, grouped per API connection (domain) when there are several. */
+    function mailboxOptions() {
+      const opt = (m) => html`<option value="${m.resourceId}" ${m.resourceId === s.mailbox ? 'selected' : ''}>${m.address}</option>`;
+      const conns = status.connections.filter((c) => status.mailboxes.some((m) => m.connection === c.id));
+      if (conns.length < 2) return status.mailboxes.map(opt);
+      return conns.map((c) => html`<optgroup label="${c.label}">${status.mailboxes.filter((m) => m.connection === c.id).map(opt)}</optgroup>`);
+    }
+
     function renderShell() {
       const multi = status.mailboxes.length > 1;
       el.innerHTML = String(html`
         <div class="mail" data-state="list">
           <aside class="mail-side">
-            ${multi ? html`<select class="select sm" data-mailbox aria-label="Mailbox">${status.mailboxes.map((m) => html`<option value="${m.resourceId}" ${m.resourceId === s.mailbox ? 'selected' : ''}>${m.address}</option>`)}</select>`
+            ${multi ? html`<select class="select sm" data-mailbox aria-label="Mailbox">${mailboxOptions()}</select>`
               : html`<div class="mail-addr truncate" title="${status.mailboxes[0]?.address || ''}">${icon('at-sign', 'sm')} ${status.mailboxes[0]?.address || ''}</div>`}
             <button class="btn primary block" data-act="compose">${icon('pencil-line', 'sm')} Compose</button>
             <nav class="mail-folders" data-folders></nav>
             <div class="mail-quota" data-quota></div>
+            ${status.connections.some((c) => c.error) ? html`<button class="mail-conn bad small" data-act="settings" style="border:0;cursor:pointer;text-align:left">${icon('unplug', 'sm')} ${status.connections.filter((c) => c.error).length} API connection needs attention</button>` : ''}
           </aside>
           <section class="mail-list">
             <div class="mail-list-bar">
@@ -148,7 +122,7 @@ export default {
               <div class="input-icon grow">${icon('search', 'sm')}<input class="input sm" type="search" placeholder="Search mail… (from:, subject:)" data-search></div>
               <button class="btn ghost icon sm ${s.flagged ? 'active' : ''}" data-act="flagged" data-tip="Starred only" aria-label="Starred only">${icon('star', 'sm')}</button>
               <button class="btn ghost icon sm" data-act="refresh" data-tip="Refresh" aria-label="Refresh">${icon('refresh-cw', 'sm')}</button>
-              <button class="btn ghost icon sm" data-act="settings" data-tip="Connection" aria-label="Mail settings">${icon('settings-2', 'sm')}</button>
+              <button class="btn ghost icon sm" data-act="settings" data-tip="Mail settings & APIs" aria-label="Mail settings">${icon('settings-2', 'sm')}</button>
             </div>
             <div class="mail-bulk hidden" data-bulk></div>
             <div class="mail-rows" data-rows></div>

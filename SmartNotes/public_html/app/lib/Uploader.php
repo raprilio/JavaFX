@@ -171,17 +171,15 @@ final class Uploader
                 throw new HttpException('The image could not be read.', 422);
             }
             [$width, $height] = [$info[0], $info[1]];
-            if ($width * $height > 40_000_000) {
-                throw new HttpException('The image resolution is too large.', 422);
-            }
-            // Re-encode through GD: strips metadata/payloads and compresses large images.
-            $re = self::reencode($file['tmp_name'], $dest, $ext, self::MAX_IMAGE_DIMENSION);
+            // Re-encode through GD: strips metadata/payloads and compresses large images. Images too big for the
+            // PHP memory limit are kept as uploaded (still served with nosniff + sandbox CSP) instead of refused.
+            $re = self::fitsInMemory($width, $height) ? self::reencode($file['tmp_name'], $dest, $ext, self::MAX_IMAGE_DIMENSION) : null;
             if ($re) {
                 [$width, $height] = $re;
             } elseif (!($local ? copy($file['tmp_name'], $dest) : move_uploaded_file($file['tmp_name'], $dest)) && !copy($file['tmp_name'], $dest)) {
                 throw new HttpException('Could not save the file — the hosting storage may be full.', 507);
             }
-            if ($makeThumb) {
+            if ($makeThumb && self::fitsInMemory($width, $height)) {
                 $thumbName = pathinfo($stored, PATHINFO_FILENAME) . '_t.' . pathinfo($stored, PATHINFO_EXTENSION);
                 if (self::reencode($dest, $dir . '/' . $thumbName, $ext, self::THUMB_SIZE)) {
                     $thumb = $rel . '/' . $thumbName;
@@ -210,6 +208,17 @@ final class Uploader
             'height' => $height,
             'ext' => $ext,
         ];
+    }
+
+    /** Can GD decode an image of this size within PHP's memory_limit (≈5 bytes per pixel + resized copy)? */
+    private static function fitsInMemory(int $w, int $h): bool
+    {
+        $limit = UploadPolicy::iniBytes((string) ini_get('memory_limit'));
+        if ($limit === PHP_INT_MAX) {
+            return true;
+        }
+        $need = $w * $h * 5 + min($w * $h, self::MAX_IMAGE_DIMENSION ** 2) * 5 + 16 * 1024 * 1024;
+        return memory_get_usage() + $need < $limit;
     }
 
     /** Move a file the app wrote itself (rename is instant on the same disk; copy as a fallback). */

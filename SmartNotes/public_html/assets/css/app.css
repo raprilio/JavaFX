@@ -1215,3 +1215,12 @@ svg .edge-path.selected { stroke: var(--accent) !important; }
 .upload-rule:has(input[type=checkbox]:not(:checked)) .grow, .upload-rule:has(input[type=checkbox]:not(:checked)) input[type=number] { opacity: .5; }
 @media (max-width: 640px) { .upload-rule { flex-wrap: wrap; } .upload-rule > .row:last-child { margin-left: 52px; } }
 .upload-rule .badge:empty { display: none; }
+
+/* ---------- v1.7 mail API connections ---------- */
+.mc-row { display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-elev); }
+.mc-ic { width: 32px; height: 32px; flex: none; border-radius: 10px; display: grid; place-items: center; background: color-mix(in srgb, #22c55e 14%, transparent); color: #16a34a; }
+.mc-row.bad .mc-ic { background: color-mix(in srgb, #ef4444 14%, transparent); color: #dc2626; }
+.mc-boxes { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.mc-err { margin-top: 6px; color: var(--danger, #dc2626); display: flex; gap: 6px; align-items: center; }
+.mc-help summary { cursor: pointer; color: var(--text-2); }
+.mail-setup .mail-settings { text-align: left; }

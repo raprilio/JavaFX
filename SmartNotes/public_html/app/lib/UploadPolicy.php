@@ -14,8 +14,8 @@ final class UploadPolicy
 {
     public const KINDS = ['image', 'audio', 'video', 'document', 'archive'];
 
-    /** setting key => default MB (0 = unlimited) */
-    public const LIMIT_KEYS = ['image' => ['max_image_mb', 8], 'audio' => ['max_audio_mb', 25], 'video' => ['max_video_mb', 100], 'document' => ['max_file_mb', 20], 'archive' => ['max_file_mb', 20]];
+    /** setting key => default MB. 0 = unlimited, which is the default since v1.7 (only the hosting disk counts). */
+    public const LIMIT_KEYS = ['image' => ['max_image_mb', 0], 'audio' => ['max_audio_mb', 0], 'video' => ['max_video_mb', 0], 'document' => ['max_file_mb', 0], 'archive' => ['max_file_mb', 0]];
 
     /** Upper bound accepted by the admin form (1 TB). */
     public const MAX_MB = 1048576;

@@ -2,7 +2,9 @@
 import { emit, state } from './store.js';
 
 /** Upload endpoints that accept a finished chunked upload (upload_token) instead of a file field. */
-const CHUNKED_ROUTES = new Set(['files/upload', 'audio/upload']);
+const CHUNKED_ROUTES = new Set(['files/upload', 'audio/upload', 'admin/restore-upload']);
+/** Extra fields for the pieces of some routes (backups may be .sql/.gz/.zip of any size). */
+const CHUNK_PURPOSE = { 'admin/restore-upload': 'backup' };
 
 export class ApiError extends Error {
   constructor(message, status = 0, errors = {}) {
@@ -73,7 +75,7 @@ export const api = {
   upload(route, form, onProgress) {
     const file = typeof form?.get === 'function' ? form.get('file') : null;
     const piece = state.limits?.chunk_bytes || 8 * 1024 * 1024;
-    if (CHUNKED_ROUTES.has(route) && file instanceof Blob && file.size > piece) return chunkedUpload(route, form, file, piece, onProgress);
+    if (CHUNKED_ROUTES.has(route) && file instanceof Blob && file.size > piece) return chunkedUpload(route, form, file, piece, onProgress, CHUNK_PURPOSE[route]);
     return xhrPost(route, form, onProgress);
   },
 };
@@ -104,7 +106,7 @@ function xhrPost(route, form, onProgress, retried = false) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function chunkedUpload(route, form, file, piece, onProgress) {
+async function chunkedUpload(route, form, file, piece, onProgress, purpose = '') {
   const token = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
   const total = Math.ceil(file.size / piece);
   const name = file.name || 'file';
@@ -113,7 +115,7 @@ async function chunkedUpload(route, form, file, piece, onProgress) {
       const start = i * piece;
       const blob = file.slice(start, Math.min(file.size, start + piece));
       const fd = new FormData();
-      Object.entries({ upload_token: token, index: i, total, size: file.size, name }).forEach(([k, v]) => fd.append(k, String(v)));
+      Object.entries({ upload_token: token, index: i, total, size: file.size, name, purpose }).forEach(([k, v]) => fd.append(k, String(v)));
       fd.append('chunk', blob, 'chunk');
       const progress = onProgress && ((p) => onProgress(Math.min(0.99, (start + p * blob.size) / file.size)));
       for (let attempt = 0; ; attempt++) {

@@ -134,15 +134,16 @@ Login sebagai admin → **Admin → Email & reminders** → isi → **Save SMTP*
 ## 7b. Mail admin (Hostinger Mail API) — opsional
 
 1. hPanel → **Emails** → pilih domain → bagian *email provisioning / Mail API* → buat **API token**. Token berlaku untuk semua mailbox di order email tersebut — rahasiakan.
-2. Login SmartNotes sebagai **Admin** → menu **Mail** → tempel token → **Connect**. Token diverifikasi ke Hostinger sebelum disimpan (terenkripsi dengan `app.key`).
-3. Alternatif: taruh di `app/config.php`: `'hostinger_mail' => ['token' => '...']`.
-4. Server butuh akses keluar ke `https://api.mail.hostinger.com` (ekstensi PHP **curl** disarankan).
+2. Login SmartNotes sebagai **Admin** → menu **Mail** → isi *Name* (opsional) dan *API token* → **Add API**. Token diverifikasi ke Hostinger sebelum disimpan (terenkripsi dengan `app.key`).
+3. **Tambah / hapus API (v1.7)**: Mail → ikon ⚙ *Mail settings & APIs*, atau **Admin → Email & reminders → Mail inbox — Hostinger Mail API**. Satu token = satu order email (satu domain); tambahkan token kedua untuk domain lain — semua mailbox tampil di pemilih mailbox, dikelompokkan per API. Tombol 🗑 menghapus satu API (email tetap aman di Hostinger), *Delete all APIs* memutus semuanya, ✎ mengganti nama. API yang token-nya dicabut di hPanel ditandai merah dan tetap bisa dihapus.
+4. Alternatif: taruh di `app/config.php`: `'hostinger_mail' => ['token' => '...']` — tampil sebagai API *config.php* yang hanya bisa dihapus dari file itu.
+5. Server butuh akses keluar ke `https://api.mail.hostinger.com` (ekstensi PHP **curl** disarankan).
 
 ## 8. Batas upload
 
 Semua aturan upload diatur di **Admin → Uploads & storage** (sejak v1.6):
 
-- **Batas ukuran per jenis**: gambar, audio, video, dokumen (ZIP ikut batas dokumen). Isi **0 = tanpa batas**. Default: gambar 8 MB, audio 25 MB, video 100 MB, dokumen 20 MB.
+- **Tanpa batas ukuran (v1.7)**: semua jenis default **0 = tanpa batas** (upgrade dari versi lama otomatis mengubah batas lama menjadi 0). Kolom ukuran tetap ada bila suatu saat ingin membatasi satu jenis.
 - **Jenis file yang boleh diunggah**: gambar, audio, video, dokumen, ZIP — bisa dimatikan satu per satu (berlaku untuk Drive, lampiran catatan/meeting dan rekaman audio; foto profil & branding selalu boleh).
 - **Tidak ada kuota storage per user.** Semua file masuk ke folder `uploads/` di hosting Anda. Batasnya hanya kapasitas disk paket hosting. Isi *Hosting plan disk size* agar ada bar pemakaian (hanya tampilan, bukan batas).
 - **Keep free on the server**: upload ditolak jika sisa disk akan turun di bawah angka ini (default 200 MB), supaya aplikasi, sesi dan backup tetap jalan.
@@ -185,6 +186,8 @@ File backup disimpan di `storage/backups/` (tidak bisa diakses publik). Simpan s
 1. Backup database & uploads dari Admin.
 2. Upload ulang semua file **kecuali** `app/config.php`, `uploads/`, dan `storage/`.
 3. Buka aplikasi. Perubahan skema dijalankan **otomatis** oleh migrator saat request pertama (tidak perlu phpMyAdmin). Versi skema tersimpan di tabel `settings` (`schema_version`).
+
+**Upgrade ke v1.7** (beberapa API Email + tanpa batas upload): timpa file; migrasi v6 otomatis mengubah semua batas ukuran upload menjadi 0 (tanpa batas). Token Mail lama otomatis menjadi API pertama bernama *Hostinger Mail*. Restore backup kini juga bisa file besar (dikirim bertahap).
 
 **Upgrade ke v1.6** (kontrol upload + file besar): timpa file; tidak ada perubahan skema database. Batas lama tetap terpakai; buka Admin → Uploads & storage untuk mengatur. Folder `storage/chunks/` dibuat otomatis.
 

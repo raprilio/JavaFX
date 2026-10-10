@@ -223,7 +223,7 @@ const tabs = {
       el.querySelector('[data-st]').innerHTML = String(html`<div class="row between mb-1"><b style="font-size:22px">${fmtBytes(r.total)}</b><a class="btn sm" href="#/drive">Open Drive</a></div>
         <div class="storage-bar mb-3">${Object.entries(r.by_kind).map(([k, v]) => html`<span style="width:${(v.size / total) * 100}%;background:${colors[k] || '#999'}" data-tip="${k}: ${fmtBytes(v.size)}"></span>`)}</div>
         <div class="grid grid-3" style="gap:10px">${Object.entries(r.by_kind).map(([k, v]) => html`<div class="row small"><span class="legend-dot" style="background:${colors[k] || '#999'}"></span><span class="grow" style="text-transform:capitalize">${k}</span><b>${fmtBytes(v.size)}</b><span class="subtle">${v.count}</span></div>`)}</div>
-        <p class="small subtle mt-3">${icon('infinity', 'sm')} No storage quota — your files are kept on the hosting's own storage. Maximum size per file: ${uploadLimitsText(state.limits)}. Large files are uploaded in pieces automatically.</p>`);
+        <p class="small subtle mt-3">${icon('infinity', 'sm')} No storage quota — your files are kept on the hosting's own storage. ${uploadRulesText(state.limits)} Large files are uploaded in pieces automatically.</p>`);
     } catch (e) { toastError(e); }
   },
 
@@ -365,11 +365,13 @@ export default {
   },
 };
 
-function uploadLimitsText(l = {}) {
+function uploadRulesText(l = {}) {
   const kinds = l.kinds || ['image', 'audio', 'video', 'document', 'archive'];
-  const mb = (v) => (!v ? 'no limit' : v >= 1024 && v % 1024 === 0 ? `${v / 1024} GB` : `${v} MB`);
-  const parts = [['image', 'images', l.image_mb], ['audio', 'audio', l.audio_mb], ['video', 'video', l.video_mb], ['document', 'documents', l.file_mb]]
-    .map(([k, label, v]) => (kinds.includes(k) ? `${label} ${mb(v)}` : `${label} not allowed`));
-  if (!kinds.includes('archive')) parts.push('ZIP not allowed');
-  return parts.join(', ');
+  const mb = (v) => (v >= 1024 && v % 1024 === 0 ? `${v / 1024} GB` : `${v} MB`);
+  const types = [['image', 'images', l.image_mb], ['audio', 'audio', l.audio_mb], ['video', 'video', l.video_mb], ['document', 'documents', l.file_mb], ['archive', 'ZIP', null]];
+  const rules = [
+    ...types.filter(([k, , v]) => kinds.includes(k) && v > 0).map(([, label, v]) => `${label} max ${mb(v)}`),
+    ...types.filter(([k]) => !kinds.includes(k)).map(([, label]) => `${label} not allowed`),
+  ];
+  return rules.length ? `Upload rules set by your administrator: ${rules.join(', ')}.` : 'No upload size limit.';
 }

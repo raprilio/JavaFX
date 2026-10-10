@@ -120,8 +120,7 @@ final class MailController
         self::guard();
         $out = [
             'configured' => HostingerMail::configured(),
-            'source' => HostingerMail::tokenSource(),
-            'token_hint' => HostingerMail::configured() ? '••••' . substr(HostingerMail::token(), -4) : null,
+            'connections' => [],
             'default_mailbox' => (string) Settings::get('hmail_default_mailbox', ''),
             'display_name' => (string) Settings::get('hmail_display_name', Settings::get('app_name', 'SmartNotes')),
             'mailboxes' => [],
@@ -134,31 +133,57 @@ final class MailController
                 $out['error'] = $e->getMessage();
             }
         }
+        $errors = HostingerMail::errors();
+        foreach (HostingerMail::connections() as $c) {
+            $out['connections'][] = [
+                'id' => $c['id'],
+                'label' => $c['label'],
+                'source' => $c['source'],
+                'token_hint' => '••••' . substr($c['token'], -4),
+                'added_at' => $c['added_at'],
+                'error' => $errors[$c['id']] ?? null,
+                'mailboxes' => array_values(array_map(static fn($m) => $m['address'], array_filter($out['mailboxes'], static fn($m) => $m['connection'] === $c['id']))),
+            ];
+        }
         Http::ok($out);
     }
 
+    /**
+     * Mail settings. API connections: {token, label} adds one, {remove: id} deletes one, {rename: id, label},
+     * {disconnect: true} removes every saved connection. Also default_mailbox and display_name.
+     */
     public static function saveSettings(): void
     {
         self::guard();
         $token = Http::input('token');
         if (is_string($token) && trim($token) !== '') {
-            if (HostingerMail::tokenSource() === 'config') {
-                throw new HttpException('The token is defined in app/config.php. Edit that file to change it.', 422);
-            }
             $token = trim($token);
             if (strlen($token) > 2000 || preg_match('/\s/', $token)) {
                 throw new HttpException('That does not look like an API token.', 422, ['token' => true]);
             }
-            // Only store a token Hostinger actually accepts.
-            $boxes = HostingerMail::mailboxes(true, $token);
-            Settings::set('hmail_token', $token);
-            unset($_SESSION['hmail_me']);
-            Activity::log('admin.mail_token', null, null, 'Connected Hostinger Mail API (' . count($boxes) . ' mailbox(es))');
-        } elseif (V::bool(Http::input('disconnect'))) {
-            Settings::set('hmail_token', '');
+            $label = V::str(Http::input('label'), 80) ?? '';
+            $conn = HostingerMail::addConnection($token, $label); // only stored when Hostinger accepts it
+            Activity::log('admin.mail_token', null, null, 'Added Hostinger Mail API connection "' . $conn['label'] . '" (' . count($conn['mailboxes']) . ' mailbox(es))');
+        }
+        if (is_string($rid = Http::input('remove')) && $rid !== '') {
+            try {
+                $before = array_column(HostingerMail::mailboxes(), 'connection', 'resourceId');
+            } catch (HttpException) {
+                $before = []; // a broken (revoked) token must still be removable
+            }
+            $label = HostingerMail::removeConnection($rid);
+            if (($before[(string) Settings::get('hmail_default_mailbox', '')] ?? null) === $rid) {
+                Settings::set('hmail_default_mailbox', '');
+            }
+            Activity::log('admin.mail_token', null, null, 'Removed Hostinger Mail API connection "' . $label . '"');
+        }
+        if (is_string($rid = Http::input('rename')) && $rid !== '') {
+            HostingerMail::renameConnection($rid, V::str(Http::input('label'), 80, true, 'name'));
+        }
+        if (V::bool(Http::input('disconnect'))) {
+            HostingerMail::removeAll();
             Settings::set('hmail_default_mailbox', '');
-            unset($_SESSION['hmail_me']);
-            Activity::log('admin.mail_token', null, null, 'Disconnected Hostinger Mail API');
+            Activity::log('admin.mail_token', null, null, 'Removed all Hostinger Mail API connections');
         }
         if (Http::has('default_mailbox')) {
             $mb = (string) Http::input('default_mailbox');
