@@ -274,6 +274,7 @@ final class AdminController
     private const GENERAL_KEYS = [
         'app_name', 'app_tagline', 'default_theme', 'default_accent', 'allow_registration', 'allow_note_sharing', 'trash_auto_delete_days',
         'max_image_mb', 'max_audio_mb', 'max_video_mb', 'max_file_mb', 'default_reminder_minutes', 'web_cron_enabled',
+        'upload_kinds', 'min_free_disk_mb', 'storage_plan_gb',
     ];
 
     public static function settings(): void
@@ -285,6 +286,9 @@ final class AdminController
         $out['app_url'] = Settings::get('app_url', app_url());
         $out['cron_token'] = Config::get('cron.token') ? true : false;
         $out['branding'] = Settings::publicBranding();
+        $out['upload_kinds'] = UploadPolicy::allowedKinds();
+        $out['min_free_disk_mb'] = Settings::int('min_free_disk_mb', 200);
+        $out['storage_plan_gb'] = Settings::int('storage_plan_gb', 0);
         Http::ok($out);
     }
 
@@ -309,9 +313,17 @@ final class AdminController
                 $v[$k] = (string) V::bool($in[$k]);
             }
         }
-        $ints = ['trash_auto_delete_days' => [0, 3650], 'max_image_mb' => [1, 100], 'max_audio_mb' => [1, 200], 'max_video_mb' => [1, 2048], 'max_file_mb' => [1, 500], 'default_reminder_minutes' => [0, 10080]];
+        // Upload size limits: 0 = no limit (only the hosting space counts).
+        $mb = [0, UploadPolicy::MAX_MB];
+        $ints = ['trash_auto_delete_days' => [0, 3650], 'max_image_mb' => $mb, 'max_audio_mb' => $mb, 'max_video_mb' => $mb, 'max_file_mb' => $mb,
+            'default_reminder_minutes' => [0, 10080], 'min_free_disk_mb' => [0, 1048576], 'storage_plan_gb' => [0, 100000]];
+        if (array_key_exists('upload_kinds', $in)) {
+            $kinds = is_array($in['upload_kinds']) ? $in['upload_kinds'] : explode(',', (string) $in['upload_kinds']);
+            $kinds = array_values(array_intersect(UploadPolicy::KINDS, array_map('strval', $kinds)));
+            $v['upload_kinds'] = $kinds ? implode(',', $kinds) : 'none';
+        }
         foreach ($ints as $k => [$min, $max]) {
-            if (array_key_exists($k, $in)) {
+            if (array_key_exists($k, $in) && !(str_starts_with($k, 'max_') && trim((string) $in[$k]) === '')) { // an emptied size field keeps its value instead of becoming "no limit"
                 $v[$k] = (string) (V::int($in[$k], $min, $max) ?? $min);
             }
         }
@@ -325,6 +337,47 @@ final class AdminController
         Settings::setMany($v);
         Activity::log('admin.settings', null, null, 'Updated application settings: ' . implode(', ', array_keys($v)));
         self::settings();
+    }
+
+    /** Uploads & storage overview: no quota, only the hosting's own space. */
+    public static function storage(): void
+    {
+        $files = DB::all('SELECT file_kind, COUNT(*) c, COALESCE(SUM(file_size),0) s FROM note_attachments GROUP BY file_kind');
+        $audio = DB::one('SELECT COUNT(*) c, COALESCE(SUM(file_size),0) s FROM audio_notes');
+        $by = ['recordings' => ['count' => (int) $audio['c'], 'size' => (int) $audio['s']]];
+        foreach ($files as $f) {
+            $by[$f['file_kind']] = ['count' => (int) $f['c'], 'size' => (int) $f['s']];
+        }
+        $top = DB::all(
+            'SELECT u.id, u.name, u.email,
+                    (SELECT COALESCE(SUM(file_size),0) FROM note_attachments a WHERE a.user_id = u.id)
+                  + (SELECT COALESCE(SUM(file_size),0) FROM audio_notes au WHERE au.user_id = u.id) AS bytes
+             FROM users u WHERE u.deleted_at IS NULL ORDER BY bytes DESC LIMIT 10'
+        );
+        Http::ok([
+            'uploads_bytes' => dir_size(SN_UPLOADS),
+            'db_bytes' => (int) DB::val('SELECT COALESCE(SUM(data_length + index_length), 0) FROM information_schema.TABLES WHERE table_schema = DATABASE()'),
+            'pending_bytes' => ChunkUpload::pendingBytes(),
+            'disk_free' => UploadPolicy::diskFree(),
+            'disk_total' => UploadPolicy::diskTotal(),
+            'reserve_bytes' => UploadPolicy::reserveBytes(),
+            'plan_bytes' => Settings::int('storage_plan_gb', 0) * 1024 ** 3 ?: null,
+            'by_kind' => $by,
+            'top_users' => array_map(static fn($r) => ['id' => (int) $r['id'], 'name' => $r['name'], 'email' => $r['email'], 'bytes' => (int) $r['bytes']], $top),
+            'server' => [
+                'upload_max_filesize' => ini_get('upload_max_filesize'),
+                'post_max_size' => ini_get('post_max_size'),
+                'max_execution_time' => (int) ini_get('max_execution_time'),
+                'chunk_bytes' => UploadPolicy::chunkBytes(),
+            ],
+        ]);
+    }
+
+    public static function cleanupUploads(): void
+    {
+        [$count, $bytes] = ChunkUpload::purgeStale(3600);
+        Activity::log('admin.uploads_cleanup', null, null, "Removed $count unfinished upload(s)");
+        Http::ok(['removed' => $count, 'bytes' => $bytes]);
     }
 
     public static function saveBrandingText(): void
@@ -357,7 +410,7 @@ final class AdminController
         if (empty($_FILES['file'])) {
             throw new HttpException('No file uploaded.', 422);
         }
-        $meta = Uploader::store($_FILES['file'], ['image'], 'branding', false);
+        $meta = Uploader::store($_FILES['file'], ['image'], 'branding', false, policy: false);
         if ($type === 'favicon') {
             Uploader::reencode(Uploader::absolute($meta['file_path']), Uploader::absolute($meta['file_path']), $meta['ext'], 256);
         } elseif ($type === 'logo') {

@@ -56,14 +56,51 @@ final class Uploader
     private const MAX_IMAGE_DIMENSION = 2560;
     private const THUMB_SIZE = 480;
 
+    /** Kinds a file extension can be stored as (MP4/WebM can be audio or video). */
+    public static function kindsFor(string $ext): array
+    {
+        if (!isset(self::TYPES[$ext])) {
+            return [];
+        }
+        $kind = self::TYPES[$ext][1];
+        return in_array($ext, ['mp4', 'webm'], true) ? [$kind, 'video'] : [$kind];
+    }
+
     /**
-     * @param array  $file    entry from $_FILES
+     * The uploaded file of this request: a normal multipart field, or a finished chunked upload
+     * (POST upload_token, see ChunkUpload). Null when nothing was sent.
+     */
+    public static function fromRequest(int $userId, string $field = 'file'): ?array
+    {
+        if (!empty($_FILES[$field]) && ($_FILES[$field]['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+            return $_FILES[$field];
+        }
+        $token = (string) ($_POST['upload_token'] ?? '');
+        return $token !== '' ? ChunkUpload::take($userId, $token) : null;
+    }
+
+    /**
+     * @param array  $file    entry from $_FILES (or ChunkUpload::take())
      * @param array  $kinds   allowed kinds, e.g. ['image'] or ['audio'] or ['image','audio','document','archive']
      * @param string $subdir  folder under uploads/, e.g. "u12" or "branding"
      * @param bool   $local   the file is a temp file written by the app itself (e.g. an e-mail attachment), not an HTTP upload
+     * @param bool   $policy  apply the admin's upload rules (off for profile photos and branding)
      */
-    public static function store(array $file, array $kinds, string $subdir, bool $makeThumb = true, bool $local = false): array
+    public static function store(array $file, array $kinds, string $subdir, bool $makeThumb = true, bool $local = false, bool $policy = true): array
     {
+        try {
+            return self::doStore($file, $kinds, $subdir, $makeThumb, $local, $policy);
+        } finally {
+            if (!empty($file['chunk_dir'])) {
+                ChunkUpload::discard($file['chunk_dir']);
+            }
+        }
+    }
+
+    private static function doStore(array $file, array $kinds, string $subdir, bool $makeThumb, bool $local, bool $policy): array
+    {
+        $chunked = !empty($file['chunk_dir']);
+        $local = $local || $chunked;
         if (!isset($file['error']) || is_array($file['error'])) {
             throw new HttpException('Invalid upload.', 400);
         }
@@ -95,17 +132,15 @@ final class Uploader
         }
 
         $size = (int) filesize($file['tmp_name']);
-        $limitMb = match ($kind) {
-            'image' => Settings::int('max_image_mb', 8),
-            'audio' => Settings::int('max_audio_mb', 25),
-            'video' => Settings::int('max_video_mb', 100),
-            default => Settings::int('max_file_mb', 20),
-        };
         if ($size <= 0) {
             throw new HttpException('The file is empty.', 422);
         }
-        if ($size > $limitMb * 1024 * 1024) {
-            throw new HttpException("The file is too large. Maximum size is {$limitMb} MB.", 422);
+        if ($policy) {
+            UploadPolicy::assertKind($kind);
+            UploadPolicy::assertSize($kind, $size);
+        }
+        if (!$chunked) {
+            UploadPolicy::assertSpace($size); // a chunked file is already on this disk: moving it costs nothing
         }
 
         $finfo = new finfo(FILEINFO_MIME_TYPE);
@@ -144,7 +179,7 @@ final class Uploader
             if ($re) {
                 [$width, $height] = $re;
             } elseif (!($local ? copy($file['tmp_name'], $dest) : move_uploaded_file($file['tmp_name'], $dest)) && !copy($file['tmp_name'], $dest)) {
-                throw new HttpException('Could not save the file.', 500);
+                throw new HttpException('Could not save the file — the hosting storage may be full.', 507);
             }
             if ($makeThumb) {
                 $thumbName = pathinfo($stored, PATHINFO_FILENAME) . '_t.' . pathinfo($stored, PATHINFO_EXTENSION);
@@ -153,8 +188,11 @@ final class Uploader
                 }
             }
         } else {
-            if (!($local ? copy($file['tmp_name'], $dest) : @move_uploaded_file($file['tmp_name'], $dest)) && !(PHP_SAPI === 'cli' && copy($file['tmp_name'], $dest))) {
-                throw new HttpException('Could not save the file.', 500);
+            $saved = $chunked ? self::moveLocal($file['tmp_name'], $dest)
+                : ($local ? copy($file['tmp_name'], $dest) : @move_uploaded_file($file['tmp_name'], $dest));
+            if (!$saved && !(PHP_SAPI === 'cli' && copy($file['tmp_name'], $dest))) {
+                @unlink($dest);
+                throw new HttpException('Could not save the file — the hosting storage may be full.', 507);
             }
         }
         @chmod($dest, 0644);
@@ -172,6 +210,19 @@ final class Uploader
             'height' => $height,
             'ext' => $ext,
         ];
+    }
+
+    /** Move a file the app wrote itself (rename is instant on the same disk; copy as a fallback). */
+    private static function moveLocal(string $src, string $dest): bool
+    {
+        if (@rename($src, $dest)) {
+            return true;
+        }
+        if (@copy($src, $dest)) {
+            @unlink($src);
+            return true;
+        }
+        return false;
     }
 
     public static function cleanName(string $name): string
@@ -310,6 +361,9 @@ final class Uploader
         header('Content-Length: ' . $length);
         if (Http::method() === 'HEAD') {
             exit;
+        }
+        if ($length > 8 * 1024 * 1024) {
+            @set_time_limit(0); // large videos/archives on slow connections
         }
         $fp = fopen($abs, 'rb');
         fseek($fp, $start);

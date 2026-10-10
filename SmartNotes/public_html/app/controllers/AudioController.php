@@ -68,14 +68,15 @@ final class AudioController
     public static function upload(): void
     {
         $u = Auth::require();
-        if (empty($_FILES['file'])) {
+        $file = Uploader::fromRequest($u['id']);
+        if (!$file) {
             throw new HttpException('No audio received. The recording may exceed the server limit (' . ini_get('post_max_size') . ').', 422);
         }
         $noteId = V::id($_POST['note_id'] ?? null);
         if ($noteId && !DB::val('SELECT id FROM notes WHERE id = ? AND user_id = ?', [$noteId, $u['id']])) {
             throw new HttpException('Note not found.', 404);
         }
-        $meta = Uploader::store($_FILES['file'], ['audio'], 'u' . $u['id'] . '/audio');
+        $meta = Uploader::store($file, ['audio'], 'u' . $u['id'] . '/audio');
         $wave = json_decode((string) ($_POST['waveform'] ?? '[]'), true);
         $wave = is_array($wave) ? array_slice(array_map(static fn($v) => round(min(1, max(0, (float) $v)), 3), $wave), 0, 200) : [];
         $title = V::str($_POST['title'] ?? null, 255) ?? ('Recording ' . date('d M Y H:i'));

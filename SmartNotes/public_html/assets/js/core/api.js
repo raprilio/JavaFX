@@ -1,5 +1,8 @@
 // JSON API client (fetch) with CSRF handling and upload progress (XHR).
-import { emit } from './store.js';
+import { emit, state } from './store.js';
+
+/** Upload endpoints that accept a finished chunked upload (upload_token) instead of a file field. */
+const CHUNKED_ROUTES = new Set(['files/upload', 'audio/upload']);
 
 export class ApiError extends Error {
   constructor(message, status = 0, errors = {}) {
@@ -63,30 +66,78 @@ export const api = {
   post: (route, body = {}, opts = {}) => request('POST', route, { body, ...opts }),
   form: (route, form, opts = {}) => request('POST', route, { form, ...opts }),
   raw: request,
-  /** Multipart upload with progress callback (0..1). */
+  /**
+   * Multipart upload with progress callback (0..1). Files larger than one piece (server-defined, below
+   * PHP's upload limit) are sent in chunks with retries, so the admin's size limits are the only limit.
+   */
   upload(route, form, onProgress) {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', url(route));
-      xhr.setRequestHeader('X-CSRF-Token', csrf);
-      xhr.setRequestHeader('Accept', 'application/json');
-      xhr.withCredentials = true;
-      if (onProgress) xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total);
-      xhr.onload = () => {
-        let j = null;
-        try { j = JSON.parse(xhr.responseText); } catch { /* ignore */ }
-        if (xhr.status === 419) {
-          refreshCsrf().then(() => api.upload(route, form, onProgress).then(resolve, reject));
-          return;
-        }
-        if (xhr.status >= 200 && xhr.status < 300 && j && j.ok !== false) resolve(j.data !== undefined ? j.data : j);
-        else {
-          if (xhr.status === 413) reject(new ApiError('The file is larger than the server allows.', 413));
-          else reject(new ApiError(j?.message || `Upload failed (${xhr.status})`, xhr.status, j?.errors || {}));
-        }
-      };
-      xhr.onerror = () => reject(new ApiError('Network error during upload.', 0));
-      xhr.send(form);
-    });
+    const file = typeof form?.get === 'function' ? form.get('file') : null;
+    const piece = state.limits?.chunk_bytes || 8 * 1024 * 1024;
+    if (CHUNKED_ROUTES.has(route) && file instanceof Blob && file.size > piece) return chunkedUpload(route, form, file, piece, onProgress);
+    return xhrPost(route, form, onProgress);
   },
 };
+
+function xhrPost(route, form, onProgress, retried = false) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', url(route));
+    xhr.setRequestHeader('X-CSRF-Token', csrf);
+    xhr.setRequestHeader('Accept', 'application/json');
+    xhr.withCredentials = true;
+    if (onProgress) xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total);
+    xhr.onload = () => {
+      let j = null;
+      try { j = JSON.parse(xhr.responseText); } catch { /* ignore */ }
+      if (xhr.status === 419 && !retried) {
+        refreshCsrf().then(() => xhrPost(route, form, onProgress, true).then(resolve, reject));
+        return;
+      }
+      if (xhr.status >= 200 && xhr.status < 300 && j && j.ok !== false) resolve(j.data !== undefined ? j.data : j);
+      else if (xhr.status === 413) reject(new ApiError('The file is larger than the server allows.', 413));
+      else reject(new ApiError(j?.message || `Upload failed (${xhr.status})`, xhr.status, j?.errors || {}));
+    };
+    xhr.onerror = () => reject(new ApiError('Network error during upload.', 0));
+    xhr.send(form);
+  });
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function chunkedUpload(route, form, file, piece, onProgress) {
+  const token = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
+  const total = Math.ceil(file.size / piece);
+  const name = file.name || 'file';
+  try {
+    for (let i = 0; i < total; i++) {
+      const start = i * piece;
+      const blob = file.slice(start, Math.min(file.size, start + piece));
+      const fd = new FormData();
+      Object.entries({ upload_token: token, index: i, total, size: file.size, name }).forEach(([k, v]) => fd.append(k, String(v)));
+      fd.append('chunk', blob, 'chunk');
+      const progress = onProgress && ((p) => onProgress(Math.min(0.99, (start + p * blob.size) / file.size)));
+      for (let attempt = 0; ; attempt++) {
+        try {
+          await xhrPost('uploads/chunk', fd, progress);
+          break;
+        } catch (e) {
+          // Network drops and server hiccups are retried; refusals (type, size, full disk) are not.
+          const retry = e.status === 0 || (e.status >= 500 && e.status !== 507);
+          if (!retry || attempt >= 4) throw e;
+          await sleep(1000 * 2 ** attempt);
+        }
+      }
+    }
+    const fin = new FormData();
+    for (const [k, v] of form.entries()) if (k !== 'file') fin.append(k, v);
+    fin.append('upload_token', token);
+    const r = await xhrPost(route, fin);
+    onProgress?.(1);
+    return r;
+  } catch (e) {
+    const c = new FormData();
+    c.append('upload_token', token);
+    xhrPost('uploads/cancel', c).catch(() => {});
+    throw e;
+  }
+}

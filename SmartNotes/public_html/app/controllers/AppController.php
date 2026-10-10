@@ -24,12 +24,7 @@ final class AppController
             ];
             $out['tags'] = TagsController::listFor($user['id']);
             $out['is_admin_area'] = Auth::hasAnyAdminPermission();
-            $out['limits'] = [
-                'image_mb' => Settings::int('max_image_mb', 8),
-                'audio_mb' => Settings::int('max_audio_mb', 25),
-                'file_mb' => Settings::int('max_file_mb', 20),
-                'server_upload' => ini_get('upload_max_filesize'),
-            ];
+            $out['limits'] = UploadPolicy::clientConfig();
             $out['unread_notifications'] = (int) DB::val('SELECT COUNT(*) FROM notifications WHERE user_id = ? AND is_read = 0', [$user['id']]);
             $out['smtp_configured'] = Mailer::isConfigured();
         }

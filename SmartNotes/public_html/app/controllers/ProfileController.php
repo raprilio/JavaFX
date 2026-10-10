@@ -30,7 +30,7 @@ final class ProfileController
         if (empty($_FILES['file'])) {
             throw new HttpException('No file uploaded.', 422);
         }
-        $meta = Uploader::store($_FILES['file'], ['image'], 'u' . $u['id'] . '/avatar', false);
+        $meta = Uploader::store($_FILES['file'], ['image'], 'u' . $u['id'] . '/avatar', false, policy: false);
         // Square-ish small avatar: re-encode down to 512px.
         Uploader::reencode(Uploader::absolute($meta['file_path']), Uploader::absolute($meta['file_path']), $meta['ext'], 512);
         Uploader::delete($u['avatar_path']);
@@ -127,7 +127,7 @@ final class ProfileController
         if (empty($_FILES['file'])) {
             throw new HttpException('No file uploaded.', 422);
         }
-        $meta = Uploader::store($_FILES['file'], ['image'], 'u' . $u['id'] . '/background', false);
+        $meta = Uploader::store($_FILES['file'], ['image'], 'u' . $u['id'] . '/background', false, policy: false);
         $old = DB::val('SELECT background_image FROM user_settings WHERE user_id = ?', [$u['id']]);
         Uploader::delete($old ? (string) $old : null);
         AppController::userSettings($u['id']);

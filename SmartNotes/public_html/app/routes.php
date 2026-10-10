@@ -89,6 +89,8 @@ return [
     // Files
     ['GET', 'files', 'FilesController::index', 'auth'],
     ['POST', 'files/upload', 'FilesController::upload', 'auth'],
+    ['POST', 'uploads/chunk', 'UploadsController::chunk', 'auth'],
+    ['POST', 'uploads/cancel', 'UploadsController::cancel', 'auth'],
     ['GET', 'files/{id}', 'FilesController::show', 'auth'],
     ['GET', 'files/{id}/raw', 'FilesController::raw', 'auth'],
     ['GET', 'files/{id}/thumb', 'FilesController::thumb', 'auth'],
@@ -180,6 +182,8 @@ return [
     ['POST', 'admin/users/{id}/logout', 'AdminController::forceLogout', 'manage_users'],
     ['GET', 'admin/settings', 'AdminController::settings', 'manage_settings'],
     ['POST', 'admin/settings', 'AdminController::saveSettings', 'manage_settings'],
+    ['GET', 'admin/storage', 'AdminController::storage', 'manage_settings'],
+    ['POST', 'admin/storage/cleanup', 'AdminController::cleanupUploads', 'manage_settings'],
     ['POST', 'admin/branding/{type}', 'AdminController::uploadBranding', 'manage_branding'],
     ['POST', 'admin/branding/{type}/remove', 'AdminController::removeBranding', 'manage_branding'],
     ['POST', 'admin/branding-text', 'AdminController::saveBrandingText', 'manage_branding'],

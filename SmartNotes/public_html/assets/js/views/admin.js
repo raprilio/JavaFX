@@ -9,7 +9,7 @@ import { brandHtml } from '../core/shell.js';
 
 const TABS = [
   ['overview', 'Overview', 'chart-column', 'view_stats'], ['users', 'Users', 'users', 'manage_users'], ['branding', 'Branding', 'image', 'manage_branding'],
-  ['general', 'General', 'sliders-horizontal', 'manage_settings'], ['email', 'Email & reminders', 'mail', 'manage_email'], ['categories', 'Categories', 'folder', 'manage_categories'],
+  ['general', 'General', 'sliders-horizontal', 'manage_settings'], ['uploads', 'Uploads & storage', 'hard-drive-upload', 'manage_settings'], ['email', 'Email & reminders', 'mail', 'manage_email'], ['categories', 'Categories', 'folder', 'manage_categories'],
   ['backup', 'Backup & data', 'database-backup', 'manage_backup'], ['activity', 'Activity log', 'activity', 'view_stats'],
 ];
 const remount = (el, fn) => {
@@ -221,11 +221,8 @@ const tabs = {
         <div class="field"><label>Default reminder (minutes before)</label><input class="input" type="number" min="0" max="10080" name="default_reminder_minutes" value="${s.default_reminder_minutes}"></div>
         <div class="field"><label>Self registration</label>${switchHtml('allow_registration', s.allow_registration === '1', 'Allow visitors to create accounts')}<span class="hint">Keep off so only administrators create accounts.</span></div>
         <div class="field"><label>Sharing</label>${switchHtml('allow_note_sharing', s.allow_note_sharing !== '0', 'Users may share notes, audio, mind maps, flowcharts and Drive files with other users')}</div></div>`)}
-      ${card('Uploads & trash', html`<div class="form-grid">
-        <div class="field"><label>Max image size (MB)</label><input class="input" type="number" min="1" max="100" name="max_image_mb" value="${s.max_image_mb}"></div>
-        <div class="field"><label>Max audio size (MB)</label><input class="input" type="number" min="1" max="200" name="max_audio_mb" value="${s.max_audio_mb}"></div>
-        <div class="field"><label>Max video size (MB)</label><input class="input" type="number" min="1" max="2048" name="max_video_mb" value="${s.max_video_mb || 100}"><span class="hint">Videos are stored in the uploads folder on your hosting, not in MySQL.</span></div>
-        <div class="field"><label>Max other file size (MB)</label><input class="input" type="number" min="1" max="500" name="max_file_mb" value="${s.max_file_mb}"><span class="hint">The PHP server limit also applies (upload_max_filesize).</span></div>
+      ${card('Trash', html`<div class="form-grid">
+        <div class="field"><label>Upload limits</label><a class="btn sm" href="#/admin/uploads" style="width:max-content">${icon('hard-drive-upload', 'sm')} Uploads & storage settings</a></div>
         <div class="field"><label>Auto-delete trash after (days)</label><input class="input" type="number" min="0" max="3650" name="trash_auto_delete_days" value="${s.trash_auto_delete_days}"><span class="hint">0 = never delete automatically.</span></div></div>`)}
       ${card('Application URL', html`<div class="field"><label>Public URL</label><input class="input" name="app_url" value="${s.app_url || ''}" placeholder="https://notes.example.com/"><span class="hint">Used for links inside e-mails sent by the cron job.</span></div>`)}
       <div><button class="btn primary" type="submit">Save settings</button></div></form>`);
@@ -242,6 +239,72 @@ const tabs = {
       if (!d.default_accent) d.default_accent = form.querySelector('[data-custom-accent]').value;
       await withLoading(form.querySelector('[type=submit]'), async () => {
         try { await api.post('admin/settings', d); const boot = await api.get('app'); state.branding = boot.branding; emit('branding:changed'); toast('Settings saved', 'success'); } catch (err) { toastError(err); }
+      });
+    });
+  },
+
+  async uploads(el) {
+    const [s, st] = await Promise.all([api.get('admin/settings'), api.get('admin/storage')]);
+    const KINDS = [
+      ['image', 'Images', 'image', 'JPG, PNG, WebP — in notes, Drive and attachments', 'max_image_mb', 8],
+      ['audio', 'Audio', 'mic', 'Voice recordings and MP3, WAV, M4A, OGG, WebM files', 'max_audio_mb', 25],
+      ['video', 'Video', 'video', 'MP4, WebM, MOV, M4V', 'max_video_mb', 100],
+      ['document', 'Documents', 'file-text', 'PDF, Word, Excel, PowerPoint, TXT, CSV (the size limit also applies to ZIP)', 'max_file_mb', 20],
+      ['archive', 'ZIP archives', 'file-archive', 'ZIP files in Drive and attachments', null, null],
+    ];
+    const on = new Set(s.upload_kinds || []);
+    const mbVal = (k, d) => (s[k] === null || s[k] === undefined || s[k] === '' ? d : +s[k]);
+    const used = st.uploads_bytes + st.db_bytes;
+    const cap = st.plan_bytes || null;
+    const pct = cap ? Math.min(100, (used / cap) * 100) : null;
+    const kindColors = { image: '#ec4899', recordings: '#6366f1', audio: '#0ea5e9', video: '#f97316', document: '#a855f7', archive: '#64748b' };
+    const kindsUsed = Object.entries(st.by_kind).filter(([, v]) => v.size > 0);
+    const byTotal = kindsUsed.reduce((a, [, v]) => a + v.size, 0);
+    const topUsers = st.top_users.filter((u) => u.bytes > 0);
+    el.innerHTML = String(html`<form data-form class="col" style="gap:18px">
+      <div class="share-banner" style="margin:0">${icon('infinity', 'sm')}<span><b>No storage quota.</b> Users can upload as much as they need — every file goes to the <code>uploads/</code> folder of your hosting (hPanel → File Manager), never into MySQL. The only ceiling is your hosting plan's disk space.</span></div>
+      ${card(html`${icon('hard-drive', 'sm')} Storage on this hosting`, html`
+        <div class="stats-grid" style="margin-bottom:14px">
+          <div class="card stat" style="--c:#6366f1"><div class="stat-value">${fmtBytes(st.uploads_bytes)}</div><div class="stat-label">Files in uploads/</div></div>
+          <div class="card stat" style="--c:#0ea5e9"><div class="stat-value">${fmtBytes(st.db_bytes)}</div><div class="stat-label">Database (text & metadata)</div></div>
+          <div class="card stat" style="--c:#22c55e"><div class="stat-value" data-free>${st.disk_free === null ? '—' : fmtBytes(st.disk_free)}</div><div class="stat-label">Free disk reported by the server</div></div>
+          <div class="card stat" style="--c:#f59e0b"><div class="stat-value">${fmtBytes(st.pending_bytes)}</div><div class="stat-label">Unfinished uploads</div></div>
+        </div>
+        ${cap ? html`<div class="row between small mb-1"><span>${fmtBytes(used)} of ${fmtBytes(cap)} plan</span><b style="color:${pct > 90 ? 'var(--danger)' : 'inherit'}">${pct.toFixed(1)}%</b></div>
+          <div class="storage-bar mb-3"><span style="width:${pct}%;background:${pct > 90 ? 'var(--danger)' : 'var(--accent)'}"></span></div>
+          ${pct > 90 ? html`<p class="small" style="color:var(--danger)">${icon('alert-triangle', 'sm')} Almost full. Empty the trash, delete old backups, or upgrade the hosting plan.</p>` : ''}` : ''}
+        ${byTotal ? html`<div class="label mb-1">Files by type</div><div class="storage-bar mb-2">${kindsUsed.map(([k, v]) => html`<span style="width:${(v.size / byTotal) * 100}%;background:${kindColors[k] || '#999'}" data-tip="${k}: ${fmtBytes(v.size)}"></span>`)}</div>` : ''}
+        <div class="row small" style="flex-wrap:wrap;gap:12px">${kindsUsed.map(([k, v]) => html`<span class="row" style="gap:6px"><span class="dot" style="background:${kindColors[k] || '#999'};width:9px;height:9px;border-radius:50%;display:inline-block"></span>${k} · ${v.count} · ${fmtBytes(v.size)}</span>`)}</div>
+        <div class="form-grid mt-3">
+          <div class="field"><label>Hosting plan disk size (GB)</label><input class="input" type="number" min="0" max="100000" name="storage_plan_gb" value="${s.storage_plan_gb || 0}"><span class="hint">Only for the usage bar above (see hPanel → Dashboard → Disk usage). 0 = don't show. This is <b>not</b> a limit.</span></div>
+          <div class="field"><label>Keep free on the server (MB)</label><input class="input" type="number" min="0" max="1048576" name="min_free_disk_mb" value="${s.min_free_disk_mb ?? 200}"><span class="hint">Uploads that would leave less free space are refused, so the app, sessions and backups keep working. 0 = off.</span></div>
+        </div>
+        ${topUsers.length ? html`<div class="label mt-3 mb-1">Largest users</div><div class="table-wrap"><table class="table"><tbody>${topUsers.map((u) => html`<tr><td>${u.name} <span class="subtle tiny">${u.email}</span></td><td style="text-align:right">${fmtBytes(u.bytes)}</td></tr>`)}</tbody></table></div>` : ''}
+        ${st.pending_bytes ? html`<button type="button" class="btn sm mt-2" data-act="cleanup">${icon('trash-2', 'sm')} Remove unfinished uploads</button>` : ''}`)}
+      ${card(html`${icon('sliders-horizontal', 'sm')} What users may upload, and how big`, html`
+        <p class="small muted" style="margin-top:0">Turn a file type off to block it everywhere (Drive, note attachments, audio recordings). Leave the size at <b>0</b> for <b>no limit</b>. Profile photos and branding images are always allowed.</p>
+        <div class="col" style="gap:10px">${KINDS.map(([k, label, ic, hint, key, def]) => html`<div class="upload-rule">
+          <label class="switch"><input type="checkbox" name="upload_kinds[]" value="${k}" ${on.has(k) ? 'checked' : ''}><span class="track"></span></label>
+          <div class="grow" style="min-width:0"><div class="row" style="gap:6px;font-weight:600">${icon(ic, 'sm')} ${label}</div><div class="tiny subtle">${hint}</div></div>
+          ${key ? html`<div class="row" style="gap:6px"><input class="input sm" type="number" min="0" max="1048576" name="${key}" value="${mbVal(key, def)}" style="width:110px" aria-label="${label} max size in MB"><span class="small subtle">MB</span><span class="badge" data-unl="${key}">${mbVal(key, def) === 0 ? 'No limit' : ''}</span></div>` : html`<span class="small subtle">uses the Documents limit</span>`}
+        </div>`)}</div>`)}
+      ${card(html`${icon('upload', 'sm')} Large files`, html`<p class="small muted" style="margin:0">Your server accepts at most <b>${st.server.upload_max_filesize}</b> per request (PHP <code>upload_max_filesize</code>, post <code>${st.server.post_max_size}</code>). SmartNotes sends bigger files automatically in pieces of <b>${fmtBytes(st.server.chunk_bytes)}</b>, retries a piece if the connection drops, and joins them on the server — so a 2 GB video works without changing PHP settings. Only the limits above apply.</p>`)}
+      <div><button class="btn primary" type="submit">Save upload settings</button></div></form>`);
+    const form = el.querySelector('form');
+    form.addEventListener('input', (e) => {
+      const b = e.target.name && form.querySelector(`[data-unl="${e.target.name}"]`);
+      if (b) b.textContent = e.target.value === '0' ? 'No limit' : '';
+    });
+    form.querySelector('[data-act="cleanup"]')?.addEventListener('click', async () => {
+      try { const r = await api.post('admin/storage/cleanup'); toast(`Removed ${r.removed} unfinished upload(s), ${fmtBytes(r.bytes)} freed`, 'success'); remount(el, tabs.uploads); } catch (err) { toastError(err); }
+    });
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const d = formData(form);
+      d.upload_kinds = d.upload_kinds || [];
+      if (!d.upload_kinds.length && !(await confirm({ title: 'Block all uploads?', message: 'With every file type turned off, users cannot upload anything (profile photos still work).', confirmText: 'Block uploads', danger: true }))) return;
+      await withLoading(form.querySelector('[type=submit]'), async () => {
+        try { await api.post('admin/settings', d); const boot = await api.get('app'); state.limits = boot.limits || state.limits; toast('Upload settings saved', 'success'); remount(el, tabs.uploads); } catch (err) { toastError(err); }
       });
     });
   },

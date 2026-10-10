@@ -140,13 +140,16 @@ Login sebagai admin → **Admin → Email & reminders** → isi → **Save SMTP*
 
 ## 8. Batas upload
 
-Aplikasi punya batas per jenis file (Admin → General): gambar 8 MB, audio 25 MB, video 100 MB, file lain 20 MB (bisa diubah). PHP juga punya batas sendiri — **untuk video, naikkan `upload_max_filesize` dan `post_max_size` minimal setara batas video** (mis. 128M), kalau tidak upload video besar akan gagal:
+Semua aturan upload diatur di **Admin → Uploads & storage** (sejak v1.6):
 
-- `.user.ini` (sudah disertakan) → untuk PHP-FPM / LiteSpeed: `upload_max_filesize = 32M`, `post_max_size = 40M`.
-- `.htaccess` → untuk Apache mod_php.
-- Hostinger: bisa juga lewat *PHP Configuration → PHP options*.
+- **Batas ukuran per jenis**: gambar, audio, video, dokumen (ZIP ikut batas dokumen). Isi **0 = tanpa batas**. Default: gambar 8 MB, audio 25 MB, video 100 MB, dokumen 20 MB.
+- **Jenis file yang boleh diunggah**: gambar, audio, video, dokumen, ZIP — bisa dimatikan satu per satu (berlaku untuk Drive, lampiran catatan/meeting dan rekaman audio; foto profil & branding selalu boleh).
+- **Tidak ada kuota storage per user.** Semua file masuk ke folder `uploads/` di hosting Anda. Batasnya hanya kapasitas disk paket hosting. Isi *Hosting plan disk size* agar ada bar pemakaian (hanya tampilan, bukan batas).
+- **Keep free on the server**: upload ditolak jika sisa disk akan turun di bawah angka ini (default 200 MB), supaya aplikasi, sesi dan backup tetap jalan.
 
-Nilai efektif terlihat di **Admin → Overview → System health**.
+**File besar tidak lagi dibatasi PHP.** Browser mengirim file yang lebih besar dari ±8 MB dalam potongan (*chunk*) yang selalu di bawah `upload_max_filesize`, mengulang potongan yang gagal, lalu server menyatukannya. Jadi video 2 GB bisa diunggah tanpa mengubah `.user.ini`. Potongan sementara disimpan di `storage/chunks/` (tidak bisa diakses dari web) dan otomatis dihapus setelah 1 hari bila upload tidak selesai; admin juga bisa menghapusnya dengan tombol *Remove unfinished uploads*.
+
+Nilai PHP (`upload_max_filesize`, `post_max_size`) dan ukuran potongan terlihat di Admin → Uploads & storage. Mengubahnya di `.user.ini` / `.htaccess` / hPanel *PHP Configuration* tidak wajib lagi.
 
 ---
 
@@ -183,6 +186,8 @@ File backup disimpan di `storage/backups/` (tidak bisa diakses publik). Simpan s
 2. Upload ulang semua file **kecuali** `app/config.php`, `uploads/`, dan `storage/`.
 3. Buka aplikasi. Perubahan skema dijalankan **otomatis** oleh migrator saat request pertama (tidak perlu phpMyAdmin). Versi skema tersimpan di tabel `settings` (`schema_version`).
 
+**Upgrade ke v1.6** (kontrol upload + file besar): timpa file; tidak ada perubahan skema database. Batas lama tetap terpakai; buka Admin → Uploads & storage untuk mengatur. Folder `storage/chunks/` dibuat otomatis.
+
 **Upgrade ke v1.5** (berbagi audio/mind map/flowchart/Drive + tag user di meeting & kalender): timpa file; migrasi skema v5 otomatis membuat tabel `item_shares` dan menambah kolom `revision`, `updated_by` di `mindmaps` / `flowcharts`. Tidak ada file yang dipindah.
 
 **Upgrade ke v1.4** (tulisan tangan dengan pena): timpa file; migrasi skema v4 otomatis menambah tabel `note_drawings`. File tulisan tangan disimpan di `uploads/u<id>/drawings/`. Butuh ekstensi PHP **GD** (sudah dipakai untuk gambar).
@@ -204,7 +209,7 @@ File backup disimpan di `storage/backups/` (tidak bisa diakses publik). Simpan s
 | Halaman putih / error 500 | Cek versi PHP ≥ 8.1. Lihat `storage/logs/php-error.log`. Sementara set `'debug' => true` di `app/config.php`. |
 | Error 500 setelah upload `.htaccess` | Host tidak mengizinkan sebagian direktif. Hapus blok `<IfModule mod_php.c>` atau baris `Options`. |
 | “Your session has expired” | Reload halaman. Pastikan cookie tidak diblokir dan jam server benar. |
-| Upload gagal untuk file besar | Naikkan `upload_max_filesize` & `post_max_size` (bagian 8) dan limit di Admin → General. |
+| Upload gagal untuk file besar | Cek batas & jenis file di Admin → Uploads & storage. Pesan *Not enough storage space* = disk hosting hampir penuh (kosongkan Trash/backup lama atau upgrade paket). |
 | Gambar tidak bisa di-rotate/di-resize | Aktifkan ekstensi PHP **GD**. |
 | Rekam audio tidak tersedia | Akses lewat **HTTPS** dan izinkan mikrofon di browser. |
 | Reminder tidak terkirim | Cek SMTP (Send test e-mail), pasang cron (bagian 6), cek E-mail log & “Last run” scheduler. Pastikan user mengaktifkan reminder di Settings → Notifications/Email dan task punya due date + reminder. |

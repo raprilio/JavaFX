@@ -223,7 +223,7 @@ const tabs = {
       el.querySelector('[data-st]').innerHTML = String(html`<div class="row between mb-1"><b style="font-size:22px">${fmtBytes(r.total)}</b><a class="btn sm" href="#/drive">Open Drive</a></div>
         <div class="storage-bar mb-3">${Object.entries(r.by_kind).map(([k, v]) => html`<span style="width:${(v.size / total) * 100}%;background:${colors[k] || '#999'}" data-tip="${k}: ${fmtBytes(v.size)}"></span>`)}</div>
         <div class="grid grid-3" style="gap:10px">${Object.entries(r.by_kind).map(([k, v]) => html`<div class="row small"><span class="legend-dot" style="background:${colors[k] || '#999'}"></span><span class="grow" style="text-transform:capitalize">${k}</span><b>${fmtBytes(v.size)}</b><span class="subtle">${v.count}</span></div>`)}</div>
-        <p class="small subtle mt-3">Upload limits: images ${state.limits.image_mb} MB, audio ${state.limits.audio_mb} MB, other files ${state.limits.file_mb} MB (server maximum ${state.limits.server_upload}).</p>`);
+        <p class="small subtle mt-3">${icon('infinity', 'sm')} No storage quota — your files are kept on the hosting's own storage. Maximum size per file: ${uploadLimitsText(state.limits)}. Large files are uploaded in pieces automatically.</p>`);
     } catch (e) { toastError(e); }
   },
 
@@ -364,3 +364,12 @@ export default {
     void navigate;
   },
 };
+
+function uploadLimitsText(l = {}) {
+  const kinds = l.kinds || ['image', 'audio', 'video', 'document', 'archive'];
+  const mb = (v) => (!v ? 'no limit' : v >= 1024 && v % 1024 === 0 ? `${v / 1024} GB` : `${v} MB`);
+  const parts = [['image', 'images', l.image_mb], ['audio', 'audio', l.audio_mb], ['video', 'video', l.video_mb], ['document', 'documents', l.file_mb]]
+    .map(([k, label, v]) => (kinds.includes(k) ? `${label} ${mb(v)}` : `${label} not allowed`));
+  if (!kinds.includes('archive')) parts.push('ZIP not allowed');
+  return parts.join(', ');
+}

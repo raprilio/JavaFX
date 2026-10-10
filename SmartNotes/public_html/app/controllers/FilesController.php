@@ -164,7 +164,8 @@ final class FilesController
     public static function upload(): void
     {
         $u = Auth::require();
-        if (empty($_FILES['file'])) {
+        $file = Uploader::fromRequest($u['id']);
+        if (!$file) {
             throw new HttpException('No file uploaded. The file may exceed the server limit (' . ini_get('post_max_size') . ').', 422);
         }
         $parents = self::parents($u['id'], $_POST);
@@ -173,7 +174,7 @@ final class FilesController
             'image' => ['image'],
             default => ['image', 'audio', 'video', 'document', 'archive'],
         };
-        $meta = Uploader::store($_FILES['file'], $kinds, 'u' . $u['id']);
+        $meta = Uploader::store($file, $kinds, 'u' . $u['id']);
         $id = DB::insert('note_attachments', array_merge($parents, [
             'user_id' => $u['id'],
             'file_name' => $meta['file_name'],

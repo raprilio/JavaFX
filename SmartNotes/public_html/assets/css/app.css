@@ -1209,3 +1209,9 @@ svg .edge-path.selected { stroke: var(--accent) !important; }
 .up-opt { display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 8px; border: 0; background: none; border-radius: 8px; color: var(--text); text-align: left; cursor: pointer; font: inherit; }
 .up-opt:hover, .up-opt.active { background: var(--bg-hover); }
 .tagged-list { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* ---------- v1.6 uploads & storage ---------- */
+.upload-rule { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-elev); }
+.upload-rule:has(input[type=checkbox]:not(:checked)) .grow, .upload-rule:has(input[type=checkbox]:not(:checked)) input[type=number] { opacity: .5; }
+@media (max-width: 640px) { .upload-rule { flex-wrap: wrap; } .upload-rule > .row:last-child { margin-left: 52px; } }
+.upload-rule .badge:empty { display: none; }
