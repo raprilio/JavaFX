@@ -9,7 +9,7 @@ defined('SN_APP') || exit;
  */
 final class Migrator
 {
-    public const VERSION = 9;
+    public const VERSION = 10;
 
     public static function run(): void
     {
@@ -45,6 +45,9 @@ final class Migrator
             }
             if ($current < 9) {
                 self::v9();
+            }
+            if ($current < 10) {
+                self::v10();
             }
             Settings::set('schema_version', (string) self::VERSION);
         } finally {
@@ -260,6 +263,12 @@ final class Migrator
         if (!self::hasTable('mailbox_assignments')) {
             DB::pdo()->exec(self::MAILBOX_ASSIGNMENTS_SQL);
         }
+    }
+
+    /** v1.11: flowchart shapes keep their drawing order (to front / to back). */
+    private static function v10(): void
+    {
+        self::addColumn('flowchart_nodes', 'sort_order', 'INT NOT NULL DEFAULT 0 AFTER `height`');
     }
 
     public const MAILBOX_ASSIGNMENTS_SQL = "CREATE TABLE `mailbox_assignments` (

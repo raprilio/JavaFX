@@ -10,7 +10,12 @@ final class FlowchartsController
 {
     private const TYPES = ['start', 'end', 'process', 'decision', 'input', 'output', 'database', 'document', 'connector',
         // network devices (v1.8)
-        'server', 'router', 'switch', 'firewall', 'pc', 'laptop', 'cloud', 'internet', 'wifi', 'phone', 'printer', 'storage', 'cctv', 'user'];
+        'server', 'router', 'switch', 'firewall', 'pc', 'laptop', 'cloud', 'internet', 'wifi', 'phone', 'printer', 'storage', 'cctv', 'user', 'telephone',
+        // basic shapes (v1.11)
+        'rect', 'rounded', 'ellipse', 'triangle', 'hexagon', 'star', 'arrow', 'callout', 'zone', 'text',
+        // electronics (v1.11)
+        'tablet', 'kiosk', 'pos', 'edc', 'atm', 'barcode', 'fingerprint', 'queue', 'tv', 'signage', 'projector', 'camera', 'speaker',
+        'headset', 'smartwatch', 'iot', 'tower', 'satellite', 'ups', 'ac', 'lamp'];
     private const PORTS = ['top', 'right', 'bottom', 'left'];
     private const MAX_NODES = 2000;
 
@@ -68,7 +73,7 @@ final class FlowchartsController
         [$f, $role] = self::access($id, $userId);
         $keyById = [];
         $nodes = [];
-        foreach (DB::all('SELECT * FROM flowchart_nodes WHERE flowchart_id = ? ORDER BY id', [$id]) as $n) {
+        foreach (DB::all('SELECT * FROM flowchart_nodes WHERE flowchart_id = ? ORDER BY sort_order, id', [$id]) as $n) {
             $keyById[(int) $n['id']] = $n['node_key'];
             $nodes[] = [
                 'key' => $n['node_key'],
@@ -194,6 +199,9 @@ final class FlowchartsController
                 $out[$k] = $c;
             }
         }
+        if (($s['fill'] ?? null) === 'none') {
+            $out['fill'] = 'none'; // transparent shape (v1.11)
+        }
         if (isset($s['dashed'])) {
             $out['dashed'] = (bool) $s['dashed'];
         }
@@ -213,6 +221,7 @@ final class FlowchartsController
             $existing[$r['node_key']] = (int) $r['id'];
         }
         $idByKey = [];
+        $order = 0; // drawing order = array order (v1.11: "To front / To back", areas behind)
         foreach ($nodes as $n) {
             if (!is_array($n)) {
                 continue;
@@ -229,6 +238,7 @@ final class FlowchartsController
                 'width' => round(max(20, min(2000, V::float($n['w'] ?? 140, 140))), 2),
                 'height' => round(max(20, min(2000, V::float($n['h'] ?? 64, 64))), 2),
                 'configuration_json' => self::style($n['style'] ?? null),
+                'sort_order' => $order++,
             ];
             if (isset($existing[$key])) {
                 DB::update('flowchart_nodes', $row, 'id = ?', [$existing[$key]]);

@@ -1333,3 +1333,12 @@ figure.sn-drawing[data-view="card"] figcaption::after { content: 'Click to previ
 /* Dialogs and toasts opened from the full-screen pen editor / preview must sit above it. */
 body:has(> .draw-root) > .modal-root { z-index: 420; }
 .toasts { z-index: 460; }
+
+/* v1.11 flowchart: two-column palette (Flow, Shapes, Network, Electronics) */
+@media (min-width: 768px) {
+  .canvas-palette { width: 172px; display: grid; grid-template-columns: 1fr 1fr; align-content: start; gap: 4px; }
+  .canvas-palette .palette-group, .canvas-palette .palette-tip { grid-column: 1 / -1; }
+  .canvas-palette .shape-btn { padding: 6px 2px; min-width: 0; }
+  .canvas-palette .shape-btn span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+.fc-node .hit { pointer-events: stroke; }

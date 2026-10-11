@@ -28,18 +28,59 @@ const SHAPES = {
   cloud: { label: 'Cloud', w: 120, h: 100, fill: '#38bdf8', device: 'cloud', group: 'network' },
   internet: { label: 'Internet', w: 110, h: 100, fill: '#2563eb', device: 'globe', group: 'network' },
   wifi: { label: 'Access point', w: 110, h: 100, fill: '#8b5cf6', device: 'wifi', group: 'network' },
-  phone: { label: 'Phone', w: 110, h: 100, fill: '#a855f7', device: 'smartphone', group: 'network' },
+  telephone: { label: 'IP Phone', w: 110, h: 100, fill: '#7c3aed', device: 'phone', group: 'network' },
   printer: { label: 'Printer', w: 110, h: 100, fill: '#78716c', device: 'printer', group: 'network' },
   storage: { label: 'NAS / Storage', w: 110, h: 100, fill: '#f59e0b', device: 'hard-drive', group: 'network' },
   cctv: { label: 'CCTV', w: 110, h: 100, fill: '#334155', device: 'cctv', group: 'network' },
   user: { label: 'User', w: 110, h: 100, fill: '#22c55e', device: 'user', group: 'network' },
+  // Basic shapes (v1.11): fill or no fill, any size; "Area" groups other shapes (dashed, behind them).
+  rect: { label: 'Rectangle', w: 150, h: 90, fill: '#6366f1', group: 'shape' },
+  rounded: { label: 'Rounded', w: 150, h: 90, fill: '#0ea5e9', group: 'shape' },
+  ellipse: { label: 'Circle', w: 110, h: 110, fill: '#22c55e', group: 'shape' },
+  triangle: { label: 'Triangle', w: 120, h: 104, fill: '#f59e0b', group: 'shape' },
+  hexagon: { label: 'Hexagon', w: 130, h: 104, fill: '#14b8a6', group: 'shape' },
+  star: { label: 'Star', w: 120, h: 115, fill: '#eab308', group: 'shape' },
+  arrow: { label: 'Arrow', w: 150, h: 80, fill: '#ec4899', group: 'shape' },
+  callout: { label: 'Callout', w: 160, h: 96, fill: '#a855f7', group: 'shape' },
+  zone: { label: 'Area', w: 320, h: 220, fill: '#64748b', group: 'shape', noFill: true, dashed: true, back: true },
+  text: { label: 'Text', w: 140, h: 44, fill: '#64748b', group: 'shape', noFill: true, noStroke: true },
+  // Electronics (v1.11)
+  phone: { label: 'Handphone', w: 110, h: 100, fill: '#a855f7', device: 'smartphone', group: 'device' },
+  tablet: { label: 'Tablet', w: 110, h: 100, fill: '#8b5cf6', device: 'tablet', group: 'device' },
+  kiosk: { label: 'Kiosk', w: 110, h: 110, fill: '#0ea5e9', device: 'kiosk', group: 'device' },
+  pos: { label: 'POS / Cashier', w: 110, h: 100, fill: '#16a34a', device: 'pos', group: 'device' },
+  edc: { label: 'EDC', w: 110, h: 100, fill: '#0d9488', device: 'edc', group: 'device' },
+  atm: { label: 'ATM', w: 110, h: 110, fill: '#1d4ed8', device: 'atm', group: 'device' },
+  barcode: { label: 'Barcode scanner', w: 120, h: 100, fill: '#475569', device: 'scan-barcode', group: 'device' },
+  fingerprint: { label: 'Fingerprint', w: 110, h: 100, fill: '#be185d', device: 'fingerprint-pattern', group: 'device' },
+  queue: { label: 'Queue machine', w: 120, h: 100, fill: '#ea580c', device: 'ticket', group: 'device' },
+  tv: { label: 'Smart TV', w: 110, h: 100, fill: '#334155', device: 'tv', group: 'device' },
+  signage: { label: 'Digital signage', w: 120, h: 100, fill: '#7c3aed', device: 'monitor-play', group: 'device' },
+  projector: { label: 'Projector', w: 110, h: 100, fill: '#64748b', device: 'projector', group: 'device' },
+  camera: { label: 'Camera', w: 110, h: 100, fill: '#0f172a', device: 'camera', group: 'device' },
+  speaker: { label: 'Speaker', w: 110, h: 100, fill: '#78716c', device: 'speaker', group: 'device' },
+  headset: { label: 'Headset', w: 110, h: 100, fill: '#db2777', device: 'headphones', group: 'device' },
+  smartwatch: { label: 'Smartwatch', w: 110, h: 100, fill: '#0891b2', device: 'watch', group: 'device' },
+  iot: { label: 'IoT / Sensor', w: 110, h: 100, fill: '#059669', device: 'microchip', group: 'device' },
+  tower: { label: 'Tower / BTS', w: 110, h: 100, fill: '#dc2626', device: 'radio-tower', group: 'device' },
+  satellite: { label: 'Satellite dish', w: 120, h: 100, fill: '#2563eb', device: 'satellite-dish', group: 'device' },
+  ups: { label: 'UPS', w: 110, h: 100, fill: '#ca8a04', device: 'battery-charging', group: 'device' },
+  ac: { label: 'AC', w: 110, h: 100, fill: '#0284c7', device: 'air-vent', group: 'device' },
+  lamp: { label: 'Smart lamp', w: 110, h: 100, fill: '#f59e0b', device: 'lightbulb', group: 'device' },
 };
+const GROUPS = [['flow', 'Flow'], ['shape', 'Shapes'], ['network', 'Network'], ['device', 'Electronics']];
 const PALETTE_COLORS = ['#6366f1', '#0ea5e9', '#14b8a6', '#22c55e', '#eab308', '#f59e0b', '#ef4444', '#ec4899', '#a855f7', '#64748b', '#111827', '#ffffff'];
 const PORTS = ['top', 'right', 'bottom', 'left'];
 const DIR = { top: [0, -1], right: [1, 0], bottom: [0, 1], left: [-1, 0] };
 
 /** Device icons (Lucide paths, plus a drawn network switch). */
-const DEVICE_ICONS = { switch: '<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h12"/>' };
+const DEVICE_ICONS = {
+  switch: '<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h12"/>',
+  kiosk: '<rect x="6" y="2" width="12" height="17" rx="2"/><rect x="8" y="4.5" width="8" height="7" rx="1"/><path d="M10 14.5h4M12 19v3M8 22h8"/>',
+  pos: '<rect x="3" y="12" width="18" height="9" rx="1.5"/><path d="M6 12V8h12v4"/><rect x="8.5" y="3" width="7" height="5" rx="1"/><path d="M7 15.5h.01M10 15.5h.01M13 15.5h.01M7 18h10"/>',
+  edc: '<rect x="6" y="2" width="12" height="20" rx="2.5"/><rect x="8.5" y="4.5" width="7" height="5" rx="1"/><path d="M9.5 13h.01M12 13h.01M14.5 13h.01M9.5 16h.01M12 16h.01M14.5 16h.01M10 19h4"/>',
+  atm: '<rect x="3" y="2" width="18" height="20" rx="2"/><rect x="6" y="5" width="12" height="7" rx="1"/><path d="M7 15.5h10M9 18.5h6"/>',
+};
 function deviceIcon(name, x, y, size, color) {
   const svg = svgEl('svg', { x, y, width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: color, 'stroke-width': 1.7, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', class: 'fc-device-ic' });
   svg.innerHTML = DEVICE_ICONS[name] || ICONS[name] || ICONS.circle;
@@ -47,9 +88,27 @@ function deviceIcon(name, x, y, size, color) {
 }
 const isDevice = (type) => !!SHAPES[type]?.device;
 
+function starPoints(w, hgt) {
+  const pts = [];
+  for (let i = 0; i < 10; i++) {
+    const a = -Math.PI / 2 + (i * Math.PI) / 5;
+    const r = i % 2 ? 0.4 : 1;
+    pts.push(`${w / 2 + Math.cos(a) * (w / 2) * r},${hgt * 0.54 + Math.sin(a) * (hgt * 0.54) * r}`);
+  }
+  return pts.join(' ');
+}
 function shapeEl(type, w, hgt, attrs) {
   if (isDevice(type)) return svgEl('rect', { width: w, height: hgt, rx: 14, ...attrs });
   switch (type) {
+    case 'rect': case 'text': return svgEl('rect', { width: w, height: hgt, rx: 3, ...attrs });
+    case 'rounded': return svgEl('rect', { width: w, height: hgt, rx: Math.min(22, hgt / 3, w / 3), ...attrs });
+    case 'zone': return svgEl('rect', { width: w, height: hgt, rx: 14, ...attrs });
+    case 'ellipse': return svgEl('ellipse', { cx: w / 2, cy: hgt / 2, rx: w / 2, ry: hgt / 2, ...attrs });
+    case 'triangle': return svgEl('polygon', { points: `${w / 2},0 ${w},${hgt} 0,${hgt}`, ...attrs });
+    case 'hexagon': return svgEl('polygon', { points: `${w * 0.25},0 ${w * 0.75},0 ${w},${hgt / 2} ${w * 0.75},${hgt} ${w * 0.25},${hgt} 0,${hgt / 2}`, ...attrs });
+    case 'star': return svgEl('polygon', { points: starPoints(w, hgt), ...attrs });
+    case 'arrow': { const hx = Math.max(w - hgt * 0.75, w * 0.45); return svgEl('polygon', { points: `0,${hgt * 0.28} ${hx},${hgt * 0.28} ${hx},0 ${w},${hgt / 2} ${hx},${hgt} ${hx},${hgt * 0.72} 0,${hgt * 0.72}`, ...attrs }); }
+    case 'callout': { const b = hgt * 0.78, r = Math.min(14, b / 3); return svgEl('path', { d: `M${r} 0 H${w - r} Q${w} 0 ${w} ${r} V${b - r} Q${w} ${b} ${w - r} ${b} H${w * 0.42} L${w * 0.24} ${hgt} L${w * 0.27} ${b} H${r} Q0 ${b} 0 ${b - r} V${r} Q0 0 ${r} 0 Z`, ...attrs }); }
     case 'start': case 'end': return svgEl('rect', { width: w, height: hgt, rx: hgt / 2, ...attrs });
     case 'decision': return svgEl('polygon', { points: `${w / 2},0 ${w},${hgt / 2} ${w / 2},${hgt} 0,${hgt / 2}`, ...attrs });
     case 'input': case 'output': { const s = Math.min(22, w / 5); return svgEl('polygon', { points: `${s},0 ${w},0 ${w - s},${hgt} 0,${hgt}`, ...attrs }); }
@@ -114,14 +173,14 @@ export default {
         <button class="btn ghost icon sm" data-a="panel" data-tip="Inspector">${icon('panel-right', 'sm')}</button>
       </div>
       <div class="canvas-body">
-        <div class="canvas-palette" data-palette>${[['flow', 'Flow'], ['network', 'Network']].map(([g, gl]) => html`<div class="palette-group">${gl}</div>
+        <div class="canvas-palette" data-palette>${GROUPS.map(([g, gl]) => html`<div class="palette-group">${gl}</div>
           ${Object.entries(SHAPES).filter(([, s]) => (s.group || 'flow') === g).map(([t, s]) => html`<button class="shape-btn" draggable="true" data-shape="${t}" data-tip="${t === 'connector' ? 'Connector' : s.label.replace('?', '')}" data-tip-pos="right">
           <svg viewBox="-2 -2 ${s.w + 4} ${s.h + 4}" preserveAspectRatio="xMidYMid meet" data-preview="${t}"></svg><span>${t === 'connector' ? 'Connector' : s.label.replace('?', '')}</span></button>`)}`)}
           <div class="palette-tip">Double-click a line to name it</div></div>
         <div class="canvas-stage" data-stage>
           <div class="canvas-zoom"><button class="btn ghost icon xs" data-a="zoom-out" aria-label="Zoom out">${icon('minus', 'sm')}</button><span data-zoom>100%</span>
             <button class="btn ghost icon xs" data-a="zoom-in" aria-label="Zoom in">${icon('plus', 'sm')}</button><button class="btn ghost icon xs" data-a="fit" data-tip="Fit">${icon('maximize', 'sm')}</button></div>
-          <div class="canvas-hint">Drag shapes from the left · Drag from a blue port to connect · Double-click to edit text · Shift-click to multi-select</div>
+          <div class="canvas-hint">Drag shapes from the left · Drag from a blue port to connect · Double-click to edit text · Shift-click to multi-select · Handles resize (Shift = keep proportions) · Alt = move freely</div>
         </div>
         <aside class="canvas-panel ${mobile ? 'hidden' : ''}" data-panel></aside>
       </div></div>`);
@@ -147,11 +206,12 @@ export default {
         svg.appendChild(deviceIcon(s.device, 1, 1, 22, s.fill));
         return;
       }
-      svg.appendChild(shapeEl(t, s.w, s.h, { fill: s.fill + '33', stroke: s.fill, 'stroke-width': 4 }));
+      svg.appendChild(shapeEl(t, s.w, s.h, { fill: s.noFill ? 'none' : s.fill + '33', stroke: s.fill, 'stroke-width': 4, 'stroke-dasharray': s.dashed ? '14 10' : null }));
+      if (t === 'text') { const tx = svgEl('text', { x: s.w / 2, y: s.h / 2, 'text-anchor': 'middle', 'dominant-baseline': 'central', 'font-size': 30, 'font-weight': 700, fill: s.fill }); tx.textContent = 'Aa'; svg.appendChild(tx); }
     });
 
     const byKey = (k) => nodes.find((n) => n.key === k);
-    const snap = (v) => (settings.snap ? Math.round(v / 10) * 10 : Math.round(v * 10) / 10);
+    const snap = (v, free = false) => (settings.snap && !free ? Math.round(v / 10) * 10 : Math.round(v * 10) / 10);
     const snapshot = () => JSON.stringify({ nodes, edges });
     const pushHistory = () => { undoStack.push(snapshot()); if (undoStack.length > 100) undoStack.shift(); redoStack.length = 0; };
     const restoreSnap = (s) => { const d = JSON.parse(s); nodes = d.nodes; edges = d.edges; };
@@ -198,8 +258,8 @@ export default {
         const g = svgEl('g', { class: 'fc-node' + (isSel ? ' selected' : ''), 'data-key': n.key, transform: `translate(${n.x} ${n.y})`, style: 'cursor:move' });
         if (base.device) {
           // Device: card with the device icon on top and its name underneath (topology-diagram style).
-          const filled = !!n.style.fill;
-          const fill = n.style.fill || th.elev;
+          const filled = !!n.style.fill && n.style.fill !== 'none';
+          const fill = n.style.fill === 'none' ? 'transparent' : n.style.fill || th.elev;
           const accent = n.style.stroke || base.fill;
           const fg = filled ? (luminance(fill) > 0.6 ? '#111827' : '#ffffff') : accent;
           g.appendChild(shapeEl(n.type, n.w, n.h, { fill, stroke: accent, 'stroke-width': filled ? 2 : 1.6, class: 'body' }));
@@ -209,19 +269,35 @@ export default {
           g.appendChild(deviceIcon(base.device, (n.w - size) / 2, Math.max(6, (n.h - textH - size) / 2 - (label ? 2 : 0)), size, fg));
           if (label) textBlock(g, label.lines.slice(0, 3), { cx: n.w / 2, cy: n.h - textH / 2 - 8, size: 12.5, weight: 600, color: n.style.text || (filled ? fg : th.text), lineHeight: label.lineHeight });
         } else {
-        const fill = n.style.fill || base.fill;
-        const stroke = n.style.stroke || (luminance(fill) > 0.85 ? th.border : fill);
-        const textColor = n.style.text || (luminance(fill) > 0.6 ? '#111827' : '#ffffff');
-        g.appendChild(shapeEl(n.type, n.w, n.h, { fill, stroke, 'stroke-width': 2, class: 'body' }));
+        // "No fill": fill === 'none', or the shape's default (Area, Text) when no colour was chosen.
+        const noFill = n.style.fill === 'none' || (!n.style.fill && base.noFill);
+        const fill = noFill ? null : n.style.fill || base.fill;
+        const stroke = n.style.stroke || (base.noStroke && !n.style.stroke ? 'transparent' : noFill ? base.fill : luminance(fill) > 0.85 ? th.border : fill);
+        const textColor = n.style.text || (noFill ? th.text : luminance(fill) > 0.6 ? '#111827' : '#ffffff');
+        const dashed = n.style.dashed ?? base.dashed;
+        // An Area is grabbed by its border and title, so the shapes inside it stay clickable.
+        g.appendChild(shapeEl(n.type, n.w, n.h, { fill: noFill ? (n.type === 'zone' ? 'none' : 'transparent') : fill, stroke, 'stroke-width': 2, 'stroke-dasharray': dashed ? '8 6' : null, class: 'body' }));
+        if (n.type === 'zone') g.appendChild(shapeEl(n.type, n.w, n.h, { fill: 'none', stroke: 'transparent', 'stroke-width': 14, class: 'hit' }));
         if (n.label) {
-          const t = wrapText(n.label, { size: 13.5, weight: 600, maxWidth: Math.max(30, n.w - (n.type === 'decision' ? n.w * 0.4 : 24)) });
-          textBlock(g, t.lines, { cx: n.w / 2, cy: n.type === 'document' ? n.h / 2 - 5 : n.h / 2, size: 13.5, weight: 600, color: textColor, lineHeight: t.lineHeight });
+          const t = wrapText(n.label, { size: 13.5, weight: 600, maxWidth: Math.max(30, n.w - ({ decision: n.w * 0.4, triangle: n.w * 0.45, star: n.w * 0.5, hexagon: n.w * 0.3 }[n.type] ?? 24)) });
+          const cy = { document: n.h / 2 - 5, triangle: n.h * 0.66, star: n.h * 0.56, callout: n.h * 0.39, zone: Math.min(n.h / 2, 12 + (t.lines.length * t.lineHeight) / 2) }[n.type] ?? n.h / 2;
+          textBlock(g, t.lines, { cx: n.w / 2, cy, size: 13.5, weight: 600, color: textColor, lineHeight: t.lineHeight });
         }
         }
         if (isSel) {
           g.appendChild(svgEl('rect', { class: 'sel-ring', x: -6, y: -6, width: n.w + 12, height: n.h + 12, rx: 10 }));
-          if (selected.size === 1) ['nw', 'ne', 'sw', 'se'].forEach((c) => {
-            g.appendChild(svgEl('rect', { class: 'fc-handle', 'data-handle': c, x: (c.includes('e') ? n.w : 0) - 5, y: (c.includes('s') ? n.h : 0) - 5, width: 10, height: 10, rx: 2, style: `cursor:${c === 'nw' || c === 'se' ? 'nwse' : 'nesw'}-resize` }));
+          // 8 handles: corners and edge middles. Shift keeps the proportions, Alt ignores the grid.
+          const hs = mobile ? 14 : 10;
+          const cursor = { nw: 'nwse', se: 'nwse', ne: 'nesw', sw: 'nesw', n: 'ns', s: 'ns', e: 'ew', w: 'ew' };
+          // Side handles sit just outside the edge: the edge middles are the connection ports.
+          const out = (mobile ? 8 : 6) + 6;
+          if (selected.size === 1 && canEdit) Object.keys(cursor).forEach((c) => {
+            const side = c.length === 1;
+            const hx = c.includes('e') ? n.w + (side ? out : 0) : c.includes('w') ? -(side ? out : 0) : n.w / 2;
+            const hy = c.includes('s') ? n.h + (side ? out : 0) : c.includes('n') ? -(side ? out : 0) : n.h / 2;
+            const bw = side && 'ew'.includes(c) ? hs * 0.6 : side ? hs * 1.8 : hs;
+            const bh = side && 'ns'.includes(c) ? hs * 0.6 : side ? hs * 1.8 : hs;
+            g.appendChild(svgEl('rect', { class: 'fc-handle' + (side ? ' side' : ''), 'data-handle': c, x: hx - bw / 2, y: hy - bh / 2, width: bw, height: bh, rx: 3, style: `cursor:${cursor[c]}-resize` }));
           });
         }
         PORTS.forEach((p) => {
@@ -242,8 +318,9 @@ export default {
     }
 
     // ------------------------------------------------------------ panel
-    function swatchRow(attr, cur, allowNone = true) {
-      return html`<div class="swatches" style="padding:0;grid-template-columns:repeat(7,26px)">${allowNone ? html`<button class="swatch ${!cur ? 'active' : ''}" data-${attr}="" style="--sw:var(--bg-soft);width:26px;height:26px">${icon('slash', 'sm')}</button>` : ''}
+    function swatchRow(attr, cur, allowNone = true, noFill = false) {
+      return html`<div class="swatches" style="padding:0;grid-template-columns:repeat(7,26px)">${allowNone ? html`<button class="swatch ${!cur ? 'active' : ''}" data-${attr}="" data-tip="Default" style="--sw:var(--bg-soft);width:26px;height:26px">${icon('slash', 'sm')}</button>` : ''}
+        ${noFill ? html`<button class="swatch ${cur === 'none' ? 'active' : ''}" data-${attr}="none" data-tip="No fill (transparent)" aria-label="No fill" style="--sw:transparent;width:26px;height:26px;border:1.5px dashed var(--border-strong, var(--text-3))">${icon('square-dashed', 'sm')}</button>` : ''}
         ${PALETTE_COLORS.map((c) => html`<button class="swatch ${cur === c ? 'active' : ''}" data-${attr}="${c}" style="--sw:${c};width:26px;height:26px"></button>`)}</div>`;
     }
     function renderPanel() {
@@ -264,18 +341,22 @@ export default {
         const n = byKey([...selected][0]);
         panel.innerHTML = String(html`${head('Shape')}
           <div class="field"><label>Text</label><textarea class="textarea" rows="2" data-node-label>${n.label}</textarea></div>
-          <div class="field"><label>Type</label><select class="select sm" data-node-type>${[['flow', 'Flowchart'], ['network', 'Network']].map(([g, gl]) => html`<optgroup label="${gl}">${Object.entries(SHAPES).filter(([, x]) => (x.group || 'flow') === g).map(([t, x]) => html`<option value="${t}" ${n.type === t ? 'selected' : ''}>${t === 'connector' ? 'Connector' : x.label.replace('?', '')}</option>`)}</optgroup>`)}</select></div>
-          <div class="field"><label>Fill</label>${swatchRow('fill', n.style.fill)}</div>
+          <div class="field"><label>Type</label><select class="select sm" data-node-type>${GROUPS.map(([g, gl]) => html`<optgroup label="${gl}">${Object.entries(SHAPES).filter(([, x]) => (x.group || 'flow') === g).map(([t, x]) => html`<option value="${t}" ${n.type === t ? 'selected' : ''}>${t === 'connector' ? 'Connector' : x.label.replace('?', '')}</option>`)}</optgroup>`)}</select></div>
+          <div class="field"><label>Fill</label>${swatchRow('fill', n.style.fill || (SHAPES[n.type]?.noFill ? 'none' : ''), true, true)}</div>
           <div class="field"><label>Border</label>${swatchRow('stroke', n.style.stroke)}</div>
+          ${SHAPES[n.type]?.device ? '' : html`<label class="check small mb-2"><input type="checkbox" data-node-dashed ${(n.style.dashed ?? SHAPES[n.type]?.dashed) ? 'checked' : ''}> Dashed border</label>`}
           <div class="field"><label>Text color</label>${swatchRow('text', n.style.text)}</div>
           <div class="form-grid"><div class="field"><label>Width</label><input class="input sm" type="number" min="20" max="2000" data-size="w" value="${Math.round(n.w)}"></div>
             <div class="field"><label>Height</label><input class="input sm" type="number" min="20" max="2000" data-size="h" value="${Math.round(n.h)}"></div></div>
-          <div class="grid grid-2" style="gap:6px"><button class="btn sm" data-a="duplicate">${icon('copy', 'sm')} Duplicate</button><button class="btn sm danger" data-a="delete">${icon('trash-2', 'sm')} Delete</button></div>`);
+          <div class="grid grid-2 mb-2" style="gap:6px"><button class="btn sm" data-a="front">${icon('bring-to-front', 'sm')} To front</button><button class="btn sm" data-a="back">${icon('send-to-back', 'sm')} To back</button></div>
+          <div class="grid grid-2" style="gap:6px"><button class="btn sm" data-a="duplicate">${icon('copy', 'sm')} Duplicate</button><button class="btn sm danger" data-a="delete">${icon('trash-2', 'sm')} Delete</button></div>
+          <p class="tiny subtle mt-2">Drag the handles to resize — <b>Shift</b> keeps the proportions. Hold <b>Alt</b> while dragging to move or resize freely (off the grid); arrow keys nudge.</p>`);
         return;
       }
       if (selected.size > 1) {
         panel.innerHTML = String(html`${head(`${selected.size} shapes`)}
-          <div class="field"><label>Fill</label>${swatchRow('fill', null)}</div>
+          <div class="field"><label>Fill</label>${swatchRow('fill', null, true, true)}</div>
+          <div class="grid grid-2 mb-2" style="gap:6px"><button class="btn sm" data-a="front">${icon('bring-to-front', 'sm')} To front</button><button class="btn sm" data-a="back">${icon('send-to-back', 'sm')} To back</button></div>
           <div class="grid grid-2" style="gap:6px"><button class="btn sm" data-a="duplicate">${icon('copy', 'sm')} Duplicate</button><button class="btn sm danger" data-a="delete">${icon('trash-2', 'sm')} Delete</button></div>`);
         return;
       }
@@ -291,7 +372,8 @@ export default {
     function addNode(type, wx, wy) {
       const s = SHAPES[type];
       const key = uid('n');
-      change(() => nodes.push({ key, type, label: s.label, x: snap(wx - s.w / 2), y: snap(wy - s.h / 2), w: s.w, h: s.h, style: {} }));
+      const node = { key, type, label: s.label, x: snap(wx - s.w / 2), y: snap(wy - s.h / 2), w: s.w, h: s.h, style: {} };
+      change(() => (s.back ? nodes.unshift(node) : nodes.push(node)));
       selected = new Set([key]);
       selEdge = null;
       render();
@@ -381,17 +463,29 @@ export default {
         const dx = w.x - op.sx, dy = w.y - op.sy;
         if (!op.moved && Math.hypot(dx, dy) * stage.vp.zoom < 3) return;
         if (!op.moved) { pushHistory(); op.moved = true; }
-        op.orig.forEach((p, k) => { const n = byKey(k); n.x = snap(p.x + dx); n.y = snap(p.y + dy); });
+        op.orig.forEach((p, k) => { const n = byKey(k); n.x = snap(p.x + dx, e.altKey); n.y = snap(p.y + dy, e.altKey); });
         render();
       } else if (op.kind === 'resize') {
         if (!op.moved) { pushHistory(); op.moved = true; }
         const n = byKey(op.k);
         const o = op.orig;
         const dx = w.x - op.sx, dy = w.y - op.sy;
-        if (op.c.includes('e')) n.w = Math.max(30, snap(o.w + dx));
-        if (op.c.includes('s')) n.h = Math.max(24, snap(o.h + dy));
-        if (op.c.includes('w')) { const nw = Math.max(30, snap(o.w - dx)); n.x = o.x + (o.w - nw); n.w = nw; }
-        if (op.c.includes('n')) { const nh = Math.max(24, snap(o.h - dy)); n.y = o.y + (o.h - nh); n.h = nh; }
+        const f = e.altKey, MIN = 20;
+        let nw = o.w, nh = o.h;
+        if (op.c.includes('e')) nw = o.w + dx;
+        if (op.c.includes('w')) nw = o.w - dx;
+        if (op.c.includes('s')) nh = o.h + dy;
+        if (op.c.includes('n')) nh = o.h - dy;
+        nw = Math.min(2000, Math.max(MIN, snap(nw, f)));
+        nh = Math.min(2000, Math.max(MIN, snap(nh, f)));
+        if (e.shiftKey) {
+          // Keep proportions (a circle stays a circle).
+          const r = o.w / o.h;
+          if (op.c.length === 1 ? 'ew'.includes(op.c) : nw / o.w >= nh / o.h) nh = Math.max(MIN, Math.round(nw / r)); else nw = Math.max(MIN, Math.round(nh * r));
+        }
+        n.w = nw; n.h = nh;
+        n.x = op.c.includes('w') ? o.x + (o.w - nw) : op.c.length === 1 && 'ns'.includes(op.c) && e.shiftKey ? o.x + (o.w - nw) / 2 : o.x;
+        n.y = op.c.includes('n') ? o.y + (o.h - nh) : op.c.length === 1 && 'ew'.includes(op.c) && e.shiftKey ? o.y + (o.h - nh) / 2 : o.y;
         render();
       } else if (op.kind === 'connect') {
         const a = byKey(op.from);
@@ -489,7 +583,7 @@ export default {
       const arrows = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
       if (arrows[e.key] && selected.size) {
         e.preventDefault();
-        const step = e.shiftKey ? 20 : settings.snap ? 10 : 1;
+        const step = e.shiftKey ? 20 : settings.snap && !e.altKey ? 10 : 1;
         change(() => nodes.forEach((n) => { if (selected.has(n.key)) { n.x += arrows[e.key][0] * step; n.y += arrows[e.key][1] * step; } }));
       }
     };
@@ -523,6 +617,7 @@ export default {
         case 'grid': settings.grid = !settings.grid; stage.setGrid(settings.grid); e.target.closest('[data-a]').classList.toggle('active', settings.grid); markDirty(); renderPanel(); break;
         case 'snap': settings.snap = !settings.snap; e.target.closest('[data-a]').classList.toggle('active', settings.snap); markDirty(); renderPanel(); break;
         case 'duplicate': duplicateSelection(); break;
+        case 'front': case 'back': if (selected.size) change(() => { const sel = nodes.filter((n) => selected.has(n.key)); const rest = nodes.filter((n) => !selected.has(n.key)); nodes = a === 'front' ? [...rest, ...sel] : [...sel, ...rest]; }); break;
         case 'delete': deleteSelection(); break;
         case 'reverse': if (selEdge) change(() => { const ed = edges.find((x) => x.key === selEdge); [ed.source, ed.target, ed.sourcePort, ed.targetPort] = [ed.target, ed.source, ed.targetPort, ed.sourcePort]; }); break;
         case 'zoom-in': stage.zoomAt(1.2); break;
@@ -560,6 +655,7 @@ export default {
       const t = e.target;
       const n = selected.size === 1 ? byKey([...selected][0]) : null;
       if (t.matches('[data-node-type]') && n) change(() => (n.type = t.value));
+      if (t.matches('[data-node-dashed]') && n) change(() => (n.style = { ...n.style, dashed: t.checked }));
       if (t.matches('[data-edge-dashed]') && selEdge) change(() => { const ed = edges.find((x) => x.key === selEdge); ed.style = { ...ed.style, dashed: t.checked }; });
       if (t.matches('[data-setting]')) {
         settings[t.dataset.setting] = t.checked;
