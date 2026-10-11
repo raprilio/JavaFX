@@ -647,6 +647,11 @@ mark.hl { background: color-mix(in srgb, var(--warning) 30%, transparent); color
 .rte hr { border-top: 2px solid var(--border); margin: 20px 0; }
 .rte table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 14.5px; }
 .rte th, .rte td { border: 1px solid var(--border-strong); padding: 7px 10px; min-width: 60px; vertical-align: top; }
+/* v1.8 resizable tables: widths stored on the first row; fixed layout wherever the note is shown */
+table.sn-table-fixed { table-layout: fixed; max-width: none; }
+table.sn-table-fixed th, table.sn-table-fixed td { min-width: 0; overflow-wrap: anywhere; }
+.rte.col-resize, .rte.col-resize * { cursor: col-resize !important; }
+.rte:has(table.sn-table-fixed) { overflow-x: auto; }
 .rte th { background: var(--bg-soft); font-weight: 650; text-align: left; }
 .rte img { max-width: 100%; height: auto; border-radius: 12px; margin: 8px 0; cursor: zoom-in; display: block; box-shadow: var(--shadow-sm); }
 .rte img.selected { outline: 3px solid var(--accent); }
@@ -1217,10 +1222,24 @@ svg .edge-path.selected { stroke: var(--accent) !important; }
 .upload-rule .badge:empty { display: none; }
 
 /* ---------- v1.7 mail API connections ---------- */
-.mc-row { display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-elev); }
-.mc-ic { width: 32px; height: 32px; flex: none; border-radius: 10px; display: grid; place-items: center; background: color-mix(in srgb, #22c55e 14%, transparent); color: #16a34a; }
-.mc-row.bad .mc-ic { background: color-mix(in srgb, #ef4444 14%, transparent); color: #dc2626; }
-.mc-boxes { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
-.mc-err { margin-top: 6px; color: var(--danger, #dc2626); display: flex; gap: 6px; align-items: center; }
+.conn-row { display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-elev); }
+.conn-ic { width: 32px; height: 32px; flex: none; border-radius: 10px; display: grid; place-items: center; background: color-mix(in srgb, #22c55e 14%, transparent); color: #16a34a; }
+.conn-row.bad .conn-ic { background: color-mix(in srgb, #ef4444 14%, transparent); color: #dc2626; }
+.conn-boxes { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.conn-err { margin-top: 6px; color: var(--danger, #dc2626); display: flex; gap: 6px; align-items: center; }
 .mc-help summary { cursor: pointer; color: var(--text-2); }
 .mail-setup .mail-settings { text-align: left; }
+
+/* ---------- v1.8 flowchart network shapes ---------- */
+.palette-group { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); padding: 6px 4px 0; text-align: center; }
+.palette-tip { font-size: 10.5px; color: var(--text-3); text-align: center; padding: 8px 2px; line-height: 1.35; }
+.seg { display: flex; gap: 4px; flex-wrap: wrap; }
+.seg .btn.active { background: color-mix(in srgb, var(--accent) 14%, transparent); border-color: var(--accent); color: var(--accent); }
+@media (max-width: 767px) { .palette-group { writing-mode: vertical-rl; transform: rotate(180deg); padding: 4px 2px; } .palette-tip { display: none; } }
+
+/* ---------- v1.8 personal mailboxes ---------- */
+.mail-company { border-top: 1px solid var(--border); padding-top: 12px; text-align: left; }
+.mail-company summary { cursor: pointer; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.mail-acc-form details summary { cursor: pointer; color: var(--text-2); }
+.mail-accounts .conn-row .conn-ic { background: color-mix(in srgb, #ea4335 12%, transparent); color: #ea4335; }
+.mail-accounts .conn-row.bad .conn-ic { background: color-mix(in srgb, #ef4444 14%, transparent); color: #dc2626; }

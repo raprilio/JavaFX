@@ -252,7 +252,8 @@ CREATE TABLE IF NOT EXISTS `meeting_shares` (
 
 CREATE TABLE IF NOT EXISTS `tasks` (
   `id`                INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `user_id`           INT UNSIGNED NOT NULL,
+  `user_id`           INT UNSIGNED NOT NULL COMMENT 'Owner = the person who does the task',
+  `assigned_by`       INT UNSIGNED NULL COMMENT 'Admin who assigned it to user_id (v1.8)',
   `category_id`       INT UNSIGNED NULL,
   `note_id`           INT UNSIGNED NULL COMMENT 'Related note',
   `meeting_id`        INT UNSIGNED NULL COMMENT 'Related meeting',
@@ -274,10 +275,36 @@ CREATE TABLE IF NOT EXISTS `tasks` (
   KEY `idx_tasks_category` (`category_id`),
   KEY `idx_tasks_note` (`note_id`),
   KEY `idx_tasks_meeting` (`meeting_id`),
+  KEY `idx_tasks_assigned_by` (`assigned_by`, `deleted_at`),
   CONSTRAINT `fk_tasks_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_tasks_assigned_by` FOREIGN KEY (`assigned_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
   CONSTRAINT `fk_tasks_category` FOREIGN KEY (`category_id`) REFERENCES `task_categories` (`id`) ON DELETE SET NULL,
   CONSTRAINT `fk_tasks_note` FOREIGN KEY (`note_id`) REFERENCES `notes` (`id`) ON DELETE SET NULL,
   CONSTRAINT `fk_tasks_meeting` FOREIGN KEY (`meeting_id`) REFERENCES `meetings` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Personal IMAP/SMTP mailboxes (Gmail with an App Password, etc.), one user each (v1.8)
+CREATE TABLE IF NOT EXISTS `mail_accounts` (
+  `id`            INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `user_id`       INT UNSIGNED NOT NULL,
+  `provider`      VARCHAR(20) NOT NULL DEFAULT 'custom',
+  `label`         VARCHAR(80) NOT NULL,
+  `email`         VARCHAR(190) NOT NULL,
+  `display_name`  VARCHAR(120) NULL,
+  `imap_host`     VARCHAR(190) NOT NULL,
+  `imap_port`     SMALLINT UNSIGNED NOT NULL DEFAULT 993,
+  `imap_security` ENUM('ssl','tls','none') NOT NULL DEFAULT 'ssl',
+  `smtp_host`     VARCHAR(190) NULL,
+  `smtp_port`     SMALLINT UNSIGNED NULL,
+  `smtp_security` ENUM('ssl','tls','none') NULL,
+  `username`      VARCHAR(190) NOT NULL,
+  `password_enc`  TEXT NOT NULL COMMENT 'Encrypted with the APP key',
+  `last_error`    VARCHAR(255) NULL,
+  `created_at`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_mail_account` (`user_id`, `email`),
+  CONSTRAINT `fk_mail_accounts_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `task_tag_relations` (
@@ -570,7 +597,7 @@ CREATE TABLE IF NOT EXISTS `flowchart_nodes` (
   `id`                  INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `flowchart_id`        INT UNSIGNED NOT NULL,
   `node_key`            VARCHAR(40) NOT NULL,
-  `node_type`           ENUM('start','end','process','decision','input','output','database','document','connector') NOT NULL DEFAULT 'process',
+  `node_type`           VARCHAR(30) NOT NULL DEFAULT 'process' COMMENT 'start, end, process, decision, …, server, router, switch, firewall, pc, …',
   `label`               VARCHAR(500) NOT NULL DEFAULT '',
   `position_x`          DECIMAL(10,2) NOT NULL DEFAULT 0,
   `position_y`          DECIMAL(10,2) NOT NULL DEFAULT 0,
@@ -740,7 +767,7 @@ INSERT IGNORE INTO `settings` (`setting_key`, `setting_value`) VALUES
 ('smtp_encryption', 'tls'),
 ('smtp_from_name', 'SmartNotes'),
 ('smtp_from_email', ''),
-('schema_version', '6'),
+('schema_version', '7'),
 ('allow_note_sharing', '1'),
 ('logo_display', 'logo'),
 ('logo_height', '34'),

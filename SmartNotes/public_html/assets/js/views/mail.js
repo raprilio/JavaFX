@@ -9,6 +9,7 @@ import { openFilePreview } from '../components/filePreview.js';
 import { tagInput, normalizeTag } from '../components/tagInput.js';
 import { folderOptions } from './drive.js';
 import { mailSettingsPanel } from '../components/mailConnections.js';
+import { mailAccountsPanel, openAccountForm } from '../components/mailAccounts.js';
 
 const SPECIAL = { '\\Sent': ['send', 'Sent'], '\\Drafts': ['file-pen', 'Drafts'], '\\Junk': ['octagon-alert', 'Spam'], '\\Trash': ['trash-2', 'Trash'], '\\Archive': ['archive', 'Archive'] };
 const POLL_MS = 120000;
@@ -40,10 +41,8 @@ export default {
   title: 'Mail',
   async render(el, ctx) {
     ctx.setTitle('Mail');
-    if (state.user.role !== 'admin') {
-      el.innerHTML = String(empty({ icon: 'shield-alert', title: 'Administrators only', text: 'The company mailbox can only be opened by users with the Admin role.' }));
-      return;
-    }
+    // Everyone can connect their own Gmail / IMAP mailboxes; the company (Hostinger) mailbox stays admin-only.
+    const isAdmin = state.user.role === 'admin';
     let status = null;
     const s = { mailbox: ctx.query.mailbox || '', folder: ctx.query.folder || 'INBOX', page: 1, q: '', flagged: false };
     let folders = [];
@@ -69,39 +68,52 @@ export default {
 
     function renderSetup() {
       el.innerHTML = String(html`
-        <div class="page-head"><div><h1>Mail</h1><p>Read and answer the company mailbox right inside ${state.branding?.app_name || 'SmartNotes'}.</p></div></div>
+        <div class="page-head"><div><h1>Mail</h1><p>Read and answer e-mail right inside ${state.branding?.app_name || 'SmartNotes'}.</p></div></div>
         <div class="card mail-setup">
           <div class="mail-setup-ic">${icon('mailbox', 'xl')}</div>
-          <h2>Connect your Hostinger mailbox</h2>
-          ${status.error ? html`<p class="mail-setup-err">${icon('alert-triangle', 'sm')} ${status.error}</p>` : ''}
-          <div data-panel></div>
+          <h2>Connect your mailbox</h2>
+          <p class="muted" style="margin:0">Add your <b>Gmail</b> (with an App Password) or any IMAP mailbox. It is private to you.</p>
+          <div data-accounts></div>
+          ${isAdmin ? html`<details class="mail-company" open><summary><b>${icon('building-2', 'sm')} Company mailbox — Hostinger Mail API</b> <span class="subtle small">(administrators only)</span></summary>
+            ${status.error ? html`<p class="mail-setup-err">${icon('alert-triangle', 'sm')} ${status.error}</p>` : ''}<div data-panel class="mt-2"></div></details>` : ''}
         </div>`);
-      el.querySelector('[data-panel]').appendChild(mailSettingsPanel({
+      el.querySelector('[data-accounts]').appendChild(mailAccountsPanel({ accounts: status.accounts, onChange: () => { s.mailbox = ''; boot(); } }));
+      el.querySelector('[data-panel]')?.appendChild(mailSettingsPanel({
         status,
         onChange: (next) => { status = next; if (next.mailboxes.length) { s.mailbox = ''; boot(); } },
       }));
     }
 
-    /** Mail → Settings: add / delete API connections, default mailbox, sender name. */
+    /** Mail → Settings: my own mailboxes (everyone) + Hostinger API connections (administrators). */
     async function openSettings() {
       let changed = false;
-      const before = status.connections.map((c) => c.id).join();
-      const body = mailSettingsPanel({ status, compact: false, onChange: (next) => { status = next; changed = true; } });
+      const before = status.mailboxes.map((m) => m.resourceId).join();
+      const body = h('<div class="col" style="gap:22px"></div>');
+      const mine = h(String(html`<section><div class="section-title">${icon('mail', 'sm')} My mailboxes <span class="subtle small">Gmail · IMAP — only you can see them</span></div></section>`));
+      mine.appendChild(mailAccountsPanel({ accounts: status.accounts, onChange: () => (changed = true) }));
+      body.appendChild(mine);
+      if (isAdmin) {
+        const company = h(String(html`<section><div class="section-title">${icon('building-2', 'sm')} Company mailbox — Hostinger Mail API <span class="subtle small">administrators only</span></div></section>`));
+        company.appendChild(mailSettingsPanel({ status, compact: false, onChange: (next) => { status = next; changed = true; } }));
+        body.appendChild(company);
+      }
       await modal({ title: 'Mail settings', body, size: 'lg', className: 'mail-settings-modal', actions: [{ label: 'Done', variant: 'primary' }] }).result;
       if (!changed) return;
-      if (status.connections.map((c) => c.id).join() !== before || !status.mailboxes.some((m) => m.resourceId === s.mailbox)) {
-        s.mailbox = '';
-        boot();
-      }
+      try { status = await api.get('mail/status'); } catch { /* boot reports it */ }
+      if (status.mailboxes.map((m) => m.resourceId).join() !== before || !status.mailboxes.some((m) => m.resourceId === s.mailbox)) s.mailbox = '';
+      boot();
     }
+    void openAccountForm;
 
     // ---------------------------------------------------------------- layout
     /** Mailbox switcher options, grouped per API connection (domain) when there are several. */
     function mailboxOptions() {
       const opt = (m) => html`<option value="${m.resourceId}" ${m.resourceId === s.mailbox ? 'selected' : ''}>${m.address}</option>`;
-      const conns = status.connections.filter((c) => status.mailboxes.some((m) => m.connection === c.id));
-      if (conns.length < 2) return status.mailboxes.map(opt);
-      return conns.map((c) => html`<optgroup label="${c.label}">${status.mailboxes.filter((m) => m.connection === c.id).map(opt)}</optgroup>`);
+      // One group per company API connection and per personal account.
+      const groups = [...new Set(status.mailboxes.map((m) => m.connection))];
+      if (groups.length < 2) return status.mailboxes.map(opt);
+      const label = (id) => status.connections.find((c) => c.id === id)?.label || status.mailboxes.find((m) => m.connection === id)?.connection_label || id;
+      return groups.map((g) => html`<optgroup label="${label(g)}">${status.mailboxes.filter((m) => m.connection === g).map(opt)}</optgroup>`);
     }
 
     function renderShell() {
@@ -114,7 +126,7 @@ export default {
             <button class="btn primary block" data-act="compose">${icon('pencil-line', 'sm')} Compose</button>
             <nav class="mail-folders" data-folders></nav>
             <div class="mail-quota" data-quota></div>
-            ${status.connections.some((c) => c.error) ? html`<button class="mail-conn bad small" data-act="settings" style="border:0;cursor:pointer;text-align:left">${icon('unplug', 'sm')} ${status.connections.filter((c) => c.error).length} API connection needs attention</button>` : ''}
+            ${status.connections.some((c) => c.error) || status.hostinger_error || status.accounts.some((a) => a.last_error) ? html`<button class="mail-conn bad small" data-act="settings" style="border:0;cursor:pointer;text-align:left">${icon('unplug', 'sm')} A mailbox connection needs attention</button>` : ''}
           </aside>
           <section class="mail-list">
             <div class="mail-list-bar">
@@ -377,7 +389,7 @@ export default {
       const files = [];
       const driveFiles = [];
       const body = h(String(html`<form class="mail-compose" novalidate>
-        <div class="mc-row"><label>From</label><select class="select sm" name="mailbox">${status.mailboxes.map((x) => html`<option value="${x.resourceId}" ${x.resourceId === s.mailbox ? 'selected' : ''}>${status.display_name ? `${status.display_name} <${x.address}>` : x.address}</option>`)}</select></div>
+        <div class="mc-row"><label>From</label><select class="select sm" name="mailbox">${status.mailboxes.map((x) => { const acc = x.personal && status.accounts.find((a) => a.mailbox === x.resourceId); const name = acc ? acc.display_name : status.display_name; return html`<option value="${x.resourceId}" ${x.resourceId === s.mailbox ? 'selected' : ''}>${name ? `${name} <${x.address}>` : x.address}</option>`; })}</select></div>
         <div class="mc-row"><label for="mc-to">To</label><input class="input sm" id="mc-to" name="to" value="${to}" placeholder="name@example.com, …" autocomplete="email" ${to ? '' : 'autofocus'}><button class="btn ghost xs" type="button" data-ccbcc ${cc ? 'hidden' : ''}>Cc/Bcc</button></div>
         <div class="mc-row ${cc ? '' : 'hidden'}" data-cc><label for="mc-cc">Cc</label><input class="input sm" id="mc-cc" name="cc" value="${cc}"></div>
         <div class="mc-row hidden" data-cc><label for="mc-bcc">Bcc</label><input class="input sm" id="mc-bcc" name="bcc"></div>

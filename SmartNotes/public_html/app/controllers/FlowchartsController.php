@@ -8,7 +8,9 @@ defined('SN_APP') || exit;
  */
 final class FlowchartsController
 {
-    private const TYPES = ['start', 'end', 'process', 'decision', 'input', 'output', 'database', 'document', 'connector'];
+    private const TYPES = ['start', 'end', 'process', 'decision', 'input', 'output', 'database', 'document', 'connector',
+        // network devices (v1.8)
+        'server', 'router', 'switch', 'firewall', 'pc', 'laptop', 'cloud', 'internet', 'wifi', 'phone', 'printer', 'storage', 'cctv', 'user'];
     private const PORTS = ['top', 'right', 'bottom', 'left'];
     private const MAX_NODES = 2000;
 
@@ -194,6 +196,9 @@ final class FlowchartsController
         }
         if (isset($s['dashed'])) {
             $out['dashed'] = (bool) $s['dashed'];
+        }
+        if (in_array($s['arrow'] ?? null, ['both', 'none'], true)) {
+            $out['arrow'] = $s['arrow']; // default (absent) = arrow at the end
         }
         return $out ? json_encode($out) : null;
     }

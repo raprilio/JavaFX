@@ -9,7 +9,7 @@ defined('SN_APP') || exit;
  */
 final class Migrator
 {
-    public const VERSION = 6;
+    public const VERSION = 7;
 
     public static function run(): void
     {
@@ -36,6 +36,9 @@ final class Migrator
             }
             if ($current < 6) {
                 self::v6();
+            }
+            if ($current < 7) {
+                self::v7();
             }
             Settings::set('schema_version', (string) self::VERSION);
         } finally {
@@ -185,4 +188,36 @@ final class Migrator
     {
         DB::run("UPDATE settings SET setting_value = '0' WHERE setting_key IN ('max_image_mb', 'max_audio_mb', 'max_video_mb', 'max_file_mb')");
     }
+
+    /** v1.8: admins assign tasks to users; personal IMAP mail accounts (Gmail etc.). */
+    private static function v7(): void
+    {
+        self::addColumn('tasks', 'assigned_by', 'INT UNSIGNED NULL AFTER `user_id`');
+        if (!self::hasConstraint('tasks', 'fk_tasks_assigned_by')) {
+            DB::pdo()->exec('ALTER TABLE `tasks` ADD KEY `idx_tasks_assigned_by` (`assigned_by`, `deleted_at`), ADD CONSTRAINT `fk_tasks_assigned_by` FOREIGN KEY (`assigned_by`) REFERENCES `users` (`id`) ON DELETE SET NULL');
+        }
+        // Flowchart node types are no longer a fixed ENUM (network device shapes were added).
+        DB::pdo()->exec("ALTER TABLE `flowchart_nodes` MODIFY `node_type` VARCHAR(30) NOT NULL DEFAULT 'process'");
+        if (!self::hasTable('mail_accounts')) {
+            DB::pdo()->exec(self::MAIL_ACCOUNTS_SQL);
+        }
+    }
+
+    public const MAIL_ACCOUNTS_SQL = "CREATE TABLE `mail_accounts` (
+      `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+      `user_id` INT UNSIGNED NOT NULL,
+      `provider` VARCHAR(20) NOT NULL DEFAULT 'custom',
+      `label` VARCHAR(80) NOT NULL,
+      `email` VARCHAR(190) NOT NULL,
+      `display_name` VARCHAR(120) NULL,
+      `imap_host` VARCHAR(190) NOT NULL, `imap_port` SMALLINT UNSIGNED NOT NULL DEFAULT 993, `imap_security` ENUM('ssl','tls','none') NOT NULL DEFAULT 'ssl',
+      `smtp_host` VARCHAR(190) NULL, `smtp_port` SMALLINT UNSIGNED NULL, `smtp_security` ENUM('ssl','tls','none') NULL,
+      `username` VARCHAR(190) NOT NULL,
+      `password_enc` TEXT NOT NULL COMMENT 'Encrypted with the APP key',
+      `last_error` VARCHAR(255) NULL,
+      `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (`id`), UNIQUE KEY `uq_mail_account` (`user_id`, `email`),
+      CONSTRAINT `fk_mail_accounts_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
 }

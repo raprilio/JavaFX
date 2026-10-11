@@ -18,7 +18,9 @@ function dueLabel(t) {
 }
 
 function metaHtml(t) {
-  return html`${dueLabel(t)}
+  return html`${t.assignee_name && t.assignee_id !== state.user.id ? html`<span class="badge info" data-tip="Assigned to">${icon('user', 'sm')} ${t.assignee_name}</span>` : ''}
+    ${t.assigned && t.assigned_by !== state.user.id && t.assignee_id === state.user.id ? html`<span class="badge" data-tip="Assigned by">${icon('user-check', 'sm')} from ${t.assigned_by_name}</span>` : ''}
+    ${dueLabel(t)}
     <span class="badge prio prio-${t.priority}">${icon(PRIO_ICON[t.priority], 'sm')} ${t.priority}</span>
     ${t.category_name ? html`<span class="badge"><span style="width:7px;height:7px;border-radius:50%;background:${t.category_color}"></span>${t.category_name}</span>` : ''}
     ${t.tags.slice(0, 3).map((g) => html`<span class="tag">#${g}</span>`)}
@@ -46,7 +48,8 @@ export default {
   title: 'Tasks',
   async render(el, ctx) {
     const q0 = ctx.query;
-    const f = { view: q0.view || 'list', status: q0.status || '', priority: q0.priority || '', category: q0.category || '', due: q0.due || '', q: q0.q || '' };
+    const isAdmin = state.user.role === 'admin';
+    const f = { view: q0.view || 'list', scope: isAdmin && q0.scope === 'assigned' ? 'assigned' : '', status: q0.status || '', priority: q0.priority || '', category: q0.category || '', due: q0.due || '', q: q0.q || '' };
     let items = [], stats = {};
     let cal = null;
     let offSort = null;
@@ -58,6 +61,7 @@ export default {
         </div><button class="btn primary" data-act="new">${icon('plus', 'sm')} New task</button></div></div>
       <div class="card card-pad mb-3" style="padding:14px 18px"><div class="row between small"><span class="muted">Progress</span><b data-pct>0%</b></div><div class="progress mt-1"><span data-bar style="width:0"></span></div>
         <div class="row wrap mt-2 small muted" data-stats></div></div>
+      ${isAdmin ? html`<div class="chips mb-2" data-scopes>${[['', 'My tasks', 'square-check-big'], ['assigned', 'Assigned by me', 'user-plus']].map(([v, l, i]) => html`<button class="chip ${f.scope === v ? 'active' : ''}" data-scope="${v}">${icon(i, 'sm')} ${l}</button>`)}</div>` : ''}
       <form class="task-quick" data-quick>${icon('plus', 'sm')}<input placeholder="Add a task… e.g. “Prepare report”  (press Enter)" data-quick-input aria-label="Quick add task">
         <input type="date" class="input sm" style="width:150px" data-quick-date aria-label="Due date"><button class="btn sm primary" type="submit">Add</button></form>
       <div class="toolbar">
@@ -84,12 +88,14 @@ export default {
         b.classList.toggle('active', !!f[k]);
       });
       el.querySelector('[data-act="clear"]').classList.toggle('hidden', !(f.status || f.priority || f.category || f.due || f.q));
-      setQuery({ view: f.view !== 'list' ? f.view : '', status: f.status, priority: f.priority, category: f.category, due: f.due, q: f.q });
+      el.querySelector('[data-quick]').classList.toggle('hidden', f.scope === 'assigned');
+      el.querySelector('[data-filter="category"]').classList.toggle('hidden', f.scope === 'assigned');
+      setQuery({ view: f.view !== 'list' ? f.view : '', scope: f.scope, status: f.status, priority: f.priority, category: f.category, due: f.due, q: f.q });
     }
 
     async function load() {
       try {
-        const r = await api.get('tasks', { status: f.view === 'board' ? '' : f.status, priority: f.priority, category: f.category, due: f.due, q: f.q, sort: f.view === 'board' ? '' : 'due' });
+        const r = await api.get('tasks', { scope: f.scope, status: f.view === 'board' ? '' : f.status, priority: f.priority, category: f.category, due: f.due, q: f.q, sort: f.view === 'board' ? '' : 'due' });
         items = r.items;
         stats = r.stats;
         paintStats();
@@ -112,7 +118,9 @@ export default {
       if (f.view === 'board') return paintBoard();
       if (f.view === 'calendar') return paintCalendar();
       if (!items.length) {
-        body.innerHTML = String(empty({ icon: 'square-check-big', title: f.q || f.status || f.priority || f.category || f.due ? 'No tasks match your filters' : 'No tasks yet', text: 'Add a task above or create one with details like due date, priority and reminder.', action: '<button class="btn primary" data-act="new">New task</button>' }));
+        body.innerHTML = String(f.scope === 'assigned'
+          ? empty({ icon: 'user-plus', title: 'You have not assigned any tasks', text: 'Create a task and choose a user in "Assign to". You can follow their progress here.', action: '<button class="btn primary" data-act="new">Assign a task</button>' })
+          : empty({ icon: 'square-check-big', title: f.q || f.status || f.priority || f.category || f.due ? 'No tasks match your filters' : 'No tasks yet', text: 'Add a task above or create one with details like due date, priority and reminder.', action: '<button class="btn primary" data-act="new">New task</button>' }));
         return;
       }
       const today = todayStr();
@@ -137,6 +145,7 @@ export default {
         <div class="board-col-head"><span class="dot"></span>${l}<span class="subtle" style="font-weight:500">${list.length}</span>
           <button class="btn ghost icon xs" style="margin-left:auto" data-add-status="${k}" data-tip="Add">${icon('plus', 'sm')}</button></div>
         <div class="board-list" data-status="${k}">${list.map(cardHtml)}</div></div>`)}</div>`);
+      if (f.scope === 'assigned') return; // ordering belongs to each assignee's own board
       offSort = sortable(body, {
         item: '.board-card', list: '.board-list',
         onDrop: async (card, toList) => {
@@ -200,20 +209,26 @@ export default {
         { label: 'Edit', icon: 'pencil', onClick: () => openTaskForm(t) },
         { title: 'Status' },
         ...STATUSES.map(([k, l]) => ({ label: l, checked: t.status === k, onClick: () => setStatus(t, k) })),
-        { divider: true },
-        { label: 'Delete', icon: 'trash-2', danger: true, onClick: async () => {
-          if (!(await confirm({ title: 'Delete task?', message: `"${t.title}" will be moved to the trash.`, confirmText: 'Delete' }))) return;
-          await api.post(`items/task/${t.id}/trash`).catch(toastError);
-          toast('Task moved to trash', 'success', { action: 'Undo', onAction: () => api.post(`items/task/${t.id}/restore`).then(load) });
-          load();
-        } },
+        ...(t.assigned && t.assignee_id === state.user.id && t.assigned_by !== state.user.id ? [] : [{ divider: true },
+          f.scope === 'assigned' ? { label: 'Delete for everyone', icon: 'trash-2', danger: true, onClick: async () => {
+            if (!(await confirm({ title: 'Delete task?', message: `"${t.title}" is removed for ${t.assignee_name} as well. This cannot be undone.`, confirmText: 'Delete' }))) return;
+            try { await api.post(`items/task/${t.id}/trash`); toast('Task deleted', 'success'); } catch (err) { toastError(err); }
+            load();
+          } } : { label: 'Delete', icon: 'trash-2', danger: true, onClick: async () => {
+            if (!(await confirm({ title: 'Delete task?', message: `"${t.title}" will be moved to the trash.`, confirmText: 'Delete' }))) return;
+            await api.post(`items/task/${t.id}/trash`).catch(toastError);
+            toast('Task moved to trash', 'success', { action: 'Undo', onAction: () => api.post(`items/task/${t.id}/restore`).then(load) });
+            load();
+          } }]),
       ];
       return anchor instanceof Event ? contextMenu(anchor, items2) : menu(anchor, items2, { align: 'end' });
     }
 
     el.addEventListener('click', async (e) => {
       const act = e.target.closest('[data-act]')?.dataset.act;
-      if (act === 'new') return openTaskForm(null, f.category ? { category_id: +f.category } : {});
+      if (act === 'new') return openTaskForm(null, f.scope === 'assigned' ? { assign_to: '' } : f.category ? { category_id: +f.category } : {});
+      const sc = e.target.closest('[data-scope]');
+      if (sc) { f.scope = sc.dataset.scope; el.querySelectorAll('[data-scope]').forEach((c) => c.classList.toggle('active', c === sc)); f.category = ''; syncFilters(); return load(); }
       if (act === 'clear') { Object.assign(f, { status: '', priority: '', category: '', due: '', q: '' }); el.querySelector('[data-search]').value = ''; syncFilters(); return load(); }
       const v = e.target.closest('[data-view]');
       if (v) { f.view = v.dataset.view; el.querySelectorAll('[data-view]').forEach((b) => b.classList.toggle('active', b === v)); syncFilters(); return load(); }

@@ -162,6 +162,10 @@ return [
     // Admin mailbox (Hostinger Mail API) — MailController enforces the full admin role.
     ['GET', 'mail/status', 'MailController::status', 'auth'],
     ['POST', 'mail/settings', 'MailController::saveSettings', 'auth'],
+    // Personal IMAP/SMTP mailboxes (Gmail etc.) — every user manages their own
+    ['POST', 'mail/accounts', 'MailController::accountStore', 'auth'],
+    ['POST', 'mail/accounts/{id}', 'MailController::accountUpdate', 'auth'],
+    ['POST', 'mail/accounts/{id}/delete', 'MailController::accountDelete', 'auth'],
     ['GET', 'mail/folders', 'MailController::folders', 'auth'],
     ['GET', 'mail/messages', 'MailController::messages', 'auth'],
     ['GET', 'mail/message', 'MailController::message', 'auth'],

@@ -18,7 +18,7 @@ const NAV = [
   { path: '/flowcharts', label: 'Flowcharts', icon: 'workflow' },
   { path: '/audio', label: 'Audio Notes', icon: 'mic' },
   { path: '/drive', label: 'Drive', icon: 'hard-drive' },
-  { path: '/mail', label: 'Mail', icon: 'mail', admin: true },
+  { path: '/mail', label: 'Mail', icon: 'mail' },
   { path: '/trash', label: 'Trash', icon: 'trash-2' },
 ];
 

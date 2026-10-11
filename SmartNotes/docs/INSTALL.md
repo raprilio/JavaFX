@@ -131,7 +131,16 @@ Login sebagai admin → **Admin → Email & reminders** → isi → **Save SMTP*
 
 ---
 
-## 7b. Mail admin (Hostinger Mail API) — opsional
+## 7a. Email pribadi (Gmail / IMAP) — setiap user
+
+Tidak perlu pengaturan server. Setiap user membuka **Mail → Add e-mail (Gmail / IMAP)**:
+- **Gmail**: aktifkan *2-Step Verification*, buat App Password di https://myaccount.google.com/apppasswords, tempel 16 hurufnya. Pastikan IMAP aktif di Gmail (Settings → Forwarding and POP/IMAP). Akun Google Workspace mungkin perlu izin dari admin Workspace.
+- **Yahoo / iCloud**: buat *app password* di akun masing-masing.
+- **Lainnya**: isi server IMAP (masuk) dan SMTP (keluar) dari penyedia email.
+
+Hosting harus mengizinkan koneksi keluar ke port **993** (IMAP) dan **465/587** (SMTP) — di Hostinger keduanya terbuka. Ekstensi PHP `imap` **tidak** dibutuhkan (SmartNotes memakai koneksi socket sendiri; ekstensi itu sudah dihapus di PHP 8.4). Server di jaringan privat/lokal ditolak demi keamanan.
+
+## 7b. Mail admin (Hostinger Mail API) — opsional, hanya Admin
 
 1. hPanel → **Emails** → pilih domain → bagian *email provisioning / Mail API* → buat **API token**. Token berlaku untuk semua mailbox di order email tersebut — rahasiakan.
 2. Login SmartNotes sebagai **Admin** → menu **Mail** → isi *Name* (opsional) dan *API token* → **Add API**. Token diverifikasi ke Hostinger sebelum disimpan (terenkripsi dengan `app.key`).
@@ -186,6 +195,8 @@ File backup disimpan di `storage/backups/` (tidak bisa diakses publik). Simpan s
 1. Backup database & uploads dari Admin.
 2. Upload ulang semua file **kecuali** `app/config.php`, `uploads/`, dan `storage/`.
 3. Buka aplikasi. Perubahan skema dijalankan **otomatis** oleh migrator saat request pertama (tidak perlu phpMyAdmin). Versi skema tersimpan di tabel `settings` (`schema_version`).
+
+**Upgrade ke v1.8** (email pribadi Gmail/IMAP, task dari admin, diagram jaringan, ukuran tabel): timpa file; migrasi v7 otomatis menambah kolom `tasks.assigned_by`, tabel `mail_accounts`, dan mengubah `flowchart_nodes.node_type` menjadi teks (untuk bentuk perangkat jaringan). Menu Mail kini terlihat oleh semua user; mailbox Hostinger tetap hanya untuk Admin.
 
 **Upgrade ke v1.7** (beberapa API Email + tanpa batas upload): timpa file; migrasi v6 otomatis mengubah semua batas ukuran upload menjadi 0 (tanpa batas). Token Mail lama otomatis menjadi API pertama bernama *Hostinger Mail*. Restore backup kini juga bisa file besar (dikirim bertahap).
 

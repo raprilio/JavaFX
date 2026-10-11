@@ -51,25 +51,48 @@ export async function openTaskForm(task = null, defaults = {}) {
   }
   const t = { priority: 'medium', status: 'todo', reminder_minutes: state.settings?.default_reminder ?? null, tags: [], ...defaults, ...(task || {}) };
   if (!editing && !t.due_date) t.reminder_minutes = null;
+  // Assignment (v1.8): admins can give a task to another user. The assignee cannot change what was asked
+  // (locked_fields); the admin who assigned it sees it under "Assigned by me" and can reassign or delete it.
+  const me = state.user.id;
+  const isAdmin = state.user.role === 'admin';
+  const asAssigner = editing && t.access === 'assigner';
+  const locked = new Set(t.locked_fields || []);
+  const canAssign = isAdmin && (!editing || asAssigner || (t.assigned_by ?? me) === me);
+  const lock = (f) => (locked.has(f) ? 'disabled' : '');
+  let people = [];
+  if (canAssign) { try { people = await api.get('users/directory'); } catch { people = []; } }
+  const assignedTo = editing ? t.assignee_id ?? me : +(defaults.assign_to || me);
   const tags = tagInput({ value: t.tags || [], suggestions: state.tags.map((x) => x.name), placeholder: 'Add tags…', normalize: normalizeTag, prefix: '#' });
   const form = h(String(html`<form class="task-form" autocomplete="off">
-    <div class="field"><input class="input" name="title" value="${t.title || ''}" placeholder="What needs to be done?" style="font-size:16px;font-weight:600;height:46px" autofocus></div>
-    <div class="field"><textarea class="textarea" name="description" placeholder="Add a description…" rows="3">${t.description || ''}</textarea></div>
+    ${locked.size ? html`<div class="share-banner" style="margin:0 0 12px">${icon('user-check', 'sm')}<span>Assigned to you by <b>${t.assigned_by_name || 'an administrator'}</b>. You can update the status, category, tags, related note and reminder.</span></div>` : ''}
+    ${canAssign ? html`<div class="field assign-field"><label>${icon('user-plus', 'sm')} Assign to</label><select class="select" name="assign_to">
+      <option value="${me}" ${assignedTo === me ? 'selected' : ''}>Me (${state.user.name})</option>
+      ${people.map((p) => html`<option value="${p.id}" ${assignedTo === p.id ? 'selected' : ''}>${p.name} — ${p.email}</option>`)}</select>
+      <span class="hint">The user gets a notification and e-mail, and sees it in their Tasks. You follow it under <b>Assigned by me</b>.</span></div>` : ''}
+    <div class="field"><input class="input" name="title" value="${t.title || ''}" placeholder="What needs to be done?" style="font-size:16px;font-weight:600;height:46px" autofocus ${lock('title')}></div>
+    <div class="field"><textarea class="textarea" name="description" placeholder="Add a description…" rows="3" ${lock('description')}>${t.description || ''}</textarea></div>
     <div class="form-grid">
-      <div class="field"><label>Due date</label><input class="input" type="date" name="due_date" value="${t.due_date || ''}"></div>
-      <div class="field"><label>Due time</label><input class="input" type="time" name="due_time" value="${t.due_time || ''}"></div>
-      <div class="field"><label>Priority</label><select class="select" name="priority">${opt(PRIORITIES, t.priority)}</select></div>
+      <div class="field"><label>Due date</label><input class="input" type="date" name="due_date" value="${t.due_date || ''}" ${lock('due_date')}></div>
+      <div class="field"><label>Due time</label><input class="input" type="time" name="due_time" value="${t.due_time || ''}" ${lock('due_time')}></div>
+      <div class="field"><label>Priority</label><select class="select" name="priority" ${lock('priority')}>${opt(PRIORITIES, t.priority)}</select></div>
       <div class="field"><label>Status</label><select class="select" name="status">${opt(STATUSES, t.status)}</select></div>
-      <div class="field"><label>Category</label><select class="select" name="category_id"><option value="">— None —</option>${state.categories.task.map((c) => html`<option value="${c.id}" ${+t.category_id === c.id ? 'selected' : ''}>${c.name}</option>`)}</select></div>
+      <div class="field" data-own><label>Category</label><select class="select" name="category_id"><option value="">— None —</option>${state.categories.task.map((c) => html`<option value="${c.id}" ${+t.category_id === c.id ? 'selected' : ''}>${c.name}</option>`)}</select></div>
       <div class="field"><label>Reminder</label><select class="select" name="reminder_minutes">${reminderOptions(t.reminder_minutes)}</select><span class="hint">Needs a due date. Sent by e-mail & in-app.</span></div>
-      <div class="field span-2"><label>Tags</label><div data-slot="tags"></div></div>
-      <div class="field span-2"><label>Related note</label><select class="select" name="note_id"><option>Loading…</option></select></div>
+      <div class="field span-2" data-own><label>Tags</label><div data-slot="tags"></div></div>
+      <div class="field span-2" data-own><label>Related note</label><select class="select" name="note_id"><option>Loading…</option></select></div>
     </div>
     ${t.meeting_id ? html`<input type="hidden" name="meeting_id" value="${t.meeting_id}"><p class="small muted">${icon('users', 'sm')} Linked to meeting${t.meeting_title ? html`: <b>${t.meeting_title}</b>` : ''}</p>` : ''}
     ${editing ? html`<div data-slot="attachments" class="mt-2"></div>` : html`<p class="hint small subtle">${icon('paperclip', 'sm')} You can attach files after creating the task.</p>`}
   </form>`));
   form.querySelector('[data-slot="tags"]').appendChild(tags.el);
   noteOptions(t.note_id).then((o) => (form.querySelector('[name="note_id"]').innerHTML = String(o)));
+  // Category, tags and the related note are the assignee's own: hidden while the task is for someone else.
+  const syncOwn = () => {
+    const other = asAssigner || (canAssign && +form.querySelector('[name="assign_to"]').value !== me);
+    form.querySelectorAll('[data-own]').forEach((x) => x.classList.toggle('hidden', other));
+  };
+  form.querySelector('[name="assign_to"]')?.addEventListener('change', syncOwn);
+  syncOwn();
   if (editing) mountAttachments(form.querySelector('[data-slot="attachments"]'), { parent: 'task', parentId: t.id, items: t.attachments || [] });
 
   const m = modal({
@@ -77,11 +100,12 @@ export async function openTaskForm(task = null, defaults = {}) {
     size: 'lg',
     body: form,
     actions: [
-      ...(editing ? [{
+      ...(editing && !locked.size ? [{
         label: 'Delete', icon: 'trash-2', variant: 'ghost danger-text', left: true, onClick: async () => {
-          if (!(await confirm({ title: 'Delete task?', message: 'The task will be moved to the trash.', confirmText: 'Delete' }))) return false;
+          const msg = asAssigner ? `The task is removed for ${t.assignee_name || 'the assignee'} as well. This cannot be undone.` : 'The task will be moved to the trash.';
+          if (!(await confirm({ title: 'Delete task?', message: msg, confirmText: 'Delete' }))) return false;
           await api.post(`items/task/${t.id}/trash`);
-          toast('Task moved to trash', 'success');
+          toast(asAssigner ? 'Task deleted' : 'Task moved to trash', 'success');
           emit('tasks:changed');
           return { deleted: true };
         },
@@ -90,12 +114,14 @@ export async function openTaskForm(task = null, defaults = {}) {
       {
         label: editing ? 'Save changes' : 'Create task', variant: 'primary', onClick: async () => {
           const d = formData(form);
-          if (!d.title.trim()) { showFieldErrors(form, { title: 1 }); return false; }
-          d.tags = tags.get();
+          if (!locked.has('title') && !d.title.trim()) { showFieldErrors(form, { title: 1 }); return false; }
+          if (!form.querySelector('[data-own]').classList.contains('hidden')) d.tags = tags.get();
+          else { delete d.category_id; delete d.note_id; }
           d.reminder_minutes = d.reminder_minutes === '' ? null : +d.reminder_minutes;
           try {
             const saved = editing ? await api.post(`tasks/${t.id}`, d) : await api.post('tasks', d);
-            toast(editing ? 'Task updated' : 'Task created', 'success');
+            const to = canAssign ? people.find((p) => p.id === +d.assign_to) : null;
+            toast(to && (!editing || to.id !== assignedTo) ? `Task assigned to ${to.name}` : editing ? 'Task updated' : 'Task created', 'success');
             emit('tasks:changed', saved);
             refreshTags();
             return saved;

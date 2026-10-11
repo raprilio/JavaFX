@@ -84,6 +84,11 @@ final class FilesController
         if ($r && !$r['deleted_at'] && Shares::role('file', $id, $userId)) {
             return $r;
         }
+        // Attachments of a task this user (an admin) assigned to someone.
+        if ($r && !$r['deleted_at'] && $r['task_id']
+            && DB::val('SELECT id FROM tasks WHERE id = ? AND assigned_by = ? AND deleted_at IS NULL', [$r['task_id'], $userId])) {
+            return $r;
+        }
         // Attachments of a meeting shared with this user.
         if ($r && !$r['deleted_at'] && $r['meeting_id']
             && DB::val('SELECT m.id FROM meetings m WHERE m.id = ? AND m.deleted_at IS NULL AND ' . MeetingsController::visibleSql('m'), [$r['meeting_id'], $userId, $userId])) {
@@ -117,6 +122,12 @@ final class FilesController
         foreach (['note_id' => 'notes', 'task_id' => 'tasks', 'meeting_id' => 'meetings'] as $k => $t) {
             if (array_key_exists($k, $in)) {
                 $id = V::id($in[$k]);
+                if ($id && $k === 'task_id' && ($owner = DB::val('SELECT user_id FROM tasks WHERE id = ? AND assigned_by = ? AND deleted_at IS NULL', [$id, $userId]))) {
+                    // An admin attaching a file to a task they assigned: the file belongs to the task's owner.
+                    $out[$k] = $id;
+                    $out['__owner'] = (int) $owner;
+                    continue;
+                }
                 if ($id && !DB::val("SELECT id FROM `$t` WHERE id = ? AND user_id = ?", [$id, $userId])) {
                     throw new HttpException('Related item not found.', 404);
                 }
@@ -169,6 +180,8 @@ final class FilesController
             throw new HttpException('No file uploaded. The file may exceed the server limit (' . ini_get('post_max_size') . ').', 422);
         }
         $parents = self::parents($u['id'], $_POST);
+        $ownerId = $parents['__owner'] ?? (int) $u['id'];
+        unset($parents['__owner']);
         $folderId = DriveController::ownedFolder(V::id($_POST['folder_id'] ?? null), $u['id']);
         $kinds = match ($_POST['accept'] ?? '') {
             'image' => ['image'],
@@ -176,7 +189,7 @@ final class FilesController
         };
         $meta = Uploader::store($file, $kinds, 'u' . $u['id']);
         $id = DB::insert('note_attachments', array_merge($parents, [
-            'user_id' => $u['id'],
+            'user_id' => $ownerId,
             'file_name' => $meta['file_name'],
             'original_name' => $meta['original_name'],
             'file_path' => $meta['file_path'],

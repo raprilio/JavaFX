@@ -26,13 +26,13 @@ export function mailSettingsPanel({ status, onChange = () => {}, compact = false
       <section>
         <div class="row between mb-2"><div class="section-title" style="margin:0">${icon('plug', 'sm')} API connections <span class="subtle small">${conns.length}</span></div>
           ${conns.length ? html`<button type="button" class="btn ghost sm" data-act="refresh">${icon('refresh-cw', 'sm')} Check again</button>` : ''}</div>
-        ${conns.length ? html`<div class="col" style="gap:8px">${conns.map((c) => html`<div class="mc-row ${c.error ? 'bad' : 'ok'}" data-id="${c.id}">
-            <span class="mc-ic">${icon(c.error ? 'unplug' : 'plug', 'sm')}</span>
+        ${conns.length ? html`<div class="col" style="gap:8px">${conns.map((c) => html`<div class="conn-row ${c.error ? 'bad' : 'ok'}" data-id="${c.id}">
+            <span class="conn-ic">${icon(c.error ? 'unplug' : 'plug', 'sm')}</span>
             <div class="grow" style="min-width:0">
               <div class="row" style="gap:6px"><b class="truncate">${c.label}</b>${c.source === 'config' ? html`<span class="badge">config.php</span>` : ''}</div>
               <div class="tiny subtle">Token <code>${c.token_hint}</code>${c.added_at ? html` · added ${fmtDate(c.added_at)}` : ''}</div>
-              ${c.error ? html`<div class="small mc-err">${icon('alert-triangle', 'sm')} ${c.error}</div>`
-                : html`<div class="mc-boxes">${c.mailboxes.length ? c.mailboxes.map((a) => html`<span class="badge">${icon('at-sign', 'xs')} ${a}</span>`) : html`<span class="tiny subtle">No mailboxes in this order yet</span>`}</div>`}
+              ${c.error ? html`<div class="small conn-err">${icon('alert-triangle', 'sm')} ${c.error}</div>`
+                : html`<div class="conn-boxes">${c.mailboxes.length ? c.mailboxes.map((a) => html`<span class="badge">${icon('at-sign', 'xs')} ${a}</span>`) : html`<span class="tiny subtle">No mailboxes in this order yet</span>`}</div>`}
             </div>
             ${c.source === 'config' ? html`<span class="tiny subtle" data-tip="Remove it from app/config.php">${icon('lock', 'sm')}</span>` : html`
               <button type="button" class="btn ghost icon sm" data-act="rename" data-tip="Rename" aria-label="Rename ${c.label}">${icon('pencil', 'sm')}</button>

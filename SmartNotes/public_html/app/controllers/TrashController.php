@@ -20,6 +20,10 @@ final class TrashController
     public static function trash(string $type, int $id): void
     {
         $u = Auth::require();
+        if ($type === 'task' && TasksController::guardTrash($id, $u)) {
+            Activity::log('task.destroy', 'task', $id, 'Deleted an assigned task');
+            Http::ok();
+        }
         Trash::softDelete($type, $id, $u['id']);
         Activity::log($type . '.trash', $type, $id, 'Moved to trash');
         Http::ok();

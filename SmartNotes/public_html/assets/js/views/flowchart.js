@@ -1,5 +1,6 @@
 // Flowchart builder (SVG): shapes, connectors, resize, grid & snap, undo/redo, export.
 import { html, icon, uid, debounce, h } from '../core/dom.js';
+import { ICONS } from '../core/icons.js';
 import { api } from '../core/api.js';
 import { navigate } from '../core/router.js';
 import { shell } from '../core/shell.js';
@@ -17,12 +18,37 @@ const SHAPES = {
   database: { label: 'Database', w: 130, h: 84, fill: '#64748b' },
   document: { label: 'Document', w: 160, h: 78, fill: '#0ea5e9' },
   connector: { label: '', w: 44, h: 44, fill: '#8b92a1' },
+  // Network / infrastructure devices (v1.8): drawn as an icon with the name underneath.
+  server: { label: 'Server', w: 110, h: 100, fill: '#6366f1', device: 'server', group: 'network' },
+  router: { label: 'Router', w: 110, h: 100, fill: '#0ea5e9', device: 'router', group: 'network' },
+  switch: { label: 'Switch', w: 110, h: 100, fill: '#14b8a6', device: 'switch', group: 'network' },
+  firewall: { label: 'Firewall', w: 110, h: 100, fill: '#ef4444', device: 'brick-wall-fire', group: 'network' },
+  pc: { label: 'PC', w: 110, h: 100, fill: '#475569', device: 'monitor', group: 'network' },
+  laptop: { label: 'Laptop', w: 110, h: 100, fill: '#64748b', device: 'laptop', group: 'network' },
+  cloud: { label: 'Cloud', w: 120, h: 100, fill: '#38bdf8', device: 'cloud', group: 'network' },
+  internet: { label: 'Internet', w: 110, h: 100, fill: '#2563eb', device: 'globe', group: 'network' },
+  wifi: { label: 'Access point', w: 110, h: 100, fill: '#8b5cf6', device: 'wifi', group: 'network' },
+  phone: { label: 'Phone', w: 110, h: 100, fill: '#a855f7', device: 'smartphone', group: 'network' },
+  printer: { label: 'Printer', w: 110, h: 100, fill: '#78716c', device: 'printer', group: 'network' },
+  storage: { label: 'NAS / Storage', w: 110, h: 100, fill: '#f59e0b', device: 'hard-drive', group: 'network' },
+  cctv: { label: 'CCTV', w: 110, h: 100, fill: '#334155', device: 'cctv', group: 'network' },
+  user: { label: 'User', w: 110, h: 100, fill: '#22c55e', device: 'user', group: 'network' },
 };
 const PALETTE_COLORS = ['#6366f1', '#0ea5e9', '#14b8a6', '#22c55e', '#eab308', '#f59e0b', '#ef4444', '#ec4899', '#a855f7', '#64748b', '#111827', '#ffffff'];
 const PORTS = ['top', 'right', 'bottom', 'left'];
 const DIR = { top: [0, -1], right: [1, 0], bottom: [0, 1], left: [-1, 0] };
 
+/** Device icons (Lucide paths, plus a drawn network switch). */
+const DEVICE_ICONS = { switch: '<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h12"/>' };
+function deviceIcon(name, x, y, size, color) {
+  const svg = svgEl('svg', { x, y, width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: color, 'stroke-width': 1.7, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', class: 'fc-device-ic' });
+  svg.innerHTML = DEVICE_ICONS[name] || ICONS[name] || ICONS.circle;
+  return svg;
+}
+const isDevice = (type) => !!SHAPES[type]?.device;
+
 function shapeEl(type, w, hgt, attrs) {
+  if (isDevice(type)) return svgEl('rect', { width: w, height: hgt, rx: 14, ...attrs });
   switch (type) {
     case 'start': case 'end': return svgEl('rect', { width: w, height: hgt, rx: hgt / 2, ...attrs });
     case 'decision': return svgEl('polygon', { points: `${w / 2},0 ${w},${hgt / 2} ${w / 2},${hgt} 0,${hgt / 2}`, ...attrs });
@@ -88,8 +114,10 @@ export default {
         <button class="btn ghost icon sm" data-a="panel" data-tip="Inspector">${icon('panel-right', 'sm')}</button>
       </div>
       <div class="canvas-body">
-        <div class="canvas-palette" data-palette>${Object.entries(SHAPES).map(([t, s]) => html`<button class="shape-btn" draggable="true" data-shape="${t}" data-tip="${t === 'connector' ? 'Connector' : s.label.replace('?', '')}" data-tip-pos="right">
-          <svg viewBox="-2 -2 ${s.w + 4} ${s.h + 4}" preserveAspectRatio="xMidYMid meet" data-preview="${t}"></svg><span>${t === 'connector' ? 'Connector' : s.label.replace('?', '')}</span></button>`)}</div>
+        <div class="canvas-palette" data-palette>${[['flow', 'Flow'], ['network', 'Network']].map(([g, gl]) => html`<div class="palette-group">${gl}</div>
+          ${Object.entries(SHAPES).filter(([, s]) => (s.group || 'flow') === g).map(([t, s]) => html`<button class="shape-btn" draggable="true" data-shape="${t}" data-tip="${t === 'connector' ? 'Connector' : s.label.replace('?', '')}" data-tip-pos="right">
+          <svg viewBox="-2 -2 ${s.w + 4} ${s.h + 4}" preserveAspectRatio="xMidYMid meet" data-preview="${t}"></svg><span>${t === 'connector' ? 'Connector' : s.label.replace('?', '')}</span></button>`)}`)}
+          <div class="palette-tip">Double-click a line to name it</div></div>
         <div class="canvas-stage" data-stage>
           <div class="canvas-zoom"><button class="btn ghost icon xs" data-a="zoom-out" aria-label="Zoom out">${icon('minus', 'sm')}</button><span data-zoom>100%</span>
             <button class="btn ghost icon xs" data-a="zoom-in" aria-label="Zoom in">${icon('plus', 'sm')}</button><button class="btn ghost icon xs" data-a="fit" data-tip="Fit">${icon('maximize', 'sm')}</button></div>
@@ -114,6 +142,11 @@ export default {
     el.querySelectorAll('[data-preview]').forEach((svg) => {
       const t = svg.dataset.preview;
       const s = SHAPES[t];
+      if (s.device) {
+        svg.setAttribute('viewBox', '0 0 24 24');
+        svg.appendChild(deviceIcon(s.device, 1, 1, 22, s.fill));
+        return;
+      }
       svg.appendChild(shapeEl(t, s.w, s.h, { fill: s.fill + '33', stroke: s.fill, 'stroke-width': 4 }));
     });
 
@@ -148,7 +181,9 @@ export default {
         if (!geo) return;
         const isSel = selEdge === e.key;
         const g = svgEl('g', { 'data-edge': e.key });
-        g.appendChild(svgEl('path', { d: geo.d, class: 'edge-path' + (isSel ? ' selected' : ''), fill: 'none', stroke: e.style.stroke || th.text2, 'stroke-width': isSel ? 2.6 : 2, 'stroke-dasharray': e.style.dashed ? '7 5' : null, 'marker-end': `url(#${isSel ? 'fc-arrow-sel' : 'fc-arrow'})` }));
+        const arrow = e.style.arrow || 'end';
+        const mk = `url(#${isSel ? 'fc-arrow-sel' : 'fc-arrow'})`;
+        g.appendChild(svgEl('path', { d: geo.d, class: 'edge-path' + (isSel ? ' selected' : ''), fill: 'none', stroke: e.style.stroke || th.text2, 'stroke-width': isSel ? 2.6 : 2, 'stroke-dasharray': e.style.dashed ? '7 5' : null, 'marker-end': arrow === 'none' ? null : mk, 'marker-start': arrow === 'both' ? mk : null }));
         g.appendChild(svgEl('path', { d: geo.d, class: 'edge-hit' }));
         if (e.label) {
           const t = wrapText(e.label, { size: 12, weight: 560, maxWidth: 150 });
@@ -159,15 +194,29 @@ export default {
       });
       nodes.forEach((n) => {
         const base = SHAPES[n.type] || SHAPES.process;
+        const isSel = selected.has(n.key);
+        const g = svgEl('g', { class: 'fc-node' + (isSel ? ' selected' : ''), 'data-key': n.key, transform: `translate(${n.x} ${n.y})`, style: 'cursor:move' });
+        if (base.device) {
+          // Device: card with the device icon on top and its name underneath (topology-diagram style).
+          const filled = !!n.style.fill;
+          const fill = n.style.fill || th.elev;
+          const accent = n.style.stroke || base.fill;
+          const fg = filled ? (luminance(fill) > 0.6 ? '#111827' : '#ffffff') : accent;
+          g.appendChild(shapeEl(n.type, n.w, n.h, { fill, stroke: accent, 'stroke-width': filled ? 2 : 1.6, class: 'body' }));
+          const label = n.label ? wrapText(n.label, { size: 12.5, weight: 600, maxWidth: Math.max(30, n.w - 14) }) : null;
+          const textH = label ? Math.min(label.lines.length, 3) * label.lineHeight : 0;
+          const size = Math.max(16, Math.min(n.w - 20, n.h - textH - 18, 64));
+          g.appendChild(deviceIcon(base.device, (n.w - size) / 2, Math.max(6, (n.h - textH - size) / 2 - (label ? 2 : 0)), size, fg));
+          if (label) textBlock(g, label.lines.slice(0, 3), { cx: n.w / 2, cy: n.h - textH / 2 - 8, size: 12.5, weight: 600, color: n.style.text || (filled ? fg : th.text), lineHeight: label.lineHeight });
+        } else {
         const fill = n.style.fill || base.fill;
         const stroke = n.style.stroke || (luminance(fill) > 0.85 ? th.border : fill);
         const textColor = n.style.text || (luminance(fill) > 0.6 ? '#111827' : '#ffffff');
-        const isSel = selected.has(n.key);
-        const g = svgEl('g', { class: 'fc-node' + (isSel ? ' selected' : ''), 'data-key': n.key, transform: `translate(${n.x} ${n.y})`, style: 'cursor:move' });
         g.appendChild(shapeEl(n.type, n.w, n.h, { fill, stroke, 'stroke-width': 2, class: 'body' }));
         if (n.label) {
           const t = wrapText(n.label, { size: 13.5, weight: 600, maxWidth: Math.max(30, n.w - (n.type === 'decision' ? n.w * 0.4 : 24)) });
           textBlock(g, t.lines, { cx: n.w / 2, cy: n.type === 'document' ? n.h / 2 - 5 : n.h / 2, size: 13.5, weight: 600, color: textColor, lineHeight: t.lineHeight });
+        }
         }
         if (isSel) {
           g.appendChild(svgEl('rect', { class: 'sel-ring', x: -6, y: -6, width: n.w + 12, height: n.h + 12, rx: 10 }));
@@ -203,8 +252,9 @@ export default {
       const head = (t) => html`<div class="row between mb-2"><b>${t}</b><button class="btn ghost icon xs" data-a="panel">${icon('x', 'sm')}</button></div>`;
       const edge = selEdge && edges.find((e) => e.key === selEdge);
       if (edge) {
-        panel.innerHTML = String(html`${head('Connector')}
-          <div class="field"><label>Label</label><input class="input sm" data-edge-label value="${edge.label || ''}" placeholder="e.g. Yes / No"></div>
+        panel.innerHTML = String(html`${head('Line')}
+          <div class="field"><label>Name</label><input class="input sm" data-edge-label value="${edge.label || ''}" placeholder="e.g. Yes · 1 Gbps · VLAN 10 · fiber"><span class="hint">Shown on the line. Tip: double-click a line to name it.</span></div>
+          <div class="field"><label>Arrow</label><div class="seg" data-edge-arrow>${[['end', 'arrow-right', 'One end'], ['both', 'arrow-left-right', 'Both'], ['none', 'minus', 'None']].map(([v, i, l]) => html`<button type="button" class="btn sm ${(edge.style.arrow || 'end') === v ? 'active' : ''}" data-arrow="${v}" data-tip="${l}">${icon(i, 'sm')} ${l}</button>`)}</div></div>
           <label class="check small mb-2"><input type="checkbox" data-edge-dashed ${edge.style.dashed ? 'checked' : ''}> Dashed line</label>
           <div class="field"><label>Color</label>${swatchRow('edge-color', edge.style.stroke)}</div>
           <div class="grid grid-2" style="gap:6px"><button class="btn sm" data-a="reverse">${icon('arrow-left-right', 'sm')} Reverse</button><button class="btn sm danger" data-a="delete">${icon('trash-2', 'sm')} Delete</button></div>`);
@@ -214,7 +264,7 @@ export default {
         const n = byKey([...selected][0]);
         panel.innerHTML = String(html`${head('Shape')}
           <div class="field"><label>Text</label><textarea class="textarea" rows="2" data-node-label>${n.label}</textarea></div>
-          <div class="field"><label>Type</label><select class="select sm" data-node-type>${Object.keys(SHAPES).map((t) => html`<option value="${t}" ${n.type === t ? 'selected' : ''} style="text-transform:capitalize">${t}</option>`)}</select></div>
+          <div class="field"><label>Type</label><select class="select sm" data-node-type>${[['flow', 'Flowchart'], ['network', 'Network']].map(([g, gl]) => html`<optgroup label="${gl}">${Object.entries(SHAPES).filter(([, x]) => (x.group || 'flow') === g).map(([t, x]) => html`<option value="${t}" ${n.type === t ? 'selected' : ''}>${t === 'connector' ? 'Connector' : x.label.replace('?', '')}</option>`)}</optgroup>`)}</select></div>
           <div class="field"><label>Fill</label>${swatchRow('fill', n.style.fill)}</div>
           <div class="field"><label>Border</label>${swatchRow('stroke', n.style.stroke)}</div>
           <div class="field"><label>Text color</label>${swatchRow('text', n.style.text)}</div>
@@ -366,7 +416,9 @@ export default {
           let best = 'top', bd = Infinity;
           PORTS.forEach((p) => { const [px, py] = portPos(target, p); const d = Math.hypot(px - w.x, py - w.y); if (d < bd) { bd = d; best = p; } });
           const key = uid('e');
-          change(() => edges.push({ key, source: o.from, target: target.key, sourcePort: o.port, targetPort: best, label: '', style: {} }));
+          // Links between two network devices are drawn without an arrow by default.
+          const style = isDevice(byKey(o.from)?.type) && isDevice(target.type) ? { arrow: 'none' } : {};
+          change(() => edges.push({ key, source: o.from, target: target.key, sourcePort: o.port, targetPort: best, label: '', style }));
           selEdge = key;
           selected.clear();
           render();
@@ -390,7 +442,7 @@ export default {
       const g = e.target.closest('[data-edge]');
       if (!g) return;
       const ed = edges.find((x) => x.key === g.dataset.edge);
-      const v = await prompt({ title: 'Connector label', value: ed.label || '', required: false, placeholder: 'e.g. Yes' });
+      const v = await prompt({ title: 'Name this line', value: ed.label || '', required: false, placeholder: 'e.g. Yes · 1 Gbps · VLAN 10' });
       if (v !== null) change(() => (ed.label = v.slice(0, 255)));
     });
 
@@ -453,6 +505,8 @@ export default {
         const b = e.target.closest(`[data-${attr}]`);
         if (b && selected.size) return change(() => nodes.forEach((n) => { if (selected.has(n.key)) n.style = { ...n.style, [prop]: b.dataset[attr] || undefined }; }));
       }
+      const ar = e.target.closest('[data-arrow]');
+      if (ar && selEdge) return change(() => { const ed = edges.find((x) => x.key === selEdge); ed.style = { ...ed.style, arrow: ar.dataset.arrow === 'end' ? undefined : ar.dataset.arrow }; });
       const ec = e.target.closest('[data-edge-color]');
       if (ec && selEdge) return change(() => { const ed = edges.find((x) => x.key === selEdge); ed.style = { ...ed.style, stroke: ec.dataset.edgeColor || undefined }; });
       const a = e.target.closest('[data-a]')?.dataset.a;

@@ -214,6 +214,63 @@ export function createRTE({ content = '', placeholder = 'Start writing…', medi
       changed();
     }
   });
+  // ---------------------------------------------------------- table column resize
+  // Drag the right border of any cell (mouse, pen or finger). Widths are stored as px on the first row's cells,
+  // the table gets a fixed layout and an explicit width, so the sizes survive saving and look the same everywhere.
+  let rz = null;
+  const edgeCell = (e) => {
+    const cell = e.target.closest?.('td,th');
+    if (!cell || !editor.contains(cell)) return null;
+    const r = cell.getBoundingClientRect();
+    const grip = e.pointerType === 'touch' ? 14 : 6;
+    return Math.abs(r.right - e.clientX) <= grip ? cell : null;
+  };
+  const freeze = (table) => {
+    const first = Array.from(table.rows[0]?.cells || []);
+    const widths = first.map((c) => c.getBoundingClientRect().width);
+    first.forEach((c, i) => (c.style.width = Math.round(widths[i]) + 'px'));
+    table.classList.add('sn-table-fixed');
+    table.style.width = Math.round(widths.reduce((a, b) => a + b, 0)) + 'px';
+  };
+  editor.addEventListener('pointermove', (e) => {
+    if (rz) {
+      let dx = e.clientX - rz.x;
+      if (rz.next) {
+        // Border between two columns: move the border, the table keeps its width (like a word processor).
+        dx = Math.max(40 - rz.startW, Math.min(rz.nextW - 40, dx));
+        rz.col.style.width = Math.round(rz.startW + dx) + 'px';
+        rz.next.style.width = Math.round(rz.nextW - dx) + 'px';
+      } else {
+        // Outer border: the table gets wider or narrower.
+        const w = Math.max(40, rz.startW + dx);
+        rz.col.style.width = Math.round(w) + 'px';
+        rz.table.style.width = Math.round(rz.tableW + (w - rz.startW)) + 'px';
+      }
+      return;
+    }
+    editor.classList.toggle('col-resize', !!edgeCell(e));
+  });
+  editor.addEventListener('pointerdown', (e) => {
+    const cell = edgeCell(e);
+    if (!cell || e.button > 0) return;
+    e.preventDefault();
+    const table = cell.closest('table');
+    freeze(table);
+    const cells = table.rows[0].cells;
+    const col = cells[Math.min(cell.cellIndex, cells.length - 1)];
+    const next = col.cellIndex < cells.length - 1 ? cells[col.cellIndex + 1] : null;
+    rz = { table, col, next, x: e.clientX, startW: col.getBoundingClientRect().width, nextW: next ? next.getBoundingClientRect().width : 0, tableW: table.getBoundingClientRect().width };
+    try { editor.setPointerCapture(e.pointerId); } catch { /* synthetic pointer */ }
+  });
+  const endResize = () => {
+    if (!rz) return;
+    rz = null;
+    editor.classList.remove('col-resize');
+    changed();
+  };
+  editor.addEventListener('pointerup', endResize);
+  editor.addEventListener('pointercancel', endResize);
+
   editor.addEventListener('dragover', (e) => { if (e.dataTransfer?.types?.includes('Files')) e.preventDefault(); });
   editor.addEventListener('drop', (e) => {
     const files = Array.from(e.dataTransfer?.files || []);
@@ -326,6 +383,12 @@ export function createRTE({ content = '', placeholder = 'Start writing…', medi
         { label: 'Add column right', icon: 'between-vertical-start', onClick: () => { table.querySelectorAll('tr').forEach((tr) => { const c = tr.children[idx]; const n = document.createElement(c?.tagName === 'TH' ? 'th' : 'td'); n.innerHTML = '<br>'; c ? c.after(n) : tr.appendChild(n); }); changed(); } },
         { label: 'Delete row', icon: 'minus', onClick: () => { if (table.querySelectorAll('tr').length > 1) row.remove(); else table.remove(); changed(); } },
         { label: 'Delete column', icon: 'minus', onClick: () => { table.querySelectorAll('tr').forEach((tr) => tr.children[idx]?.remove()); if (!table.querySelector('td,th')) table.remove(); changed(); } },
+        { divider: true },
+        { label: 'Equal column widths', icon: 'columns-3', onClick: () => { const first = Array.from(table.rows[0].cells); first.forEach((c) => (c.style.width = (100 / first.length).toFixed(2) + '%')); table.classList.add('sn-table-fixed'); table.style.width = '100%'; changed(); } },
+        { label: 'Fit to page width', icon: 'move-horizontal', onClick: () => { Array.from(table.rows[0].cells).forEach((c) => c.style.removeProperty('width')); table.classList.remove('sn-table-fixed'); table.style.removeProperty('width'); changed(); } },
+        { label: 'Fit to content', icon: 'shrink', onClick: () => { Array.from(table.rows[0].cells).forEach((c) => c.style.removeProperty('width')); table.classList.remove('sn-table-fixed'); table.style.width = 'auto'; changed(); } },
+        { title: 'Tip: drag a column border to resize it' },
+        { divider: true },
         { label: 'Delete table', icon: 'trash-2', danger: true, onClick: () => { table.remove(); changed(); } });
     }
     menu(btn, items);

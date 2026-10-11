@@ -4,8 +4,9 @@ declare(strict_types=1);
 defined('SN_APP') || exit;
 
 /**
- * Admin mailbox: read and answer the company mailbox through the Hostinger Mail API.
- * Restricted to the full "admin" role — delegated admin permissions do not grant mailbox access.
+ * Mailbox screen with two kinds of mailboxes:
+ *  - company mailboxes through the Hostinger Mail API ("AC…" ids) — full "admin" role only, including its API settings;
+ *  - personal IMAP/SMTP accounts such as Gmail ("IM<id>" ids) — every user connects their own, nobody else sees them.
  */
 final class MailController
 {
@@ -13,28 +14,47 @@ final class MailController
     private const FLAGS = ['\\Seen', '\\Flagged'];
     private const MAX_SEND_BYTES = 20 * 1024 * 1024;
 
+    /** Hostinger Mail (company mailboxes and their API settings): full Admin role only. */
     private static function guard(): array
     {
         $u = Auth::require();
         if (!Auth::isAdmin()) {
-            throw new HttpException('Only administrators can open the mailbox.', 403);
+            throw new HttpException('Only administrators can open the company mailbox.', 403);
         }
         return $u;
     }
 
-    private static function mailbox(mixed $v): string
+    /**
+     * Resolve the mailbox of a request: an own IMAP account ("IM<id>") → ['imap', account row],
+     * otherwise a Hostinger mailbox ("AC…", admins only) → ['hostinger', id].
+     */
+    private static function target(mixed $v): array
     {
+        $u = Auth::require();
         $id = is_string($v) ? trim($v) : '';
         if ($id === '') {
-            $id = (string) Settings::get('hmail_default_mailbox', '');
-            if ($id === '') {
+            $id = Auth::isAdmin() ? (string) Settings::get('hmail_default_mailbox', '') : '';
+            if ($id === '' && Auth::isAdmin() && HostingerMail::configured()) {
                 $id = HostingerMail::mailboxes()[0]['resourceId'] ?? '';
             }
+            if ($id === '') {
+                $id = ImapMail::accounts($u['id'])[0]['mailbox'] ?? '';
+            }
         }
+        if (ImapMail::isId($id)) {
+            return ['imap', ImapMail::account($id, $u['id']), $u];
+        }
+        self::guard();
         if (!preg_match('/^AC[A-Za-z0-9]{1,60}$/', $id)) {
             throw new HttpException('Choose a mailbox first.', 422);
         }
-        return $id;
+        return ['hostinger', $id, $u];
+    }
+
+    private static function mailbox(mixed $v): string
+    {
+        [$kind, $id] = self::target($v);
+        return $kind === 'hostinger' ? $id : 'IM' . $id['id'];
     }
 
     private static function folder(mixed $v): string
@@ -117,35 +137,88 @@ final class MailController
 
     public static function status(): void
     {
-        self::guard();
+        $u = Auth::require();
+        $admin = Auth::isAdmin();
         $out = [
-            'configured' => HostingerMail::configured(),
+            'is_admin' => $admin,
+            'configured' => false,
             'connections' => [],
-            'default_mailbox' => (string) Settings::get('hmail_default_mailbox', ''),
+            'default_mailbox' => $admin ? (string) Settings::get('hmail_default_mailbox', '') : '',
             'display_name' => (string) Settings::get('hmail_display_name', Settings::get('app_name', 'SmartNotes')),
             'mailboxes' => [],
+            'accounts' => ImapMail::accounts($u['id']),
+            'presets' => array_map(static fn($p) => $p['label'], ImapMail::PRESETS),
             'error' => null,
         ];
-        if ($out['configured']) {
+        if ($admin && HostingerMail::configured()) {
             try {
                 $out['mailboxes'] = HostingerMail::mailboxes(Http::query('refresh') === '1');
             } catch (HttpException $e) {
                 $out['error'] = $e->getMessage();
             }
+            $errors = HostingerMail::errors();
+            foreach (HostingerMail::connections() as $c) {
+                $out['connections'][] = [
+                    'id' => $c['id'],
+                    'label' => $c['label'],
+                    'source' => $c['source'],
+                    'token_hint' => '••••' . substr($c['token'], -4),
+                    'added_at' => $c['added_at'],
+                    'error' => $errors[$c['id']] ?? null,
+                    'mailboxes' => array_values(array_map(static fn($m) => $m['address'], array_filter($out['mailboxes'], static fn($m) => $m['connection'] === $c['id']))),
+                ];
+            }
         }
-        $errors = HostingerMail::errors();
-        foreach (HostingerMail::connections() as $c) {
-            $out['connections'][] = [
-                'id' => $c['id'],
-                'label' => $c['label'],
-                'source' => $c['source'],
-                'token_hint' => '••••' . substr($c['token'], -4),
-                'added_at' => $c['added_at'],
-                'error' => $errors[$c['id']] ?? null,
-                'mailboxes' => array_values(array_map(static fn($m) => $m['address'], array_filter($out['mailboxes'], static fn($m) => $m['connection'] === $c['id']))),
-            ];
+        // Personal mailboxes are listed after the company ones, each as its own group.
+        foreach ($out['accounts'] as $acc) {
+            $out['mailboxes'][] = ['resourceId' => $acc['mailbox'], 'address' => $acc['email'], 'connection' => 'imap' . $acc['id'], 'connection_label' => $acc['label'], 'personal' => true];
+        }
+        $out['configured'] = $out['mailboxes'] !== [] || $out['connections'] !== [];
+        if ($out['error'] && array_filter($out['mailboxes'], static fn($m) => !empty($m['personal']))) {
+            $out['hostinger_error'] = $out['error'];
+            $out['error'] = null; // personal mailboxes still work
         }
         Http::ok($out);
+    }
+
+    // ------------------------------------------------------------ personal IMAP accounts
+
+    public static function accountStore(): void
+    {
+        $u = Auth::require();
+        $acc = ImapMail::save($u['id'], Http::body());
+        Activity::log('mail.account_add', null, null, 'Connected mailbox ' . $acc['email']);
+        Http::ok($acc, 'Mailbox connected.');
+    }
+
+    public static function accountUpdate(int $id): void
+    {
+        $u = Auth::require();
+        $row = DB::one('SELECT * FROM mail_accounts WHERE id = ? AND user_id = ?', [$id, $u['id']]) ?? throw new HttpException('Mailbox not found.', 404);
+        $in = Http::body();
+        // Renaming alone needs no new login test.
+        if (array_diff(array_keys($in), ['label', 'display_name']) === []) {
+            $data = [];
+            if (array_key_exists('label', $in)) {
+                $data['label'] = V::str($in['label'], 80, true, 'name');
+            }
+            if (array_key_exists('display_name', $in)) {
+                $data['display_name'] = V::str($in['display_name'], 120) ?: null;
+            }
+            if ($data) {
+                DB::update('mail_accounts', $data, 'id = ?', [$id]);
+            }
+            Http::ok(ImapMail::publicRow(DB::one('SELECT * FROM mail_accounts WHERE id = ?', [$id])));
+        }
+        Http::ok(ImapMail::save($u['id'], $in, $row), 'Mailbox updated.');
+    }
+
+    public static function accountDelete(int $id): void
+    {
+        $u = Auth::require();
+        $email = ImapMail::remove($id, $u['id']);
+        Activity::log('mail.account_remove', null, null, 'Removed mailbox ' . $email);
+        Http::ok(null, 'Mailbox removed.');
     }
 
     /**
@@ -202,10 +275,14 @@ final class MailController
 
     public static function folders(): void
     {
-        self::guard();
-        $box = HostingerMail::box(self::mailbox(Http::query('mailbox')));
+        [$kind, $t] = self::target(Http::query('mailbox'));
         $items = [];
-        for ($page = 1; $page <= 5; $page++) {
+        $quota = null;
+        if ($kind === 'imap') {
+            $items = ImapMail::folders($t);
+        }
+        $box = $kind === 'hostinger' ? HostingerMail::box($t) : '';
+        for ($page = 1; $kind === 'hostinger' && $page <= 5; $page++) {
             $r = HostingerMail::call('GET', $box . '/folders', ['page' => $page, 'perPage' => 100]);
             foreach ((array) ($r['data'] ?? []) as $f) {
                 $items[] = [
@@ -227,9 +304,8 @@ final class MailController
             $rb = strtoupper($b['path']) === 'INBOX' ? 0 : ($order[$b['special'] ?? ''] ?? 10);
             return $ra <=> $rb ?: strcasecmp($a['path'], $b['path']);
         });
-        $quota = null;
         try {
-            $q = HostingerMail::call('GET', $box . '/quota')['data'] ?? null;
+            $q = $kind === 'hostinger' ? (HostingerMail::call('GET', $box . '/quota')['data'] ?? null) : null;
             if (is_array($q) && !empty($q['supported'])) {
                 $quota = ['used' => (int) $q['totalUsage'], 'limit' => (int) $q['totalLimit'], 'percent' => (int) $q['totalPercentage']];
             }
@@ -241,9 +317,12 @@ final class MailController
 
     public static function messages(): void
     {
-        self::guard();
-        $path = HostingerMail::folderPath(self::mailbox(Http::query('mailbox')), self::folder(Http::query('folder', 'INBOX')));
+        [$kind, $t] = self::target(Http::query('mailbox'));
         $page = max(1, min(10000, (int) Http::query('page', 1)));
+        if ($kind === 'imap') {
+            Http::ok(ImapMail::messages($t, self::folder(Http::query('folder', 'INBOX')), $page, self::PER_PAGE, mb_substr(trim((string) Http::query('q', '')), 0, 200), Http::query('flagged') === '1'));
+        }
+        $path = HostingerMail::folderPath($t, self::folder(Http::query('folder', 'INBOX')));
         $query = ['page' => $page, 'perPage' => self::PER_PAGE, 'sort' => '-date'];
         $q = trim((string) Http::query('q', ''));
         if ($q !== '' || Http::query('flagged') === '1') {
@@ -278,10 +357,19 @@ final class MailController
 
     public static function message(): void
     {
-        self::guard();
-        $mb = self::mailbox(Http::query('mailbox'));
+        [$kind, $t] = self::target(Http::query('mailbox'));
         $folder = self::folder(Http::query('folder'));
         $uid = V::int(Http::query('uid'), 1) ?? throw new HttpException('Invalid message.', 422);
+        if ($kind === 'imap') {
+            $r = ImapMail::message($t, $folder, $uid, Http::query('peek') === '1');
+            $doc = MailHtml::document($r['html'] ?? '', (string) ($r['text'] ?? ''), false, self::cidImages($r['parts'], (string) ($r['html'] ?? '')));
+            $m = $r['meta'];
+            $m['text'] = (string) ($r['text'] ?? '');
+            $m['html_doc'] = $doc['html'];
+            $m['remote_images'] = $doc['remote'];
+            Http::ok($m);
+        }
+        $mb = $t;
         $base = HostingerMail::folderPath($mb, $folder) . '/messages/' . $uid;
         $m = self::present((array) (HostingerMail::call('GET', $base)['data'] ?? []));
         $t = (array) (HostingerMail::call('GET', $base . '/text')['data'] ?? []);
@@ -303,14 +391,18 @@ final class MailController
     /** Stand-alone HTML document with remote images allowed ("Show images"). Loaded into a sandboxed iframe. */
     public static function html(): void
     {
-        self::guard();
-        $mb = self::mailbox(Http::query('mailbox'));
+        [$kind, $mb] = self::target(Http::query('mailbox'));
         $folder = self::folder(Http::query('folder'));
         $uid = V::int(Http::query('uid'), 1) ?? throw new HttpException('Invalid message.', 422);
-        $base = HostingerMail::folderPath($mb, $folder) . '/messages/' . $uid;
-        $m = self::present((array) (HostingerMail::call('GET', $base)['data'] ?? []));
-        $t = (array) (HostingerMail::call('GET', $base . '/text')['data'] ?? []);
-        $doc = MailHtml::document($t['html'] ?? '', (string) ($t['text'] ?? ''), true, self::inlineImages($base, $m['attachments'], (string) ($t['html'] ?? '')));
+        if ($kind === 'imap') {
+            $r = ImapMail::message($mb, $folder, $uid, true);
+            $doc = MailHtml::document($r['html'] ?? '', (string) ($r['text'] ?? ''), true, self::cidImages($r['parts'], (string) ($r['html'] ?? '')));
+        } else {
+            $base = HostingerMail::folderPath($mb, $folder) . '/messages/' . $uid;
+            $m = self::present((array) (HostingerMail::call('GET', $base)['data'] ?? []));
+            $t = (array) (HostingerMail::call('GET', $base . '/text')['data'] ?? []);
+            $doc = MailHtml::document($t['html'] ?? '', (string) ($t['text'] ?? ''), true, self::inlineImages($base, $m['attachments'], (string) ($t['html'] ?? '')));
+        }
         while (ob_get_level()) {
             ob_end_clean();
         }
@@ -320,6 +412,21 @@ final class MailController
         header('Cache-Control: private, no-store');
         echo $doc['html'];
         exit;
+    }
+
+    /** IMAP: inline (cid:) images are already in the parsed message. */
+    private static function cidImages(array $parts, string $html): array
+    {
+        if (stripos($html, 'cid:') === false) {
+            return [];
+        }
+        $out = [];
+        foreach ($parts as $p) {
+            if ($p['cid'] && preg_match('#^image/(png|jpe?g|gif|webp)$#i', $p['type']) && $p['size'] <= 1_500_000 && count($out) < 8) {
+                $out[$p['cid']] = 'data:' . strtolower($p['type']) . ';base64,' . base64_encode($p['data']);
+            }
+        }
+        return $out;
     }
 
     /** Inline (cid:) images become data: URIs so the document needs no further requests. */
@@ -346,7 +453,6 @@ final class MailController
 
     public static function attachment(): void
     {
-        self::guard();
         [$base, $a, $bin] = self::fetchAttachment();
         while (ob_get_level()) {
             ob_end_clean();
@@ -368,12 +474,23 @@ final class MailController
     private static function fetchAttachment(): array
     {
         $in = static fn(string $k) => Http::method() === 'POST' ? Http::input($k) : Http::query($k);
-        $mb = self::mailbox($in('mailbox'));
+        [$kind, $mb] = self::target($in('mailbox'));
         $folder = self::folder($in('folder'));
         $uid = V::int($in('uid'), 1) ?? throw new HttpException('Invalid message.', 422);
         $id = (string) $in('id');
         if ($id === '' || strlen($id) > 500) {
             throw new HttpException('Invalid attachment.', 422);
+        }
+        if ($kind === 'imap') {
+            $r = ImapMail::message($mb, $folder, $uid, true);
+            foreach ($r['parts'] as $p) {
+                if ($p['id'] === $id) {
+                    $a = ['id' => $p['id'], 'name' => $p['filename'], 'type' => $p['type'], 'size' => $p['size'], 'inline' => $p['inline'], 'cid' => $p['cid'],
+                        'subject' => $r['meta']['subject'], 'from' => $r['meta']['from']['address'] ?? ''];
+                    return ['', $a, $p['data']];
+                }
+            }
+            throw new HttpException('Attachment not found.', 404);
         }
         $base = HostingerMail::folderPath($mb, $folder) . '/messages/' . $uid;
         $m = self::present((array) (HostingerMail::call('GET', $base)['data'] ?? []));
@@ -389,11 +506,12 @@ final class MailController
 
     public static function source(): void
     {
-        self::guard();
-        $mb = self::mailbox(Http::query('mailbox'));
+        [$kind, $mb] = self::target(Http::query('mailbox'));
         $folder = self::folder(Http::query('folder'));
         $uid = V::int(Http::query('uid'), 1) ?? throw new HttpException('Invalid message.', 422);
-        $bin = HostingerMail::binary(HostingerMail::folderPath($mb, $folder) . '/messages/' . $uid . '/source')['body'];
+        $bin = $kind === 'imap'
+            ? ImapMail::message($mb, $folder, $uid, true)['raw']
+            : HostingerMail::binary(HostingerMail::folderPath($mb, $folder) . '/messages/' . $uid . '/source')['body'];
         while (ob_get_level()) {
             ob_end_clean();
         }
@@ -410,14 +528,19 @@ final class MailController
 
     public static function flags(): void
     {
-        self::guard();
-        $path = HostingerMail::folderPath(self::mailbox(Http::input('mailbox')), self::folder(Http::input('folder')));
+        [$kind, $mb] = self::target(Http::input('mailbox'));
+        $folder = self::folder(Http::input('folder'));
         $add = array_values(array_intersect((array) Http::input('add', []), self::FLAGS));
         $remove = array_values(array_intersect((array) Http::input('remove', []), self::FLAGS));
         if (!$add && !$remove) {
             throw new HttpException('Nothing to change.', 422);
         }
         $body = ['uids' => self::uids(Http::input('uids'))];
+        if ($kind === 'imap') {
+            ImapMail::setFlags($mb, $folder, $body['uids'], $add, $remove);
+            Http::ok(['successful' => $body['uids'], 'failed' => []]);
+        }
+        $path = HostingerMail::folderPath($mb, $folder);
         if ($add) {
             $body['addFlags'] = $add;
         }
@@ -430,7 +553,7 @@ final class MailController
 
     public static function move(): void
     {
-        self::guard();
+        [$kind, $mb] = self::target(Http::input('mailbox'));
         $folder = self::folder(Http::input('folder'));
         $target = self::folder(Http::input('target'));
         if ($target === $folder) {
@@ -440,8 +563,11 @@ final class MailController
             throw new HttpException('Folder name is too long.', 422);
         }
         $uids = self::uids(Http::input('uids'));
-        $path = HostingerMail::folderPath(self::mailbox(Http::input('mailbox')), $folder);
-        HostingerMail::call('POST', $path . '/messages/move', [], ['uids' => $uids, 'targetFolder' => $target]);
+        if ($kind === 'imap') {
+            ImapMail::move($mb, $folder, $uids, $target);
+        } else {
+            HostingerMail::call('POST', HostingerMail::folderPath($mb, $folder) . '/messages/move', [], ['uids' => $uids, 'targetFolder' => $target]);
+        }
         Activity::log('mail.move', null, null, count($uids) . " message(s) from $folder to $target");
         Http::ok(['moved' => count($uids)]);
     }
@@ -449,20 +575,22 @@ final class MailController
     /** Permanent delete. The UI moves to Trash first and only offers this inside Trash/Junk. */
     public static function delete(): void
     {
-        self::guard();
+        [$kind, $mb] = self::target(Http::input('mailbox'));
         $folder = self::folder(Http::input('folder'));
         $uids = self::uids(Http::input('uids'));
-        $path = HostingerMail::folderPath(self::mailbox(Http::input('mailbox')), $folder);
-        HostingerMail::call('POST', $path . '/messages/delete', [], ['uids' => $uids]);
+        if ($kind === 'imap') {
+            ImapMail::delete($mb, $folder, $uids);
+        } else {
+            HostingerMail::call('POST', HostingerMail::folderPath($mb, $folder) . '/messages/delete', [], ['uids' => $uids]);
+        }
         Activity::log('mail.delete', null, null, count($uids) . " message(s) permanently deleted from $folder");
         Http::ok(['deleted' => count($uids)]);
     }
 
     public static function send(): void
     {
-        $u = self::guard();
-        $mb = self::mailbox(Http::input('mailbox'));
-        $box = HostingerMail::box($mb);
+        [$kind, $mb, $u] = self::target(Http::input('mailbox'));
+        $box = $kind === 'hostinger' ? HostingerMail::box($mb) : '';
         $to = self::addrs(Http::input('to', ''));
         $cc = self::addrs(Http::input('cc', ''));
         $bcc = self::addrs(Http::input('bcc', ''));
@@ -476,28 +604,35 @@ final class MailController
         }
         $html = '<div style="font:14px/1.55 -apple-system,Segoe UI,Roboto,Arial,sans-serif;white-space:pre-wrap">' . e($text) . '</div>';
         $mode = V::enum(Http::input('mode'), ['new', 'reply', 'forward'], 'new');
-
-        $req = array_filter(['to' => $to, 'cc' => $cc, 'bcc' => $bcc]);
-        $req['subject'] = $subject;
-        $req['text'] = $text;
-        $req['displayName'] = V::str(Http::input('display_name'), 120) ?: (string) Settings::get('hmail_display_name', Settings::get('app_name', 'SmartNotes'));
+        /** @var array<int, array{filename: string, content: string, contentType: string}> binary contents */
         $attachments = [];
         $total = 0;
+        $ref = null;
+        $origMeta = null;
 
         if ($mode !== 'new') {
             $refFolder = self::folder(Http::input('ref_folder'));
             $refUid = V::int(Http::input('ref_uid'), 1) ?? throw new HttpException('Invalid original message.', 422);
-            $req[$mode === 'reply' ? 'inReplyTo' : 'forwardOf'] = ['uid' => $refUid, 'folder' => $refFolder];
-            $base = $box . '/folders/' . rawurlencode($refFolder) . '/messages/' . $refUid;
-            // The original text is quoted below the new message (fetched server-side, so it cannot be spoofed by the browser).
-            $orig = self::present((array) (HostingerMail::call('GET', $base)['data'] ?? []));
-            $ot = (array) (HostingerMail::call('GET', $base . '/text')['data'] ?? []);
+            $ref = ['uid' => $refUid, 'folder' => $refFolder];
+            // The original is fetched server-side, so the quoted text cannot be spoofed by the browser.
+            if ($kind === 'imap') {
+                $o = ImapMail::message($mb, $refFolder, $refUid, true);
+                $origMeta = $o['meta'];
+                $ot = ['text' => (string) ($o['text'] ?? ''), 'html' => (string) ($o['html'] ?? '')];
+                $origParts = $o['parts'];
+                $origMeta['references'] = $o['parsed']['references'];
+            } else {
+                $base = $box . '/folders/' . rawurlencode($refFolder) . '/messages/' . $refUid;
+                $origMeta = self::present((array) (HostingerMail::call('GET', $base)['data'] ?? []));
+                $ot = (array) (HostingerMail::call('GET', $base . '/text')['data'] ?? []);
+            }
+            $orig = $origMeta;
             $from = $orig['from'] ? trim(($orig['from']['name'] ?? '') . ' <' . ($orig['from']['address'] ?? '') . '>') : '';
             $when = $orig['date'] ? date('D, j M Y H:i', strtotime($orig['date']) ?: time()) : '';
             if (V::bool(Http::input('include_original', 1))) {
                 $head = $mode === 'reply' ? "On $when, $from wrote:" : "---------- Forwarded message ----------\nFrom: $from\nDate: $when\nSubject: {$orig['subject']}";
                 $origText = (string) ($ot['text'] ?? '');
-                $req['text'] .= "\n\n" . $head . "\n" . ($mode === 'reply' ? preg_replace('/^/m', '> ', $origText) : $origText);
+                $text .= "\n\n" . $head . "\n" . ($mode === 'reply' ? preg_replace('/^/m', '> ', $origText) : $origText);
                 $origDoc = trim((string) ($ot['html'] ?? '')) !== ''
                     ? MailHtml::document($ot['html'], '', false)['html']
                     : null;
@@ -514,8 +649,10 @@ final class MailController
                     if ($total > self::MAX_SEND_BYTES) {
                         throw new HttpException('The original attachments are larger than 20 MB — forward without attachments.', 422);
                     }
-                    $bin = HostingerMail::binary($base . '/attachments/' . rawurlencode($a['id']))['body'];
-                    $attachments[] = ['filename' => $a['name'], 'content' => base64_encode($bin), 'contentType' => $a['type']];
+                    $bin = $kind === 'imap'
+                        ? (string) (array_values(array_filter($origParts, static fn($p) => $p['id'] === $a['id']))[0]['data'] ?? '')
+                        : HostingerMail::binary($base . '/attachments/' . rawurlencode($a['id']))['body'];
+                    $attachments[] = ['filename' => $a['name'], 'content' => $bin, 'contentType' => $a['type']];
                 }
             }
         }
@@ -526,7 +663,7 @@ final class MailController
                 throw new HttpException('Attachments are larger than 20 MB in total.', 422);
             }
             $mime = (new finfo(FILEINFO_MIME_TYPE))->file($f['tmp_name']) ?: 'application/octet-stream';
-            $attachments[] = ['filename' => Uploader::cleanName($f['name']), 'content' => base64_encode((string) file_get_contents($f['tmp_name'])), 'contentType' => $mime];
+            $attachments[] = ['filename' => Uploader::cleanName($f['name']), 'content' => (string) file_get_contents($f['tmp_name']), 'contentType' => $mime];
         }
         foreach (V::ids(Http::input('drive_ids', [])) as $fid) {
             $r = DB::one('SELECT * FROM note_attachments WHERE id = ? AND user_id = ? AND deleted_at IS NULL', [$fid, $u['id']]);
@@ -537,14 +674,36 @@ final class MailController
             if ($total > self::MAX_SEND_BYTES) {
                 throw new HttpException('Attachments are larger than 20 MB in total.', 422);
             }
-            $attachments[] = ['filename' => $r['original_name'], 'content' => base64_encode((string) file_get_contents(Uploader::absolute($r['file_path']))), 'contentType' => $r['mime_type']];
+            $attachments[] = ['filename' => $r['original_name'], 'content' => (string) file_get_contents(Uploader::absolute($r['file_path'])), 'contentType' => $r['mime_type']];
         }
-        if ($attachments) {
-            $req['attachments'] = $attachments;
-        }
-        $req['html'] = $html;
 
-        HostingerMail::call('POST', $box . '/send', [], $req);
+        if ($kind === 'imap') {
+            ImapMail::send($mb, [
+                'to' => $to, 'cc' => $cc, 'bcc' => $bcc, 'subject' => $subject, 'text' => $text, 'html' => $html, 'attachments' => $attachments,
+                'in_reply_to' => $mode === 'reply' ? ($origMeta['message_id'] ?? null) : null,
+                'references' => $mode === 'reply' ? ($origMeta['references'] ?? null) : null,
+            ]);
+            if ($mode === 'reply') {
+                try {
+                    ImapMail::setFlags($mb, $ref['folder'], [$ref['uid']], ['\\Answered'], []);
+                } catch (HttpException) {
+                    // Sent anyway; only the "answered" mark failed.
+                }
+            }
+        } else {
+            $req = array_filter(['to' => $to, 'cc' => $cc, 'bcc' => $bcc]);
+            $req['subject'] = $subject;
+            $req['text'] = $text;
+            $req['displayName'] = V::str(Http::input('display_name'), 120) ?: (string) Settings::get('hmail_display_name', Settings::get('app_name', 'SmartNotes'));
+            if ($ref) {
+                $req[$mode === 'reply' ? 'inReplyTo' : 'forwardOf'] = $ref;
+            }
+            if ($attachments) {
+                $req['attachments'] = array_map(static fn($x) => ['filename' => $x['filename'], 'content' => base64_encode($x['content']), 'contentType' => $x['contentType']], $attachments);
+            }
+            $req['html'] = $html;
+            HostingerMail::call('POST', $box . '/send', [], $req);
+        }
         Activity::log('mail.send', null, null, 'Sent "' . mb_substr($subject, 0, 120) . '" to ' . implode(', ', array_slice(array_merge($to, $cc, $bcc), 0, 5)));
         Http::ok(null, 'Message sent.');
     }
@@ -582,7 +741,7 @@ final class MailController
     /** Copy an attachment into the admin's Drive (keeps important documents next to notes, findable by tag). */
     public static function saveToDrive(): void
     {
-        $u = self::guard();
+        $u = Auth::require();
         [, $a, $bin] = self::fetchAttachment();
         $folderId = DriveController::ownedFolder(V::id(Http::input('folder_id')), $u['id']);
         ensure_dir(SN_STORAGE . '/tmp');
