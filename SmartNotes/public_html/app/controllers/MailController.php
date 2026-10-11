@@ -5,7 +5,8 @@ defined('SN_APP') || exit;
 
 /**
  * Mailbox screen with two kinds of mailboxes:
- *  - company mailboxes through the Hostinger Mail API ("AC…" ids) — full "admin" role only, including its API settings;
+ *  - company mailboxes through the Hostinger Mail API ("AC…" ids) — full "admin" role, plus users an administrator
+ *    gave a mailbox to (v1.10, mailbox_assignments: only that mailbox); the API settings stay admin-only;
  *  - personal IMAP/SMTP accounts such as Gmail ("IM<id>" ids) — every user connects their own, nobody else sees them.
  */
 final class MailController
@@ -26,7 +27,7 @@ final class MailController
 
     /**
      * Resolve the mailbox of a request: an own IMAP account ("IM<id>") → ['imap', account row],
-     * otherwise a Hostinger mailbox ("AC…", admins only) → ['hostinger', id].
+     * otherwise a Hostinger mailbox ("AC…": admins, or a user the mailbox was given to) → ['hostinger', id].
      */
     private static function target(mixed $v): array
     {
@@ -37,6 +38,9 @@ final class MailController
             if ($id === '' && Auth::isAdmin() && HostingerMail::configured()) {
                 $id = HostingerMail::mailboxes()[0]['resourceId'] ?? '';
             }
+            if ($id === '' && !Auth::isAdmin()) {
+                $id = MailboxAdminController::forUser($u['id'])[0]['resourceId'] ?? '';
+            }
             if ($id === '') {
                 $id = ImapMail::accounts($u['id'])[0]['mailbox'] ?? '';
             }
@@ -44,9 +48,14 @@ final class MailController
         if (ImapMail::isId($id)) {
             return ['imap', ImapMail::account($id, $u['id']), $u];
         }
-        self::guard();
         if (!preg_match('/^AC[A-Za-z0-9]{1,60}$/', $id)) {
+            if (!Auth::isAdmin()) {
+                throw new HttpException('Connect a mailbox first.', 422);
+            }
             throw new HttpException('Choose a mailbox first.', 422);
+        }
+        if (!Auth::isAdmin() && !MailboxAdminController::isAssigned($id, (int) $u['id'])) {
+            throw new HttpException('This mailbox has not been given to you.', 403);
         }
         return ['hostinger', $id, $u];
     }
@@ -168,6 +177,13 @@ final class MailController
                     'mailboxes' => array_values(array_map(static fn($m) => $m['address'], array_filter($out['mailboxes'], static fn($m) => $m['connection'] === $c['id']))),
                 ];
             }
+        }
+        // Company mailboxes an administrator gave to this user (no API details for non-admins).
+        if (!$admin) {
+            foreach (MailboxAdminController::forUser($u['id']) as $m) {
+                $out['mailboxes'][] = $m + ['connection' => 'assigned', 'connection_label' => 'Company mailbox', 'assigned' => true];
+            }
+            $out['display_name'] = $u['name'];
         }
         // Personal mailboxes are listed after the company ones, each as its own group.
         foreach ($out['accounts'] as $acc) {
@@ -694,7 +710,7 @@ final class MailController
             $req = array_filter(['to' => $to, 'cc' => $cc, 'bcc' => $bcc]);
             $req['subject'] = $subject;
             $req['text'] = $text;
-            $req['displayName'] = V::str(Http::input('display_name'), 120) ?: (string) Settings::get('hmail_display_name', Settings::get('app_name', 'SmartNotes'));
+            $req['displayName'] = V::str(Http::input('display_name'), 120) ?: (Auth::isAdmin() ? (string) Settings::get('hmail_display_name', Settings::get('app_name', 'SmartNotes')) : (string) $u['name']);
             if ($ref) {
                 $req[$mode === 'reply' ? 'inReplyTo' : 'forwardOf'] = $ref;
             }

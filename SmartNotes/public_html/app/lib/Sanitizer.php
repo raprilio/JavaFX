@@ -19,7 +19,7 @@ final class Sanitizer
         'a' => ['href', 'title', 'target', 'rel'],
         'table' => ['class', 'style'], 'thead' => [], 'tbody' => [], 'tr' => [], 'th' => ['style', 'colspan', 'rowspan'], 'td' => ['style', 'colspan', 'rowspan'],
         'img' => ['src', 'alt', 'class', 'data-file-id', 'data-drawing-id', 'width', 'style'],
-        'figure' => ['class', 'data-file-id', 'data-audio-id', 'data-drawing-id', 'contenteditable'], 'figcaption' => [],
+        'figure' => ['class', 'data-file-id', 'data-audio-id', 'data-drawing-id', 'data-view', 'data-pages', 'contenteditable'], 'figcaption' => [],
         'font' => ['color', 'size'],
     ];
     private const DROP_WITH_CONTENT = ['script', 'style', 'iframe', 'object', 'embed', 'svg', 'math', 'template', 'noscript', 'form', 'input', 'button', 'textarea', 'select', 'link', 'meta', 'base', 'head', 'title', 'audio', 'video', 'source'];
@@ -127,8 +127,13 @@ final class Sanitizer
                 case 'data-checked':
                     $el->setAttribute('data-checked', $value === 'true' ? 'true' : 'false');
                     break;
+                case 'data-view': // handwriting shown full size or minimized like an attachment (v1.10)
+                    $el->setAttribute('data-view', $value === 'card' ? 'card' : 'full');
+                    break;
                 case 'data-file-id':
                 case 'data-audio-id':
+                case 'data-drawing-id':
+                case 'data-pages':
                 case 'colspan':
                 case 'rowspan':
                 case 'start':

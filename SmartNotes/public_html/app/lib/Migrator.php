@@ -9,7 +9,7 @@ defined('SN_APP') || exit;
  */
 final class Migrator
 {
-    public const VERSION = 8;
+    public const VERSION = 9;
 
     public static function run(): void
     {
@@ -42,6 +42,9 @@ final class Migrator
             }
             if ($current < 8) {
                 self::v8();
+            }
+            if ($current < 9) {
+                self::v9();
             }
             Settings::set('schema_version', (string) self::VERSION);
         } finally {
@@ -244,6 +247,33 @@ final class Migrator
               CONSTRAINT `fk_ann_reads_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE)" . $t);
         }
     }
+
+    /** v1.10: handwriting pages; company (Hostinger) mailboxes given to users by an administrator. */
+    private static function v9(): void
+    {
+        self::addColumn('note_drawings', 'pages', 'SMALLINT UNSIGNED NOT NULL DEFAULT 1 AFTER `height`');
+        if (DB::val("SELECT DATA_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'note_drawings' AND COLUMN_NAME = 'height'") === 'smallint') {
+            DB::pdo()->exec('ALTER TABLE `note_drawings` MODIFY `height` INT UNSIGNED NOT NULL DEFAULT 0');
+        }
+        if (!self::hasTable('mailbox_assignments')) {
+            DB::pdo()->exec(self::MAILBOX_ASSIGNMENTS_SQL);
+        }
+    }
+
+    public const MAILBOX_ASSIGNMENTS_SQL = "CREATE TABLE `mailbox_assignments` (
+      `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+      `mailbox_id` VARCHAR(64) NOT NULL COMMENT 'Hostinger mailbox resource id (AC…)',
+      `address` VARCHAR(190) NOT NULL,
+      `user_id` INT UNSIGNED NOT NULL,
+      `assigned_by` INT UNSIGNED NULL,
+      `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (`id`),
+      UNIQUE KEY `uq_mailbox_user` (`mailbox_id`, `user_id`),
+      KEY `idx_mailbox_assign_user` (`user_id`),
+      KEY `fk_mailbox_assign_by` (`assigned_by`),
+      CONSTRAINT `fk_mailbox_assign_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+      CONSTRAINT `fk_mailbox_assign_by` FOREIGN KEY (`assigned_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
 
     public const MAIL_ACCOUNTS_SQL = "CREATE TABLE `mail_accounts` (
       `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,

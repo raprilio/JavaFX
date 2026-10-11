@@ -41,7 +41,7 @@ export default {
   title: 'Mail',
   async render(el, ctx) {
     ctx.setTitle('Mail');
-    // Everyone can connect their own Gmail / IMAP mailboxes; the company (Hostinger) mailbox stays admin-only.
+    // Everyone can connect their own Gmail / IMAP mailboxes; company (Hostinger) mailboxes: admins, and users an admin gave one to.
     const isAdmin = state.user.role === 'admin';
     let status = null;
     const s = { mailbox: ctx.query.mailbox || '', folder: ctx.query.folder || 'INBOX', page: 1, q: '', flagged: false };
@@ -92,6 +92,12 @@ export default {
       const mine = h(String(html`<section><div class="section-title">${icon('mail', 'sm')} My mailboxes <span class="subtle small">Gmail · IMAP — only you can see them</span></div></section>`));
       mine.appendChild(mailAccountsPanel({ accounts: status.accounts, onChange: () => (changed = true) }));
       body.appendChild(mine);
+      const given = status.mailboxes.filter((m) => m.assigned);
+      if (!isAdmin && given.length) {
+        body.appendChild(h(String(html`<section><div class="section-title">${icon('building-2', 'sm')} Company mailboxes <span class="subtle small">given to you by an administrator</span></div>
+          <div class="mail-assigned">${given.map((m) => html`<span class="badge">${icon('at-sign', 'xs')} ${m.address}</span>`)}</div>
+          <p class="tiny subtle" style="margin:8px 0 0">Ask an administrator to add or remove these. Sent mail uses your name (${state.user.name}).</p></section>`)));
+      }
       if (isAdmin) {
         const company = h(String(html`<section><div class="section-title">${icon('building-2', 'sm')} Company mailbox — Hostinger Mail API <span class="subtle small">administrators only</span></div></section>`));
         company.appendChild(mailSettingsPanel({ status, compact: false, onChange: (next) => { status = next; changed = true; } }));

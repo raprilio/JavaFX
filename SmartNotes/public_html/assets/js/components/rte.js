@@ -109,10 +109,15 @@ export function createRTE({ content = '', placeholder = 'Start writing…', medi
     const li = e.target.closest('ul.checklist > li');
     if (li && e.offsetX < 26 && e.target === li) {
       e.preventDefault();
+      // Read-only (view-only share, trash, pinned for everyone): ticking a box is a change too.
+      if (editor.getAttribute('contenteditable') === 'false') return;
       li.dataset.checked = li.dataset.checked === 'true' ? 'false' : 'true';
       changed();
       return;
     }
+    // Handwriting (full size or minimized card): any click on it opens the preview.
+    const fig = e.target.closest('figure.sn-drawing');
+    if (fig && fig.querySelector('img')) { e.preventDefault(); openImg(fig.querySelector('img')); return; }
     const img = e.target.closest('img');
     $$('img.selected', editor).forEach((x) => x !== img && x.classList.remove('selected'));
     if (img) {

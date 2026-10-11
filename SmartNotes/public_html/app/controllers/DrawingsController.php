@@ -12,12 +12,15 @@ defined('SN_APP') || exit;
  */
 final class DrawingsController
 {
-    private const MAX_JSON = 4 * 1024 * 1024;
+    private const MAX_JSON = 12 * 1024 * 1024;
+    private const MAX_GZ = 6 * 1024 * 1024;
     private const MAX_PNG = 12 * 1024 * 1024;
-    private const MAX_STROKES = 20000;
+    private const MAX_STROKES = 40000;
     private const MAX_POINTS = 600000;
     private const WIDTH = 1000;
-    private const MAX_HEIGHT = 6000;
+    /** v1.10: drawings are pages of 1000 × 1414 (A4), stacked on one y axis. */
+    public const PAGE_H = 1414;
+    public const MAX_PAGES = 50;
     private const COLOR = '/^#[0-9a-f]{6}$/i';
 
     public static function present(array $d): array
@@ -28,6 +31,7 @@ final class DrawingsController
             'note_id' => (int) $d['note_id'],
             'width' => (int) $d['width'],
             'height' => (int) $d['height'],
+            'pages' => max(1, (int) ($d['pages'] ?? 1)),
             'stroke_count' => (int) $d['stroke_count'],
             'version' => (int) $d['version'],
             'png_url' => "api/index.php?route=drawings/$id/png&v=" . (int) $d['version'],
@@ -101,6 +105,7 @@ final class DrawingsController
             'png_path' => $pngPath,
             'width' => self::WIDTH,
             'height' => $meta['h'],
+            'pages' => $meta['pages'],
             'stroke_count' => $meta['strokes'],
             'file_size' => $size,
         ]);
@@ -118,6 +123,7 @@ final class DrawingsController
             'data_path' => $dataPath,
             'png_path' => $pngPath,
             'height' => $meta['h'],
+            'pages' => $meta['pages'],
             'stroke_count' => $meta['strokes'],
             'file_size' => $size,
             'version' => (int) $d['version'] + 1,
@@ -128,21 +134,45 @@ final class DrawingsController
         Http::ok(self::present(DB::one('SELECT * FROM note_drawings WHERE id = ?', [$id])));
     }
 
+    /** The stroke JSON: a gzip file part (sent by browsers that can compress) or a plain form field. */
+    private static function rawData(): ?string
+    {
+        $gz = $_FILES['data_gz'] ?? null;
+        if ($gz && ($gz['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK && (is_uploaded_file($gz['tmp_name']) || PHP_SAPI === 'cli')) {
+            if ((int) $gz['size'] > self::MAX_GZ) {
+                throw new HttpException('The drawing is too large to save.', 422);
+            }
+            $raw = @gzdecode((string) file_get_contents($gz['tmp_name']), self::MAX_JSON + 1);
+            if (!is_string($raw)) {
+                throw new HttpException('The drawing is too large to save.', 422);
+            }
+            return $raw;
+        }
+        $raw = Http::input('data');
+        return is_string($raw) ? $raw : null;
+    }
+
     /**
      * Validate and normalise the stroke JSON (only known fields, rounded numbers).
-     * @return array{0: string, 1: array{h:int, strokes:int}}
+     * Accepts v1 (one sheet, height h) and v2 (pages); always stores v2.
+     * @return array{0: string, 1: array{h:int, pages:int, strokes:int}}
      */
     private static function validated(): array
     {
-        $raw = Http::input('data');
-        if (!is_string($raw) || $raw === '' || strlen($raw) > self::MAX_JSON) {
+        $raw = self::rawData();
+        if ($raw === null || $raw === '' || strlen($raw) > self::MAX_JSON) {
             throw new HttpException('The drawing is empty or too large.', 422);
         }
         $in = json_decode($raw, true);
-        if (!is_array($in) || ($in['v'] ?? null) !== 1 || !is_array($in['strokes'] ?? null)) {
+        if (!is_array($in) || !in_array($in['v'] ?? null, [1, 2], true) || !is_array($in['strokes'] ?? null)) {
             throw new HttpException('Invalid drawing data.', 422);
         }
-        $h = max(200, min(self::MAX_HEIGHT, (int) ($in['h'] ?? 0)));
+        $pages = $in['v'] === 2 ? (int) ($in['pages'] ?? 1) : (int) ceil(max(200, (int) ($in['h'] ?? 0)) / self::PAGE_H);
+        if ($pages > self::MAX_PAGES) {
+            throw new HttpException('A drawing can have up to ' . self::MAX_PAGES . ' pages.', 422);
+        }
+        $pages = max(1, $pages);
+        $h = $pages * self::PAGE_H;
         $bg = in_array($in['bg'] ?? null, ['none', 'lines', 'grid', 'dots'], true) ? $in['bg'] : 'none';
         if (count($in['strokes']) > self::MAX_STROKES) {
             throw new HttpException('The drawing has too many strokes.', 422);
@@ -178,8 +208,8 @@ final class DrawingsController
                 'p' => $clean,
             ];
         }
-        $json = json_encode(['v' => 1, 'w' => self::WIDTH, 'h' => $h, 'bg' => $bg, 'strokes' => $strokes], JSON_UNESCAPED_SLASHES);
-        return [$json, ['h' => $h, 'strokes' => count($strokes)]];
+        $json = json_encode(['v' => 2, 'w' => self::WIDTH, 'ph' => self::PAGE_H, 'pages' => $pages, 'bg' => $bg, 'strokes' => $strokes], JSON_UNESCAPED_SLASHES);
+        return [$json, ['h' => $h, 'pages' => $pages, 'strokes' => count($strokes)]];
     }
 
     /** Write the JSON and the (re-encoded) PNG under uploads/. @return array{0:string,1:string,2:int} */
@@ -259,7 +289,7 @@ final class DrawingsController
             }
             $map[$old] = DB::insert('note_drawings', [
                 'user_id' => $userId, 'note_id' => $toNote, 'data_path' => "$rel/$name.json", 'png_path' => "$rel/$name.png",
-                'width' => $d['width'], 'height' => $d['height'], 'stroke_count' => $d['stroke_count'], 'file_size' => $d['file_size'],
+                'width' => $d['width'], 'height' => $d['height'], 'pages' => $d['pages'] ?? 1, 'stroke_count' => $d['stroke_count'], 'file_size' => $d['file_size'],
             ]);
         }
         if (!$map) {

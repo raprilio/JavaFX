@@ -1281,3 +1281,55 @@ svg .edge-path.selected { stroke: var(--accent) !important; }
 .ann-body { white-space: pre-line; margin: 4px 0; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .trash-preview { min-height: 0; max-height: 60vh; overflow: auto; border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
 @media (max-width: 640px) { .ann-row { flex-wrap: wrap; } }
+
+/* v1.10: view-only notes — checkboxes are not clickable */
+.rte[contenteditable='false'] ul.checklist li::before { cursor: default; opacity: .75; }
+
+/* v1.10 handwriting: pages like a notebook */
+.draw-pages { display: flex; flex-direction: column; align-items: center; gap: 34px; padding-bottom: 8px; }
+.draw-page { flex: none; margin: 0; }
+.draw-page-foot { position: absolute; right: 0; bottom: -28px; display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-3); height: 24px; }
+.draw-page-foot .btn { width: 24px; height: 24px; min-height: 0; padding: 0; }
+.draw-viewer .draw-page-foot { right: 50%; transform: translateX(50%); }
+.draw-newpage { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 26px auto 12px; width: min(100%, 1150px); height: 72px; border: 2px dashed var(--border); border-radius: 12px; background: none; color: var(--text-3); font: inherit; font-weight: 600; cursor: pointer; }
+.draw-newpage:hover { color: var(--accent); border-color: var(--accent); }
+.draw-pageinfo { font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; flex: none; padding: 0 4px; }
+.draw-viewer .dv-title { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 6px; }
+.draw-viewer .draw-paper canvas { pointer-events: none; }
+
+/* v1.10 handwriting in notes: full size or minimized like an attachment (click = preview) */
+figure.sn-drawing figcaption { display: none; }
+.rte figure.sn-drawing[data-view="card"], .note-view figure.sn-drawing[data-view="card"] {
+  display: flex; align-items: center; gap: 12px; width: min(100%, 360px); margin: 8px 0; padding: 8px 12px 8px 8px;
+  border: 1px solid var(--border); border-radius: 12px; background: var(--bg-elev); box-shadow: var(--shadow-xs, 0 1px 2px rgba(0,0,0,.05));
+}
+.rte figure.sn-drawing[data-view="card"] img, .note-view figure.sn-drawing[data-view="card"] img {
+  width: 64px; height: 80px; flex: none; object-fit: cover; object-position: top center; border-radius: 8px;
+  outline: 1px solid var(--border);
+}
+figure.sn-drawing[data-view="card"] figcaption { display: block; font-size: 13.5px; font-weight: 600; color: var(--text); line-height: 1.35; }
+figure.sn-drawing[data-view="card"] figcaption::after { content: 'Click to preview'; display: block; font-weight: 400; font-size: 12px; color: var(--text-3); }
+.rte figure.sn-drawing[data-view="card"]::after { content: ''; position: static; width: 18px; height: 18px; margin-left: auto; flex: none; opacity: .6;
+  background: currentColor; color: var(--text-3);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z'/%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3C/svg%3E") center / contain no-repeat;
+          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z'/%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3C/svg%3E") center / contain no-repeat; }
+.rte figure.sn-drawing[data-view="card"]:hover { border-color: var(--accent); }
+.rte figure.sn-drawing[data-view="card"]:hover img { outline-color: var(--border); }
+@media print {
+  figure.sn-drawing[data-view="card"] { display: block !important; width: 100% !important; border: 0 !important; padding: 0 !important; box-shadow: none !important; }
+  figure.sn-drawing[data-view="card"] img { width: 100% !important; height: auto !important; object-fit: contain !important; outline: 0 !important; }
+  figure.sn-drawing figcaption { display: none !important; }
+}
+
+/* v1.10 admin: company mailboxes for users */
+.mbx-row { display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-elev); }
+.mbx-ic { width: 32px; height: 32px; flex: none; border-radius: 10px; display: grid; place-items: center; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+.mbx-ic.warn { background: var(--warning-soft); color: var(--warning); }
+.mbx-users { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.mbx-act { flex: none; }
+.mbx-act .select { width: 150px; }
+@media (max-width: 640px) { .mbx-row { flex-wrap: wrap; } .mbx-act { width: 100%; } .mbx-act .select { flex: 1; width: auto; } }
+.mail-assigned { display: flex; flex-wrap: wrap; gap: 6px; }
+/* Dialogs and toasts opened from the full-screen pen editor / preview must sit above it. */
+body:has(> .draw-root) > .modal-root { z-index: 420; }
+.toasts { z-index: 460; }

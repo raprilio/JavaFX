@@ -312,6 +312,22 @@ CREATE TABLE IF NOT EXISTS `mail_accounts` (
   CONSTRAINT `fk_mail_accounts_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- v1.10: company (Hostinger) mailboxes an administrator gives to a user
+CREATE TABLE IF NOT EXISTS `mailbox_assignments` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `mailbox_id` VARCHAR(64) NOT NULL COMMENT 'Hostinger mailbox resource id (AC…)',
+  `address` VARCHAR(190) NOT NULL,
+  `user_id` INT UNSIGNED NOT NULL,
+  `assigned_by` INT UNSIGNED NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_mailbox_user` (`mailbox_id`, `user_id`),
+  KEY `idx_mailbox_assign_user` (`user_id`),
+  KEY `fk_mailbox_assign_by` (`assigned_by`),
+  CONSTRAINT `fk_mailbox_assign_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_mailbox_assign_by` FOREIGN KEY (`assigned_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `task_tag_relations` (
   `task_id`  INT UNSIGNED NOT NULL,
   `tag_id`   INT UNSIGNED NOT NULL,
@@ -472,7 +488,8 @@ CREATE TABLE IF NOT EXISTS `note_drawings` (
   `data_path`     VARCHAR(255) NOT NULL COMMENT 'Vector strokes (JSON file under uploads/)',
   `png_path`      VARCHAR(255) NOT NULL COMMENT 'Rendered PNG under uploads/',
   `width`         SMALLINT UNSIGNED NOT NULL DEFAULT 0,
-  `height`        SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+  `height`        INT UNSIGNED NOT NULL DEFAULT 0,
+  `pages`         SMALLINT UNSIGNED NOT NULL DEFAULT 1,
   `stroke_count`  INT UNSIGNED NOT NULL DEFAULT 0,
   `file_size`     INT UNSIGNED NOT NULL DEFAULT 0,
   `version`       INT UNSIGNED NOT NULL DEFAULT 1,
@@ -809,7 +826,7 @@ INSERT IGNORE INTO `settings` (`setting_key`, `setting_value`) VALUES
 ('smtp_encryption', 'tls'),
 ('smtp_from_name', 'SmartNotes'),
 ('smtp_from_email', ''),
-('schema_version', '8'),
+('schema_version', '9'),
 ('allow_note_sharing', '1'),
 ('logo_display', 'logo'),
 ('logo_height', '34'),

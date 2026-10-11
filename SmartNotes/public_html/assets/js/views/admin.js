@@ -12,7 +12,7 @@ import { userPicker } from '../components/userPicker.js';
 const TABS = [
   ['overview', 'Overview', 'chart-column', 'view_stats'], ['users', 'Users', 'users', 'manage_users'], ['branding', 'Branding', 'image', 'manage_branding'],
   ['general', 'General', 'sliders-horizontal', 'manage_settings'], ['uploads', 'Uploads & storage', 'hard-drive-upload', 'manage_settings'], ['email', 'Email & reminders', 'mail', 'manage_email'], ['categories', 'Categories', 'folder', 'manage_categories'],
-  ['announcements', 'Announcements', 'megaphone', 'admin_only'], ['trash', 'Admin trash', 'trash-2', 'admin_only'],
+  ['mailboxes', 'Company mailboxes', 'mailbox', 'admin_only'], ['announcements', 'Announcements', 'megaphone', 'admin_only'], ['trash', 'Admin trash', 'trash-2', 'admin_only'],
   ['backup', 'Backup & data', 'database-backup', 'manage_backup'], ['activity', 'Activity log', 'activity', 'view_stats'],
 ];
 // 'admin_only' is no grantable permission: can() lets only the Admin role through (announcements, users' deleted notes).
@@ -416,6 +416,114 @@ const tabs = {
       const lines = (s) => s.split('\n').map((x) => x.trim()).filter(Boolean);
       try { const r = await api.post('admin/categories', { note: lines(f.note), task: lines(f.task), apply_to_existing: f.apply }); toast(`Saved${r.applied ? ` · ${r.applied} categories added to users` : ''}`, 'success'); } catch (err) { toastError(err); }
     });
+  },
+
+  async mailboxes(el) {
+    let d = null;
+    let users = [];
+    const load = async (refresh = false) => {
+      [d, users] = await Promise.all([api.get('admin/mailboxes', refresh ? { refresh: 1 } : {}), users.length ? users : api.get('admin/users').then((r) => r.items.filter((u) => u.status === 'active'))]);
+      paint();
+    };
+    const userOpts = (skip = []) => users.filter((u) => !skip.includes(u.id)).map((u) => html`<option value="${u.id}">${u.name} — ${u.email}</option>`);
+    const kb = (n) => (n == null ? '' : fmtBytes(n * 1024));
+    function paint() {
+      const acc = d.account;
+      const byBox = (id) => d.assignments.filter((a) => a.mailbox_id === id);
+      const activeOrders = d.orders.filter((o) => o.status === 'active');
+      el.innerHTML = String(html`
+        <div class="callout">${icon('info', 'sm')}<div>Give a user a <b>company mailbox</b> (Hostinger): it appears in that user's <b>Mail</b>, where they read and send as that address. They only see the mailboxes you give them — never the API settings. Their own Gmail/IMAP mailboxes stay private.</div></div>
+        ${!d.mail_connected && !acc.connected ? html`<div class="callout warning">${icon('plug', 'sm')}<div>No Hostinger connection yet. Add a <b>Mail API token</b> under <a href="#/admin/email">Email & reminders → Hostinger Mail API</a> to use existing mailboxes, and/or the <b>account API token</b> below to create new ones.</div></div>` : ''}
+        ${card(html`${icon('mailbox', 'sm')} Mailboxes <span class="subtle small">${d.mailboxes.length}</span>`, d.mailboxes.length ? html`<div class="col" style="gap:10px">${d.mailboxes.map((m) => html`<div class="mbx-row" data-mbx="${m.id}">
+            <span class="mbx-ic ${m.reachable ? '' : 'warn'}">${icon(m.reachable ? 'at-sign' : 'alert-triangle', 'sm')}</span>
+            <div class="grow" style="min-width:0">
+              <div class="row" style="gap:6px;flex-wrap:wrap"><b class="truncate">${m.address}</b>
+                ${m.status && m.status !== 'active' ? html`<span class="badge warning">${m.status}</span>` : ''}
+                ${!m.reachable ? html`<span class="badge warning" data-tip="No connected Mail API token covers this mailbox, so it cannot be opened in Mail yet">Not connected</span>` : ''}
+                ${m.storage_quota ? html`<span class="tiny subtle">${kb(m.storage_used)} / ${kb(m.storage_quota)}</span>` : ''}</div>
+              <div class="mbx-users">${byBox(m.id).map((a) => html`<span class="up-chip" data-asg="${a.id}">${icon('user', 'xs')}${a.user.name}<button type="button" data-unassign="${a.id}" aria-label="Remove ${a.user.name}" data-tip="Remove access">${icon('x', 'xs')}</button></span>`)}
+                ${byBox(m.id).length ? '' : html`<span class="tiny subtle">Only administrators</span>`}</div>
+            </div>
+            <div class="row mbx-act" style="gap:6px">
+              <select class="select sm" data-assign-user aria-label="Give to user"><option value="">Give to…</option>${userOpts(byBox(m.id).map((a) => a.user.id))}</select>
+              ${acc.connected && m.order ? html`<button class="btn ghost icon sm" data-act="password" data-tip="Reset password" aria-label="Reset password">${icon('key-round', 'sm')}</button>
+                <button class="btn ghost icon sm danger" data-act="delete" data-tip="Delete at Hostinger" aria-label="Delete mailbox">${icon('trash-2', 'sm')}</button>` : ''}
+            </div></div>`)}</div>
+          <div class="row mt-2"><button class="btn ghost sm" data-act="refresh">${icon('refresh-cw', 'sm')} Check again</button></div>`
+          : html`<p class="small subtle" style="margin:0">No mailboxes found yet.</p>`)}
+        ${card(html`${icon('mail-plus', 'sm')} Create a mailbox for a user`, acc.connected ? (activeOrders.length ? html`<form class="form-grid" data-create autocomplete="off">
+            <div class="field"><label>Address</label><div class="row" style="gap:6px"><input class="input" name="local_part" required maxlength="50" placeholder="budi.santoso" style="min-width:0">
+              <select class="select" name="order_id" style="max-width:220px">${activeOrders.map((o) => html`<option value="${o.id}">@${o.domain}${o.seats ? ` (${o.mailbox_count}/${o.seats})` : ''}</option>`)}</select></div></div>
+            <div class="field"><label>For user <span class="subtle small">(optional)</span></label><select class="select" name="user_id"><option value="">— nobody yet —</option>${userOpts()}</select></div>
+            <div class="field"><label>Password <span class="subtle small">(empty = generate a strong one)</span></label><input class="input" name="password" type="text" maxlength="50" autocomplete="new-password" placeholder="Generated"><span class="hint">8–50 characters with upper and lower case, a number and a symbol. Shown once — SmartNotes does not keep it.</span></div>
+            <div class="field">${switchHtml('connect_mail', true, 'Connect it to SmartNotes Mail automatically (creates a Mail API token for the domain if needed)')}</div>
+            <div class="field span-2"><button class="btn primary" type="submit" style="width:max-content">${icon('mail-plus', 'sm')} Create mailbox</button></div></form>`
+            : html`<p class="small subtle" style="margin:0">No active e-mail order in this Hostinger account.</p>`)
+          : html`<p class="small muted" style="margin:0 0 10px">Creating, resetting and deleting mailboxes needs a <b>Hostinger API token</b> (different from the Mail API token): hPanel → <b>Profile → API</b> (<code>hpanel.hostinger.com/profile/api</code>) → create token.</p>`)}
+        ${card(html`${icon('key-round', 'sm')} Hostinger account API`, acc.connected ? html`<div class="row between" style="gap:10px;flex-wrap:wrap"><span class="small">${icon('check-circle-2', 'sm')} Connected · token <code>${acc.token_hint}</code> · ${d.orders.length} e-mail order${d.orders.length === 1 ? '' : 's'}${d.account_error ? html` · <span class="conn-err">${d.account_error}</span>` : ''}</span>
+            ${acc.source === 'config' ? html`<span class="tiny subtle">from app/config.php</span>` : html`<button class="btn ghost sm danger" data-act="disconnect">${icon('unplug', 'sm')} Disconnect</button>`}</div>`
+          : html`<form class="row wrap" data-account style="gap:8px;align-items:flex-end" autocomplete="off"><div class="field grow" style="margin:0;min-width:220px"><label>API token</label><input class="input" name="token" type="password" autocomplete="new-password" placeholder="Paste the token from hPanel → Profile → API" required></div>
+            <button class="btn" type="submit">${icon('plug', 'sm')} Connect</button><span class="hint" style="flex-basis:100%">Checked with Hostinger, then stored encrypted. It can manage every e-mail order of the account — keep it secret.</span></form>`)}`);
+    }
+    function showPassword(title, address, pw, extra = '') {
+      return modal({ title, size: 'sm', body: html`<p class="small muted" style="margin-top:0">Give these details to the user. The password is shown <b>only now</b>; SmartNotes does not store it (they need it for webmail or a phone app — inside SmartNotes they do not).</p>
+        <dl class="kv"><dt>E-mail</dt><dd><code>${address}</code></dd><dt>Password</dt><dd><code data-pw>${pw}</code> <button class="btn ghost icon xs" data-copy aria-label="Copy password">${icon('copy', 'sm')}</button></dd></dl>${extra}`,
+        actions: [{ label: 'Done', variant: 'primary' }],
+        onOpen: (m) => m.body.querySelector('[data-copy]').addEventListener('click', () => navigator.clipboard?.writeText(pw).then(() => toast('Copied', 'success', { timeout: 1200 }))) }).result;
+    }
+    el.addEventListener('change', async (e) => {
+      const sel = e.target.closest('[data-assign-user]');
+      if (!sel || !sel.value) return;
+      const mbx = sel.closest('[data-mbx]').dataset.mbx;
+      try { const r = await api.post('admin/mailboxes/assign', { mailbox_id: mbx, user_id: +sel.value }); toast(r?.message || 'Access given', 'success'); await load(); } catch (err) { toastError(err); sel.value = ''; }
+    });
+    el.addEventListener('click', async (e) => {
+      const un = e.target.closest('[data-unassign]');
+      const b = e.target.closest('[data-act]');
+      try {
+        if (un) {
+          const a = d.assignments.find((x) => x.id === +un.dataset.unassign);
+          if (!(await confirm({ title: `Remove ${a.user.name}'s access?`, message: `${a.address} disappears from their Mail. The mailbox and its e-mails stay at Hostinger.`, confirmText: 'Remove access' }))) return;
+          await api.post(`admin/mailboxes/assignments/${a.id}/delete`); toast('Access removed', 'success'); await load();
+        } else if (b?.dataset.act === 'refresh') { await load(true); toast('Checked', 'success', { timeout: 1200 }); }
+        else if (b?.dataset.act === 'disconnect') {
+          if (!(await confirm({ title: 'Disconnect the Hostinger account API?', message: 'Creating and deleting mailboxes stops working. Mailboxes and users\' access stay.', confirmText: 'Disconnect' }))) return;
+          await api.post('admin/mailboxes/account', { disconnect: true }); await load();
+        } else if (b?.dataset.act === 'password') {
+          const m = d.mailboxes.find((x) => x.id === b.closest('[data-mbx]').dataset.mbx);
+          if (!(await confirm({ title: `Reset the password of ${m.address}?`, message: 'A new strong password is generated. Phones and mail apps using the old one must be updated. SmartNotes itself keeps working.', confirmText: 'Reset password', danger: false, icon: 'key-round' }))) return;
+          const r = await api.post('admin/mailboxes/password', { mailbox_id: m.id });
+          await showPassword('New password', m.address, r.password);
+        } else if (b?.dataset.act === 'delete') {
+          const m = d.mailboxes.find((x) => x.id === b.closest('[data-mbx]').dataset.mbx);
+          const v = await prompt({ title: `Delete ${m.address} at Hostinger?`, label: `All its e-mails are deleted (Hostinger keeps it restorable for a short time) and every user loses access. Type the address to confirm.`, placeholder: m.address, confirmText: 'Delete mailbox' });
+          if (v == null) return;
+          if (v.trim().toLowerCase() !== m.address.toLowerCase()) return toast('The address did not match — nothing was deleted', 'warning');
+          await api.post('admin/mailboxes/delete', { mailbox_id: m.id }); toast('Mailbox deleted', 'success'); await load(true);
+        }
+      } catch (err) { toastError(err); }
+    });
+    el.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const f = e.target;
+      await withLoading(f.querySelector('[type=submit]'), async () => {
+        try {
+          if (f.matches('[data-account]')) {
+            await api.post('admin/mailboxes/account', { token: f.token.value.trim() });
+            toast('Hostinger account connected', 'success');
+            await load(true);
+          } else if (f.matches('[data-create]')) {
+            const v = formData(f);
+            const r = await api.post('admin/mailboxes/create', { order_id: v.order_id, local_part: v.local_part.trim().toLowerCase(), password: v.password, user_id: v.user_id ? +v.user_id : null, connect_mail: !!v.connect_mail });
+            await load(true);
+            const who = users.find((u) => u.id === +v.user_id);
+            await showPassword('Mailbox created', r.mailbox.address, r.password,
+              html`${who ? html`<p class="small" style="margin-bottom:0">${icon('check', 'sm')} ${who.name} can now use it in Mail.</p>` : ''}${r.warning ? html`<div class="callout warning mt-2">${icon('alert-triangle', 'sm')}<div class="small">${r.warning}</div></div>` : ''}`);
+          }
+        } catch (err) { showFieldErrors(f, err.errors); toastError(err); }
+      });
+    });
+    await load();
   },
 
   async announcements(el) {

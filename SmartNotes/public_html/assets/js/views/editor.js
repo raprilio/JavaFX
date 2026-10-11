@@ -14,7 +14,7 @@ import { openTaskForm, refreshTags } from '../components/forms.js';
 import { openShareDialog } from '../components/share.js';
 import { openFilePreview } from '../components/filePreview.js';
 import { renderLockScreen, unlockNotes, toggleNoteLock, lockNow } from '../components/notePin.js';
-import { openDrawingEditor } from '../components/drawPad.js';
+import { openDrawingEditor, openDrawingViewer } from '../components/drawPad.js';
 
 export default {
   title: 'Note',
@@ -67,7 +67,7 @@ export default {
             <button class="btn ghost icon sm" data-a="more" data-tip="More">${icon('more-horizontal', 'sm')}</button>
           </div>
           ${!isOwner && note.pinned_global ? html`<div class="share-banner global">${icon('megaphone', 'sm')}<span>Pinned for everyone by <b>${note.owner?.name || 'an administrator'}</b>${note.shared ? (role === 'edit' ? ' · shared with you, you can edit the title and text' : ' · view only') : ' · view only'}</span></div>` : ''}
-          ${!isOwner && !note.pinned_global ? html`<div class="share-banner">${icon('users', 'sm')}<span>Shared by <b>${note.owner?.name || 'another user'}</b> · ${role === 'edit' ? 'you can edit the title and text' : 'view only'}${note.updated_by_name ? html` · last edited by ${note.updated_by_name}` : ''}</span></div>` : ''}
+          ${!isOwner && !note.pinned_global ? html`<div class="share-banner">${icon('users', 'sm')}<span>Shared by <b>${note.owner?.name || 'another user'}</b> · ${role === 'edit' ? 'you can edit the title, text and checklists' : 'view only — the text and checklists cannot be changed'}${note.updated_by_name ? html` · last edited by ${note.updated_by_name}` : ''}</span></div>` : ''}
           <div data-toolbar></div>
           <div class="editor-paper" style="position:relative">
             <div class="drop-hint">${icon('upload', 'lg')}&nbsp; Drop to attach</div>
@@ -251,44 +251,79 @@ export default {
       save();
     }
     // ------------------------------------------------------------ handwriting (pen)
-    const drawingForm = (r) => {
+    // Stroke JSON goes gzip-compressed when the browser can (multi-page notebooks get large).
+    async function drawingForm(r) {
       const fd = new FormData();
-      fd.append('data', JSON.stringify(r.data));
+      const json = JSON.stringify(r.data);
+      if (typeof CompressionStream === 'function' && json.length > 20000) {
+        const gz = await new Response(new Blob([json]).stream().pipeThrough(new CompressionStream('gzip'))).blob();
+        fd.append('data_gz', gz, 'strokes.json.gz');
+      } else fd.append('data', json);
       fd.append('png', r.blob, 'handwriting.png');
       return fd;
-    };
-    const figureHtml = (d) => `<figure class="sn-drawing" data-drawing-id="${d.id}" contenteditable="false"><img src="${d.png_url}" data-drawing-id="${d.id}" alt="Handwriting"></figure><p><br></p>`;
+    }
+    const caption = (pages) => `Handwriting · ${pages} page${pages === 1 ? '' : 's'}`;
+    const figureHtml = (d, view) => `<figure class="sn-drawing" data-drawing-id="${d.id}" data-view="${view}" data-pages="${d.pages || 1}" contenteditable="false"><img src="${d.png_url}" data-drawing-id="${d.id}" alt="Handwriting"><figcaption>${caption(d.pages || 1)}</figcaption></figure><p><br></p>`;
+    /** Keep the figure's caption / page count in step with the drawing. */
+    function decorate(fig, pages) {
+      if (pages) fig.dataset.pages = pages;
+      let cap = fig.querySelector('figcaption');
+      if (!cap) { cap = document.createElement('figcaption'); fig.appendChild(cap); }
+      cap.textContent = caption(+fig.dataset.pages || 1);
+    }
     async function drawNew() {
+      // A note that already has content gets the drawing minimized like an attachment; an empty note shows it full size.
+      const hasContent = !!(rte.getText().trim() || rte.editor.querySelector('img, figure, table'));
       const r = await openDrawingEditor({ title: 'Handwriting' });
       if (!r?.data) return;
-      const fd = drawingForm(r);
-      fd.append('note_id', id);
       try {
+        const fd = await drawingForm(r);
+        fd.append('note_id', id);
         const d = await api.upload('drawings', fd);
-        rte.insertHTML(figureHtml(d));
+        rte.insertHTML(figureHtml(d, hasContent ? 'card' : 'full'));
         save();
+        if (hasContent) toast('Handwriting added — click it to preview', 'success', { timeout: 2500 });
       } catch (e) { toastError(e); }
     }
-    async function openDrawing(fig, img) {
+    async function editDrawing(fig, img, d) {
       const did = +fig.dataset.drawingId;
-      if (!isOwner || readOnly) {
-        openImageViewer([{ id: did, name: 'Handwriting', url: img.getAttribute('src'), download_url: img.getAttribute('src') }], 0);
-        return;
-      }
-      let d;
-      try { d = await api.get(`drawings/${did}`); } catch (e) { return toastError(e); }
       const r = await openDrawingEditor({ data: d.data, title: 'Handwriting' });
       if (!r) return;
-      if (r.remove) {
-        fig.remove();
-        markDirty();
-        return;
-      }
+      if (r.remove) return removeDrawing(fig, false);
       try {
-        const u = await api.upload(`drawings/${did}`, drawingForm(r));
+        const u = await api.upload(`drawings/${did}`, await drawingForm(r));
         fig.querySelectorAll('img').forEach((im) => im.setAttribute('src', u.png_url));
+        decorate(fig, u.pages);
         markDirty();
       } catch (e) { toastError(e); }
+    }
+    async function removeDrawing(fig, ask = true) {
+      if (ask && !(await confirm({ title: 'Delete this handwriting?', message: 'It is removed from the note. You can undo right after.', confirmText: 'Delete' }))) return;
+      const parent = fig.parentNode, next = fig.nextSibling;
+      fig.remove();
+      markDirty();
+      toast('Handwriting deleted', 'success', { action: 'Undo', onAction: () => { parent.insertBefore(fig, next && next.parentNode === parent ? next : null); markDirty(); } });
+    }
+    /** Click on a drawing: preview its pages; the owner can edit, minimize / expand or delete it from there. */
+    async function openDrawing(fig, img) {
+      const did = +fig.dataset.drawingId;
+      const canEdit = isOwner && !readOnly;
+      let d;
+      try { d = await api.get(`drawings/${did}`); } catch (e) { return toastError(e); }
+      if (!d.data) return openImageViewer([{ id: did, name: 'Handwriting', url: img.getAttribute('src'), download_url: img.getAttribute('src') }], 0);
+      decorate(fig, d.pages);
+      const card = fig.dataset.view === 'card';
+      const act = await openDrawingViewer({
+        data: d.data, title: 'Handwriting', pngUrl: img.getAttribute('src'),
+        actions: canEdit ? [
+          { key: 'delete', label: 'Delete', icon: 'trash-2', danger: true },
+          { key: 'toggle', label: card ? 'Show full size in note' : 'Minimize in note', icon: card ? 'maximize-2' : 'minimize-2' },
+          { key: 'edit', label: 'Edit', icon: 'pen-line', primary: true },
+        ] : [],
+      });
+      if (act === 'edit') return editDrawing(fig, img, d);
+      if (act === 'delete') return removeDrawing(fig);
+      if (act === 'toggle') { fig.dataset.view = card ? 'full' : 'card'; markDirty(); }
     }
 
     async function uploadFiles(list) {
