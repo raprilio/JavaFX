@@ -255,6 +255,8 @@ final class Migrator
         if (DB::val("SELECT DATA_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'note_drawings' AND COLUMN_NAME = 'height'") === 'smallint') {
             DB::pdo()->exec('ALTER TABLE `note_drawings` MODIFY `height` INT UNSIGNED NOT NULL DEFAULT 0');
         }
+        // Old single-sheet drawings: page count from their height (A4 pages of 1414 units).
+        DB::run('UPDATE note_drawings SET pages = GREATEST(1, CEIL(height / 1414)) WHERE pages = 1 AND height > 1414');
         if (!self::hasTable('mailbox_assignments')) {
             DB::pdo()->exec(self::MAILBOX_ASSIGNMENTS_SQL);
         }

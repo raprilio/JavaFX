@@ -50,7 +50,7 @@ final class MailController
         }
         if (!preg_match('/^AC[A-Za-z0-9]{1,60}$/', $id)) {
             if (!Auth::isAdmin()) {
-                throw new HttpException('Connect a mailbox first.', 422);
+                throw new HttpException('Connect a mailbox first.', 403); // no own or given mailbox: nothing to open
             }
             throw new HttpException('Choose a mailbox first.', 422);
         }

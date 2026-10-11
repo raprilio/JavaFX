@@ -14,7 +14,7 @@ import { openTaskForm, refreshTags } from '../components/forms.js';
 import { openShareDialog } from '../components/share.js';
 import { openFilePreview } from '../components/filePreview.js';
 import { renderLockScreen, unlockNotes, toggleNoteLock, lockNow } from '../components/notePin.js';
-import { openDrawingEditor, openDrawingViewer } from '../components/drawPad.js';
+import { openDrawingEditor, openDrawingViewer, normalizeDrawing } from '../components/drawPad.js';
 
 export default {
   title: 'Note',
@@ -311,7 +311,7 @@ export default {
       let d;
       try { d = await api.get(`drawings/${did}`); } catch (e) { return toastError(e); }
       if (!d.data) return openImageViewer([{ id: did, name: 'Handwriting', url: img.getAttribute('src'), download_url: img.getAttribute('src') }], 0);
-      decorate(fig, d.pages);
+      decorate(fig, normalizeDrawing(d.data).pages);
       const card = fig.dataset.view === 'card';
       const act = await openDrawingViewer({
         data: d.data, title: 'Handwriting', pngUrl: img.getAttribute('src'),
