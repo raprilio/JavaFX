@@ -138,6 +138,18 @@ export async function refreshTags() {
   try { state.tags = await api.get('tags'); emit('tags:changed'); } catch { /* ignore */ }
 }
 
+// v1.9: an administrator can put an event / meeting straight into every user's calendar.
+const allUsersField = (on, what) => state.user.role === 'admin' ? html`<div class="field span-2 all-users-field"><label class="check"><input type="checkbox" name="share_all" ${on ? 'checked' : ''}>
+  ${icon('globe', 'sm')} <b>All users</b> <span class="subtle small">— the ${what} is created in everyone's calendar at once (they get the notification and the reminder)</span></label></div>` : '';
+function bindAllUsers(form) {
+  const cb = form.querySelector('[name="share_all"]');
+  const slot = form.querySelector('[data-slot="tagged"]')?.closest('.field');
+  if (!cb || !slot) return;
+  const sync = () => slot.classList.toggle('is-covered', cb.checked);
+  cb.addEventListener('change', sync);
+  sync();
+}
+
 // ===================================================================== EVENT
 export async function openEventForm(ev = null, defaults = {}) {
   const editing = !!ev?.id;
@@ -170,6 +182,7 @@ export async function openEventForm(ev = null, defaults = {}) {
       <div class="field" data-until><label>Repeat until</label><input class="input" type="date" name="repeat_until" value="${e0.repeat_until || ''}"></div>
       <div class="field"><label>Reminder</label><select class="select" name="reminder_minutes">${reminderOptions(e0.reminder_minutes)}</select></div>
       <div class="field"><label>Status</label><select class="select" name="status">${opt([['scheduled', 'Scheduled'], ['completed', 'Completed'], ['cancelled', 'Cancelled']], e0.status || 'scheduled')}</select></div>
+      ${allUsersField(e0.share_all, 'event')}
       <div class="field span-2"><label>${icon('at-sign', 'sm')} Tag users <span class="subtle small">— they see it in their calendar and get the reminder</span></label><div data-slot="tagged"></div></div>
       <div class="field span-2"><label>Other participants <span class="subtle small">(people without an account)</span></label><div data-slot="people"></div></div>
       <div class="field span-2"><label>Color</label>${colorRow('color', e0.color)}</div>
@@ -178,6 +191,7 @@ export async function openEventForm(ev = null, defaults = {}) {
     </div></form>`));
   form.querySelector('[data-slot="people"]').appendChild(people.el);
   form.querySelector('[data-slot="tagged"]').appendChild(tagged.el);
+  bindAllUsers(form);
   bindColorRow(form, 'color');
   noteOptions(e0.note_id).then((o) => (form.querySelector('[name="note_id"]').innerHTML = String(o)));
   const syncUi = () => {
@@ -221,6 +235,7 @@ export async function openEventForm(ev = null, defaults = {}) {
             location: d.location, meeting_url: d.meeting_url, repeat_rule: d.repeat_rule, repeat_until: d.repeat_rule === 'none' ? null : d.repeat_until || null,
             reminder_minutes: d.reminder_minutes === '' ? null : +d.reminder_minutes, status: d.status, color: d.color || null,
             note_id: d.note_id || null, participants: people.get().map(parseParticipant), tag_user_ids: tagged.get(),
+            ...(state.user.role === 'admin' ? { share_all: !!d.share_all } : {}),
           };
           try {
             const saved = editing ? await api.post(`events/${e0.id}`, payload) : await api.post('events', payload);
@@ -260,6 +275,7 @@ export async function openMeetingForm(mt = null, defaults = {}) {
       <div class="field"><label>End time</label><input class="input" type="time" name="end_time" value="${(d0.end_time || '').slice(0, 5)}"></div>
       <div class="field"><label>Location</label><input class="input" name="location" value="${d0.location || ''}" placeholder="Meeting Room A"></div>
       <div class="field"><label>Meeting URL</label><input class="input" name="meeting_url" value="${d0.meeting_url || ''}" placeholder="https://zoom.us/j/…"></div>
+      ${allUsersField(d0.share_all, 'meeting')}
       <div class="field span-2"><label>${icon('at-sign', 'sm')} Tag users <span class="subtle small">— they see it in Meetings & Calendar and get the reminder</span></label><div data-slot="tagged"></div></div>
       <div class="field span-2"><label>Other participants <span class="subtle small">(people without an account)</span></label><div data-slot="people"></div></div>
       <div class="field"><label>Reminder</label><select class="select" name="reminder_minutes">${reminderOptions(d0.reminder_minutes)}</select></div>
@@ -269,6 +285,7 @@ export async function openMeetingForm(mt = null, defaults = {}) {
     </div></form>`));
   form.querySelector('[data-slot="people"]').appendChild(people.el);
   form.querySelector('[data-slot="tagged"]').appendChild(tagged.el);
+  bindAllUsers(form);
   bindColorRow(form, 'color');
   noteOptions(d0.note_id).then((o) => (form.querySelector('[name="note_id"]').innerHTML = String(o)));
 
@@ -282,7 +299,7 @@ export async function openMeetingForm(mt = null, defaults = {}) {
         label: editing ? 'Save changes' : 'Schedule meeting', variant: 'primary', onClick: async () => {
           const d = formData(form);
           if (!d.title.trim()) { showFieldErrors(form, { title: 1 }); return false; }
-          const payload = { ...d, reminder_minutes: d.reminder_minutes === '' ? null : +d.reminder_minutes, color: d.color || null, note_id: d.note_id || null, participants: people.get().map(parseParticipant), tag_user_ids: tagged.get() };
+          const payload = { ...d, reminder_minutes: d.reminder_minutes === '' ? null : +d.reminder_minutes, color: d.color || null, note_id: d.note_id || null, participants: people.get().map(parseParticipant), tag_user_ids: tagged.get(), ...(state.user.role === 'admin' ? { share_all: !!d.share_all } : {}) };
           try {
             const saved = editing ? await api.post(`meetings/${d0.id}`, payload) : await api.post('meetings', payload);
             toast(editing ? 'Meeting updated' : 'Meeting scheduled', 'success');

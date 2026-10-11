@@ -48,8 +48,11 @@ final class DrawingsController
             }
             return $d;
         }
-        if (!$d['note_deleted'] && DB::val('SELECT 1 FROM note_shares WHERE note_id = ? AND user_id = ?', [$d['note_id'], $userId])) {
+        if (!$d['note_deleted'] && NotesController::readableBy((int) $d['note_id'], $userId)) {
             return $d;
+        }
+        if (Auth::isAdmin() && DB::val('SELECT 1 FROM notes WHERE id = ? AND purged_at IS NOT NULL', [$d['note_id']])) {
+            return $d; // admin trash preview
         }
         throw new HttpException('Drawing not found.', 404);
     }
@@ -140,7 +143,7 @@ final class DrawingsController
             throw new HttpException('Invalid drawing data.', 422);
         }
         $h = max(200, min(self::MAX_HEIGHT, (int) ($in['h'] ?? 0)));
-        $bg = in_array($in['bg'] ?? 'none', ['none', 'lines', 'grid', 'dots'], true) ? $in['bg'] : 'none';
+        $bg = in_array($in['bg'] ?? null, ['none', 'lines', 'grid', 'dots'], true) ? $in['bg'] : 'none';
         if (count($in['strokes']) > self::MAX_STROKES) {
             throw new HttpException('The drawing has too many strokes.', 422);
         }

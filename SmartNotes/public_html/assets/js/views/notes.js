@@ -11,13 +11,17 @@ import { toggleNoteLock, lockNow } from '../components/notePin.js';
 const FILTERS = [['all', 'All notes', 'notebook'], ['pinned', 'Pinned', 'pin'], ['favorite', 'Favorites', 'star'], ['shared', 'Shared with me', 'users'], ['shared_by_me', 'Shared by me', 'share-2'], ['recent', 'Recent', 'history'], ['archived', 'Archived', 'archive']];
 const TYPE_ICON = { checklist: 'list-checks', image: 'image', audio: 'mic', mixed: 'layers', rich: 'type', text: 'file-text' };
 
+// Someone else's note in my list: shared with me, or pinned by an admin for everyone (read-only).
+const othersNote = (n) => !!n.owner_id && n.owner_id !== state.user.id;
+
 function card(n, selecting, selected) {
   const cat = state.categories.note.find((c) => c.id === n.category_id);
+  const others = othersNote(n);
   return html`<article class="note-card ${selected ? 'selected' : ''}" data-id="${n.id}" data-nc="${n.color || ''}" tabindex="0">
     <label class="nc-select" ${selecting ? '' : raw('hidden')}><input type="checkbox" ${selected ? 'checked' : ''} data-select></label>
     ${n.cover_id ? html`<div class="nc-cover" style="background-image:url('api/index.php?route=files/${n.cover_id}/thumb')"></div>` : n.drawing_id ? html`<div class="nc-cover nc-ink" style="background-image:url('api/index.php?route=drawings/${n.drawing_id}/png&v=${n.drawing_v}')"></div>` : ''}
     <div class="nc-main">
-      ${n.is_pinned ? html`<span class="nc-pin">${icon('pin', 'sm')}</span>` : ''}
+      ${n.pinned_global ? html`<span class="nc-pin global" data-tip="Pinned by admin for everyone">${icon('megaphone', 'sm')}</span>` : n.is_pinned ? html`<span class="nc-pin" data-tip="Pinned by you">${icon('pin', 'sm')}</span>` : ''}
       ${n.title ? html`<h3>${n.title}</h3>` : ''}
       ${n.locked ? html`<div class="nc-body nc-locked">${icon('lock', 'sm')} Locked — PIN required</div>` : html`<div class="nc-body">${n.excerpt || (n.title ? '' : 'Empty note')}</div>`}
       <div class="nc-meta">
@@ -28,11 +32,12 @@ function card(n, selecting, selected) {
         ${n.audio_count ? html`<span>${icon('mic', 'sm')}${n.audio_count}</span>` : ''}
         ${n.is_favorite ? html`<span style="color:var(--warning)">${icon('star', 'sm')}</span>` : ''}
         ${n.is_locked && !n.locked ? html`<span class="nc-lock" data-tip="Locked note (unlocked now)">${icon('lock-open', 'sm')}</span>` : ''}
-        ${n.shared ? html`<span class="badge info nc-owner">${icon('user', 'sm')} ${n.owner_name}${n.permission === 'edit' ? ' · edit' : ''}</span>` : n.share_count ? html`<span class="badge info" data-tip="Shared with ${n.share_count}">${icon('users', 'sm')} ${n.share_count}</span>` : ''}
+        ${n.pinned_global ? html`<span class="badge warning nc-global">${icon('megaphone', 'sm')} ${others ? n.owner_name : 'Admin'} · for everyone</span>` : ''}
+        ${n.shared ? html`<span class="badge info nc-owner" data-tip="Shared with you by ${n.owner_name}">${icon('share-2', 'sm')} Shared by ${n.owner_name}${n.permission === 'edit' ? ' · edit' : ''}</span>` : !others && n.share_count ? html`<span class="badge info" data-tip="Shared with ${n.share_count}">${icon('users', 'sm')} ${n.share_count}</span>` : ''}
         <span style="margin-left:auto" title="${n.updated_at}">${icon(TYPE_ICON[n.note_type] || 'file-text', 'sm')} ${timeAgo(n.updated_at)}</span>
       </div>
     </div>
-    ${n.shared ? html`<div class="nc-actions">
+    ${others && !n.shared ? '' : n.shared ? html`<div class="nc-actions">
       <button class="btn ghost icon xs" data-a="spin" data-tip="${n.is_pinned ? 'Unpin' : 'Pin'}">${icon(n.is_pinned ? 'pin-off' : 'pin', 'sm')}</button>
       <button class="btn ghost icon xs" data-a="leave" data-tip="Remove from my list">${icon('log-out', 'sm')}</button></div>` : html`<div class="nc-actions">
       <button class="btn ghost icon xs" data-a="pin" data-tip="${n.is_pinned ? 'Unpin' : 'Pin'}">${icon(n.is_pinned ? 'pin-off' : 'pin', 'sm')}</button>
@@ -116,7 +121,16 @@ export default {
         return;
       }
       grid.style.columns = '';
-      grid.innerHTML = items.map((n) => String(card(n, selecting, selected.has(n.id)))).join('');
+      // All / Pinned: admin pins for everyone, then my own pins, then the rest — each with a heading.
+      const sections = ['all', 'pinned'].includes(f.filter) ? [
+        ['global', 'megaphone', 'Pinned by admin — for everyone', items.filter((n) => n.pinned_global)],
+        ['mine', 'pin', 'Pinned by me', items.filter((n) => !n.pinned_global && n.is_pinned)],
+        ['rest', 'notebook', 'Other notes', items.filter((n) => !n.pinned_global && !n.is_pinned)],
+      ].filter((x) => x[3].length) : [];
+      const cards = (list) => list.map((n) => String(card(n, selecting, selected.has(n.id)))).join('');
+      grid.innerHTML = sections.length > 1 || sections[0]?.[0] === 'global'
+        ? sections.map(([k, ic, label, list]) => `<div class="note-section-head ${k}">${icon(ic, 'sm')} ${label} <span class="subtle">${list.length}</span></div>` + cards(list)).join('')
+        : cards(items);
       renderBulk();
     }
 
@@ -181,10 +195,17 @@ export default {
       } catch (e) { toastError(e); }
     }
 
+    async function pinGlobal(n) {
+      const on = !n.pinned_global;
+      if (on && !(await confirm({ title: 'Pin for everyone?', message: `"${n.title || 'Untitled'}" will appear pinned at the top of every user's notes (read-only for them) and they get a notification.`, confirmText: 'Pin for everyone', danger: false, icon: 'megaphone' }))) return;
+      try { await api.post(`notes/${n.id}/pin-global`, { pinned: on }); toast(on ? 'Pinned for everyone' : 'Unpinned for everyone', 'success'); load(true); } catch (e) { toastError(e); }
+    }
+
     function moreMenu(anchor, n) {
       const items2 = [
         { label: 'Open', icon: 'square-arrow-out-up-right', onClick: () => navigate(`/notes/${n.id}`) },
-        { label: n.is_pinned ? 'Unpin' : 'Pin to top', icon: 'pin', onClick: () => update(n, { is_pinned: !n.is_pinned }) },
+        { label: n.is_pinned ? 'Unpin (only me)' : 'Pin to top (only me)', icon: 'pin', onClick: () => update(n, { is_pinned: !n.is_pinned }) },
+        ...(state.user.role === 'admin' ? [{ label: n.pinned_global ? 'Unpin for everyone' : 'Pin for everyone', icon: 'megaphone', disabled: n.is_locked, onClick: () => pinGlobal(n) }] : []),
         { label: n.is_favorite ? 'Remove from favorites' : 'Add to favorites', icon: 'star', onClick: () => update(n, { is_favorite: !n.is_favorite }) },
         { label: n.is_archived ? 'Unarchive' : 'Archive', icon: 'archive', onClick: () => update(n, { is_archived: !n.is_archived }, n.is_archived ? 'Note restored from archive' : 'Note archived') },
         { label: 'Duplicate', icon: 'copy', disabled: n.locked, onClick: async () => { try { await api.post(`notes/${n.id}/duplicate`); toast('Note duplicated', 'success'); load(true); } catch (e) { toastError(e); } } },
@@ -240,8 +261,8 @@ export default {
       if (!cardEl) return;
       const n = items.find((x) => x.id === +cardEl.dataset.id);
       const a = e.target.closest('[data-a]')?.dataset.a;
-      if (n.shared && !a) return navigate(`/notes/${n.id}`);
-      if (!n.shared && (selecting || e.target.closest('[data-select]') || e.ctrlKey || e.metaKey)) {
+      if (othersNote(n) && !a) return navigate(`/notes/${n.id}`);
+      if (!othersNote(n) && (selecting || e.target.closest('[data-select]') || e.ctrlKey || e.metaKey)) {
         if (!selecting) { selecting = true; }
         selected.has(n.id) ? selected.delete(n.id) : selected.add(n.id);
         if (e.target.matches('[data-select]')) e.preventDefault();
@@ -270,7 +291,7 @@ export default {
       const c = e.target.closest('.note-card');
       if (!c) return;
       const n = items.find((x) => x.id === +c.dataset.id);
-      if (n && !n.shared) moreMenu(e, n);
+      if (n && !othersNote(n)) moreMenu(e, n);
     });
     const search = debounce(() => { sync(); load(true); }, 300);
     el.querySelector('[data-search]').addEventListener('input', (e) => { f.q = e.target.value.trim(); search(); });

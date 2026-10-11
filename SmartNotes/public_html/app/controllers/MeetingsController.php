@@ -268,6 +268,9 @@ final class MeetingsController
             self::syncParticipants($id, Http::input('participants'));
             return $id;
         });
+        if (Http::has('share_all')) {
+            self::setShareAll($id, $u, (bool) V::bool(Http::input('share_all')));
+        }
         if (Http::has('tag_user_ids')) {
             self::syncTags($id, $u, V::ids(Http::input('tag_user_ids')));
         }
@@ -287,12 +290,30 @@ final class MeetingsController
                 self::syncParticipants($id, Http::input('participants'));
             }
         });
+        if (Http::has('share_all')) {
+            self::setShareAll($id, $u, (bool) V::bool(Http::input('share_all')));
+        }
         if (Http::has('tag_user_ids')) {
             self::syncTags($id, $u, V::ids(Http::input('tag_user_ids')));
         }
         Scheduler::sync('meeting', $id);
         self::announceChanges($id, $before, $u['name']);
         Http::ok(self::payload($id, $u['id']));
+    }
+
+    /** "All users" switch of the meeting form (administrators only). */
+    private static function setShareAll(int $id, array $u, bool $all): void
+    {
+        $m = DB::one('SELECT share_all FROM meetings WHERE id = ?', [$id]);
+        if ($all && !Auth::isAdmin()) {
+            throw new HttpException('Only administrators can share a meeting with every user.', 403);
+        }
+        if ($all && !(int) $m['share_all']) {
+            DB::run('UPDATE meetings SET share_all = 1, updated_at = updated_at WHERE id = ?', [$id]);
+            self::announce($id, $u['name'], self::recipients($id), 'shared');
+        } elseif (!$all && (int) $m['share_all']) {
+            DB::run('UPDATE meetings SET share_all = 0, updated_at = updated_at WHERE id = ?', [$id]);
+        }
     }
 
     /** "Tag users" field of the meeting form: exactly these users can see it (newly tagged users are notified). */

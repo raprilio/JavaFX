@@ -196,6 +196,8 @@ File backup disimpan di `storage/backups/` (tidak bisa diakses publik). Simpan s
 2. Upload ulang semua file **kecuali** `app/config.php`, `uploads/`, dan `storage/`.
 3. Buka aplikasi. Perubahan skema dijalankan **otomatis** oleh migrator saat request pertama (tidak perlu phpMyAdmin). Versi skema tersimpan di tabel `settings` (`schema_version`).
 
+**Upgrade ke v1.9** (pin untuk semua, catatan berbagi di All notes, pop-up reminder & pengumuman, event untuk semua user, Admin trash): timpa file; migrasi v8 otomatis menambah kolom `notes.pinned_global`, `notes.pinned_global_at`, `notes.purged_at`, `notes.purged_by`, `calendar_events.share_all`, `notifications.popped_at`, `user_settings.popup_reminders`, serta tabel `announcements`, `announcement_targets`, `announcement_reads`. Reminder lama ditandai sudah tampil agar tidak muncul sebagai pop-up setelah upgrade. **Mulai v1.9 catatan yang dihapus permanen oleh user ditahan di Admin → Admin trash** dan bisa dibaca Admin (termasuk catatan ber-PIN); atur hapus otomatis di tab tersebut dan informasikan kebijakan ini ke user.
+
 **Upgrade ke v1.8** (email pribadi Gmail/IMAP, task dari admin, diagram jaringan, ukuran tabel): timpa file; migrasi v7 otomatis menambah kolom `tasks.assigned_by`, tabel `mail_accounts`, dan mengubah `flowchart_nodes.node_type` menjadi teks (untuk bentuk perangkat jaringan). Menu Mail kini terlihat oleh semua user; mailbox Hostinger tetap hanya untuk Admin.
 
 **Upgrade ke v1.7** (beberapa API Email + tanpa batas upload): timpa file; migrasi v6 otomatis mengubah semua batas ukuran upload menjadi 0 (tanpa batas). Token Mail lama otomatis menjadi API pertama bernama *Hostinger Mail*. Restore backup kini juga bisa file besar (dikirim bertahap).

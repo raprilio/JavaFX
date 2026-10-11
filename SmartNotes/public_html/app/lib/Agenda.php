@@ -22,7 +22,7 @@ final class Agenda
             $rows = DB::all(
                 // Own events + events this user is tagged in (read-only for them).
                 "SELECT e.id, e.user_id, e.title, e.description, e.event_type, e.start_at, e.end_at, e.all_day, e.location, e.meeting_url, e.color,
-                        e.repeat_rule, e.repeat_until, e.reminder_minutes, e.status, e.note_id, e.task_id, o.name AS owner_name
+                        e.repeat_rule, e.repeat_until, e.reminder_minutes, e.status, e.note_id, e.task_id, e.share_all, o.name AS owner_name
                  FROM calendar_events e JOIN users o ON o.id = e.user_id
                  WHERE " . EventsController::VISIBLE_SQL . " AND e.deleted_at IS NULL
                    AND ((e.repeat_rule = 'none' AND e.start_at <= ? AND e.end_at >= ?)
@@ -47,6 +47,7 @@ final class Agenda
                         'repeat_rule' => $r['repeat_rule'],
                         'status' => $r['status'],
                         'is_recurring_instance' => $r['repeat_rule'] !== 'none' && $s !== strtotime($r['start_at']),
+                        'share_all' => (bool) $r['share_all'],
                         'shared' => (int) $r['user_id'] !== $userId,
                         'owner_name' => (int) $r['user_id'] !== $userId ? $r['owner_name'] : null,
                     ];
@@ -57,7 +58,7 @@ final class Agenda
         if (in_array('meeting', $types, true)) {
             // Own meetings + meetings shared with this user (read-only for them).
             $rows = DB::all(
-                "SELECT m.id, m.user_id, m.title, m.description, m.meeting_date, m.start_time, m.end_time, m.location, m.meeting_url, m.status, m.color, o.name AS owner_name
+                "SELECT m.id, m.user_id, m.title, m.description, m.meeting_date, m.start_time, m.end_time, m.location, m.meeting_url, m.status, m.color, m.share_all, o.name AS owner_name
                  FROM meetings m JOIN users o ON o.id = m.user_id
                  WHERE " . MeetingsController::visibleSql('m') . " AND m.deleted_at IS NULL AND m.meeting_date BETWEEN ? AND ?",
                 [$userId, $userId, date('Y-m-d', $fromTs), date('Y-m-d', $toTs)]
@@ -76,6 +77,7 @@ final class Agenda
                     'meeting_url' => $r['meeting_url'],
                     'color' => $r['color'],
                     'status' => $r['status'],
+                    'share_all' => (bool) $r['share_all'],
                     'shared' => (int) $r['user_id'] !== $userId,
                     'owner_name' => (int) $r['user_id'] !== $userId ? $r['owner_name'] : null,
                 ];

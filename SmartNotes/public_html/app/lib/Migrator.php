@@ -9,7 +9,7 @@ defined('SN_APP') || exit;
  */
 final class Migrator
 {
-    public const VERSION = 7;
+    public const VERSION = 8;
 
     public static function run(): void
     {
@@ -39,6 +39,9 @@ final class Migrator
             }
             if ($current < 7) {
                 self::v7();
+            }
+            if ($current < 8) {
+                self::v8();
             }
             Settings::set('schema_version', (string) self::VERSION);
         } finally {
@@ -200,6 +203,45 @@ final class Migrator
         DB::pdo()->exec("ALTER TABLE `flowchart_nodes` MODIFY `node_type` VARCHAR(30) NOT NULL DEFAULT 'process'");
         if (!self::hasTable('mail_accounts')) {
             DB::pdo()->exec(self::MAIL_ACCOUNTS_SQL);
+        }
+    }
+
+    /** v1.9: admin pins for everyone, admin trash for deleted notes, events for all users, pop-ups & announcements. */
+    private static function v8(): void
+    {
+        self::addColumn('notes', 'pinned_global', "TINYINT(1) NOT NULL DEFAULT 0 AFTER `is_pinned`");
+        self::addColumn('notes', 'pinned_global_at', 'DATETIME NULL AFTER `pinned_global`');
+        self::addColumn('notes', 'purged_at', 'DATETIME NULL AFTER `deleted_at`');
+        self::addColumn('notes', 'purged_by', 'INT UNSIGNED NULL AFTER `purged_at`');
+        self::addColumn('calendar_events', 'share_all', 'TINYINT(1) NOT NULL DEFAULT 0');
+        self::addColumn('notifications', 'popped_at', 'DATETIME NULL AFTER `read_at`');
+        self::addColumn('user_settings', 'popup_reminders', 'TINYINT(1) NOT NULL DEFAULT 1');
+        // Reminders that fired before the upgrade must not all pop up at once.
+        DB::run("UPDATE notifications SET popped_at = NOW() WHERE type = 'reminder' AND popped_at IS NULL");
+        // Defined here, not read from install/ (that folder may have been deleted after installation).
+        $t = ' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci';
+        if (!self::hasTable('announcements')) {
+            DB::pdo()->exec("CREATE TABLE `announcements` (
+              `id` INT UNSIGNED NOT NULL AUTO_INCREMENT, `created_by` INT UNSIGNED NULL, `title` VARCHAR(160) NOT NULL, `body` TEXT NULL,
+              `level` ENUM('info','important') NOT NULL DEFAULT 'info', `audience` ENUM('all','users') NOT NULL DEFAULT 'all',
+              `starts_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, `ends_at` DATETIME NULL,
+              `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, `deleted_at` DATETIME NULL,
+              PRIMARY KEY (`id`), KEY `idx_announcements_active` (`deleted_at`, `starts_at`),
+              CONSTRAINT `fk_announcements_user` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE SET NULL)" . $t);
+        }
+        if (!self::hasTable('announcement_targets')) {
+            DB::pdo()->exec("CREATE TABLE `announcement_targets` (
+              `announcement_id` INT UNSIGNED NOT NULL, `user_id` INT UNSIGNED NOT NULL,
+              PRIMARY KEY (`announcement_id`, `user_id`), KEY `idx_ann_targets_user` (`user_id`),
+              CONSTRAINT `fk_ann_targets_ann` FOREIGN KEY (`announcement_id`) REFERENCES `announcements` (`id`) ON DELETE CASCADE,
+              CONSTRAINT `fk_ann_targets_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE)" . $t);
+        }
+        if (!self::hasTable('announcement_reads')) {
+            DB::pdo()->exec("CREATE TABLE `announcement_reads` (
+              `announcement_id` INT UNSIGNED NOT NULL, `user_id` INT UNSIGNED NOT NULL, `read_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              PRIMARY KEY (`announcement_id`, `user_id`), KEY `idx_ann_reads_user` (`user_id`),
+              CONSTRAINT `fk_ann_reads_ann` FOREIGN KEY (`announcement_id`) REFERENCES `announcements` (`id`) ON DELETE CASCADE,
+              CONSTRAINT `fk_ann_reads_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE)" . $t);
         }
     }
 

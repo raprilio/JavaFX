@@ -114,7 +114,7 @@ export default {
       setQuery({ view: cal.view.type, date: ymd(cal.getDate()) });
       showDetails({
         ...linked, type: 'event', start: linked.start_at, end: linked.end_at,
-        shared: linked.access !== 'owner', owner_name: linked.owner?.name,
+        shared: linked.access !== 'owner', owner_name: linked.owner?.name, share_all: linked.share_all,
       });
     }
 
@@ -170,7 +170,8 @@ export default {
           ${it.priority ? html`<div class="row small">${icon('flag', 'sm')} Priority: <span class="badge prio prio-${it.priority}">${it.priority}</span> · ${String(it.status).replace('_', ' ')}</div>` : ''}
           ${it.description ? html`<p class="small muted" style="white-space:pre-line;margin:0">${it.description}</p>` : ''}
           ${it.tagged?.length ? html`<div class="row small" style="flex-wrap:wrap;gap:6px">${icon('at-sign', 'sm')} ${it.tagged.map((t) => html`<span class="badge">${t.name}</span>`)}</div>` : ''}
-          ${it.shared ? html`<div class="share-banner" style="margin:0">${icon('at-sign', 'sm')}<span>${it.type === 'meeting' ? 'Shared' : 'Tagged'} by <b>${it.owner_name}</b> · view only</span></div>` : ''}
+          ${it.share_all ? html`<div class="share-banner global" style="margin:0">${icon('globe', 'sm')}<span>${it.shared ? html`Created by <b>${it.owner_name}</b> for all users · view only` : 'In every user\'s calendar (all users)'}</span></div>`
+            : it.shared ? html`<div class="share-banner" style="margin:0">${icon('at-sign', 'sm')}<span>${it.type === 'meeting' ? 'Shared' : 'Tagged'} by <b>${it.owner_name}</b> · view only</span></div>` : ''}
         </div>`,
         actions: [
           ...(it.meeting_url ? [{ label: 'Join', icon: 'video', onClick: () => { window.open(it.meeting_url, '_blank', 'noopener'); return false; } }] : []),

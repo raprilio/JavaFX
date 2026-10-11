@@ -48,6 +48,7 @@ return [
     ['POST', 'notes/{id}/shares/{id}/remove', 'SharesController::remove', 'auth'],
     ['POST', 'notes/{id}/share-pin', 'SharesController::pin', 'auth'],
     ['POST', 'notes/{id}/lock', 'NotesController::lock', 'auth'],
+    ['POST', 'notes/{id}/pin-global', 'NotesController::pinGlobal', 'auth'],
     ['POST', 'drawings', 'DrawingsController::store', 'auth'],
     ['GET', 'drawings/{id}', 'DrawingsController::show', 'auth'],
     ['POST', 'drawings/{id}', 'DrawingsController::update', 'auth'],
@@ -157,6 +158,17 @@ return [
     ['GET', 'notifications', 'NotificationsController::index', 'auth'],
     ['POST', 'notifications/read', 'NotificationsController::read', 'auth'],
     ['POST', 'notifications/clear', 'NotificationsController::clear', 'auth'],
+    ['POST', 'popups/ack', 'AnnouncementsController::ack', 'auth'],
+    // Announcements and the admin trash (full Admin role, checked in the controllers)
+    ['GET', 'admin/announcements', 'AnnouncementsController::index', 'auth'],
+    ['POST', 'admin/announcements', 'AnnouncementsController::store', 'auth'],
+    ['POST', 'admin/announcements/{id}/delete', 'AnnouncementsController::destroy', 'auth'],
+    ['GET', 'admin/announcements/{id}/readers', 'AnnouncementsController::readers', 'auth'],
+    ['GET', 'admin/trash', 'AdminTrashController::index', 'auth'],
+    ['POST', 'admin/trash/empty', 'AdminTrashController::emptyAll', 'auth'],
+    ['GET', 'admin/trash/{id}', 'AdminTrashController::show', 'auth'],
+    ['POST', 'admin/trash/{id}/restore', 'AdminTrashController::restore', 'auth'],
+    ['POST', 'admin/trash/{id}/delete', 'AdminTrashController::destroy', 'auth'],
 
     // Admin
     // Admin mailbox (Hostinger Mail API) — MailController enforces the full admin role.

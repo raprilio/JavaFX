@@ -40,8 +40,8 @@ final class TrashController
     public static function destroy(string $type, int $id): void
     {
         $u = Auth::require();
-        Trash::destroy($type, $id, $u['id']);
-        Activity::log($type . '.destroy', $type, $id, 'Permanently deleted');
+        Trash::remove($type, $id, $u['id']);
+        Activity::log($type . '.destroy', $type, $id, $type === 'note' ? 'Deleted forever (moved to the admin trash)' : 'Permanently deleted');
         Http::ok();
     }
 
@@ -51,7 +51,7 @@ final class TrashController
         $n = 0;
         foreach (Trash::items($u['id']) as $r) {
             try {
-                Trash::destroy($r['type'], (int) $r['id'], $u['id']);
+                Trash::remove($r['type'], (int) $r['id'], $u['id']);
                 $n++;
             } catch (HttpException) {
             }

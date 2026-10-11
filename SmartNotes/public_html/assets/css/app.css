@@ -1243,3 +1243,41 @@ svg .edge-path.selected { stroke: var(--accent) !important; }
 .mail-acc-form details summary { cursor: pointer; color: var(--text-2); }
 .mail-accounts .conn-row .conn-ic { background: color-mix(in srgb, #ea4335 12%, transparent); color: #ea4335; }
 .mail-accounts .conn-row.bad .conn-ic { background: color-mix(in srgb, #ef4444 14%, transparent); color: #dc2626; }
+
+/* ---------- v1.9 notes: admin pins for everyone, shared notes in All ---------- */
+.note-section-head { column-span: all; display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-3); margin: 6px 0 10px; }
+.note-section-head:not(:first-child) { margin-top: 18px; }
+.note-section-head.global { color: #d97706; }
+.note-section-head .subtle { font-weight: 600; }
+.nc-pin.global { color: #d97706; }
+.note-card:has(.nc-global) { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, #f59e0b 55%, transparent); }
+.share-banner.global { background: color-mix(in srgb, #f59e0b 14%, transparent); }
+.share-banner.global .ic { color: #d97706; }
+
+/* v1.9 calendar: admin event for all users */
+.all-users-field .check { align-items: center; gap: 6px; flex-wrap: wrap; }
+.field.is-covered { opacity: .45; pointer-events: none; }
+
+/* v1.9 pop-ups: announcements + reminders */
+.popup-modal .modal-body { text-align: center; padding-top: 26px; }
+.popup-ic { width: 56px; height: 56px; margin: 0 auto 12px; border-radius: 18px; display: grid; place-items: center; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+.popup-modal.reminder .popup-ic { background: color-mix(in srgb, #0ea5e9 15%, transparent); color: #0284c7; }
+.popup-modal.important .popup-ic { background: color-mix(in srgb, #ef4444 15%, transparent); color: #dc2626; }
+.popup-modal.important { border-top: 4px solid #ef4444; }
+.popup-kind { font-size: 11.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); margin-bottom: 4px; }
+.popup-title { font-size: 19px; margin: 0 0 8px; overflow-wrap: anywhere; }
+.popup-body { white-space: pre-line; text-align: left; color: var(--text-2); font-size: 14px; line-height: 1.55; max-height: 46vh; overflow: auto; background: var(--bg-soft, transparent); border-radius: 10px; padding: 4px 2px; overflow-wrap: anywhere; }
+.popup-meta { margin-top: 12px; font-size: 12px; color: var(--text-3); display: flex; gap: 6px; justify-content: center; align-items: center; }
+.popup-modal .modal-foot { justify-content: center; }
+
+/* v1.9 admin: announcements + admin trash */
+.callout { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; font-size: 13.5px; line-height: 1.5; background: var(--info-soft); }
+.callout.warning { background: color-mix(in srgb, #f59e0b 14%, transparent); }
+.callout > .ic { flex: none; margin-top: 2px; }
+.ann-row { display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-elev); }
+.ann-row.ended { opacity: .65; }
+.ann-ic { width: 32px; height: 32px; flex: none; border-radius: 10px; display: grid; place-items: center; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+.ann-row.important .ann-ic { background: color-mix(in srgb, #ef4444 14%, transparent); color: #dc2626; }
+.ann-body { white-space: pre-line; margin: 4px 0; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.trash-preview { min-height: 0; max-height: 60vh; overflow: auto; border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+@media (max-width: 640px) { .ann-row { flex-wrap: wrap; } }

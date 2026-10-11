@@ -182,7 +182,7 @@ final class Scheduler
             }
             if ($type === 'event') {
                 // Users tagged in the event get the same reminder, following their own preferences.
-                foreach (Shares::recipients('event', $id) as $p) {
+                foreach (EventsController::recipients($id) as $p) {
                     Notify::create((int) $p['id'], 'reminder', $title, $info['detail_text'], $info['link']);
                     if ($smtpReady && (int) $p['email_on'] && (int) $p['n_schedule']) {
                         $html = Mailer::template(
@@ -362,6 +362,7 @@ final class Scheduler
         $purged = Trash::purgeOlderThan(Settings::int('trash_auto_delete_days', 0));
         DrawingsController::purgeRemoved();
         ChunkUpload::purgeStale(); // unfinished large uploads older than a day
+        Trash::purgeAdminTrash(Settings::int('admin_trash_days', 0));
         DB::run('DELETE FROM login_attempts WHERE created_at < ?', [date('Y-m-d H:i:s', time() - 7 * 86400)]);
         DB::run('DELETE FROM remember_tokens WHERE expires_at < NOW()');
         DB::run('DELETE FROM password_resets WHERE expires_at < ?', [date('Y-m-d H:i:s', time() - 7 * 86400)]);

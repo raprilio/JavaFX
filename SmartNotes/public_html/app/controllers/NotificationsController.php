@@ -16,7 +16,8 @@ final class NotificationsController
             $i['is_read'] = (bool) $i['is_read'];
         }
         $unread = (int) DB::val('SELECT COUNT(*) FROM notifications WHERE user_id = ? AND is_read = 0', [$u['id']]);
-        Http::ok(['items' => $items, 'unread' => $unread]);
+        // Pop-ups (v1.9): announcements to confirm and reminders that just fired.
+        Http::ok(['items' => $items, 'unread' => $unread, 'popups' => Popups::forUser($u['id'])]);
     }
 
     public static function read(): void

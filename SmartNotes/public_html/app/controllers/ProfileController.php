@@ -99,6 +99,7 @@ final class ProfileController
             'notify_schedule' => static fn($v) => V::bool($v),
             'notify_daily_agenda' => static fn($v) => V::bool($v),
             'notify_weekly_agenda' => static fn($v) => V::bool($v),
+            'popup_reminders' => static fn($v) => V::bool($v),
             'email_notifications' => static fn($v) => V::bool($v),
             'daily_agenda_time' => static fn($v) => V::time($v) ?? '07:00:00',
             'default_reminder' => static fn($v) => V::int($v, 0, 10080),

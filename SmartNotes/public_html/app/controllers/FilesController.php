@@ -77,11 +77,15 @@ final class FilesController
             return $r;
         }
         if ($r && !$r['deleted_at'] && $r['note_id']
-            && DB::val('SELECT s.id FROM note_shares s JOIN notes n ON n.id = s.note_id AND n.deleted_at IS NULL WHERE s.note_id = ? AND s.user_id = ?', [$r['note_id'], $userId])) {
+            && NotesController::readableBy((int) $r['note_id'], $userId)) {
             return $r;
         }
         // Drive files shared directly or through a shared folder.
         if ($r && !$r['deleted_at'] && Shares::role('file', $id, $userId)) {
+            return $r;
+        }
+        // Admin trash: administrators may see the files of notes a user deleted forever.
+        if ($r && $r['note_id'] && Auth::isAdmin() && DB::val('SELECT 1 FROM notes WHERE id = ? AND purged_at IS NOT NULL', [$r['note_id']])) {
             return $r;
         }
         // Attachments of a task this user (an admin) assigned to someone.

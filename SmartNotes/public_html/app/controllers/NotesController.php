@@ -15,7 +15,9 @@ final class NotesController
         if ($filter === 'shared') {
             self::sharedWithMe($u['id']);
         }
-        $where = ['n.user_id = ?'];
+        // All notes / Pinned also list notes shared with me and notes an admin pinned for everyone (v1.9).
+        $wide = in_array($filter, ['all', 'pinned'], true);
+        $where = [$wide ? '(n.user_id = ? OR s.user_id IS NOT NULL OR (n.pinned_global = 1 AND n.is_locked = 0))' : 'n.user_id = ?'];
         $params = [$u['id']];
 
         if ($filter === 'shared_by_me') {
@@ -23,11 +25,13 @@ final class NotesController
             $where[] = 'EXISTS (SELECT 1 FROM note_shares s WHERE s.note_id = n.id)';
         } elseif ($filter === 'trash') {
             $where[] = 'n.deleted_at IS NOT NULL';
+            $where[] = 'n.purged_at IS NULL';
         } else {
             $where[] = 'n.deleted_at IS NULL';
             $where[] = $filter === 'archived' ? 'n.is_archived = 1' : 'n.is_archived = 0';
             if ($filter === 'pinned') {
-                $where[] = 'n.is_pinned = 1';
+                $where[] = '(n.pinned_global = 1 OR IF(n.user_id = ?, n.is_pinned, COALESCE(s.is_pinned, 0)) = 1)';
+                $params[] = $u['id'];
             } elseif ($filter === 'favorite') {
                 $where[] = 'n.is_favorite = 1';
             } elseif ($filter === 'recent') {
@@ -70,30 +74,45 @@ final class NotesController
         $sortMap = ['updated' => 'n.updated_at', 'created' => 'n.created_at', 'title' => 'n.title', 'opened' => 'n.last_opened_at'];
         $sort = $sortMap[Http::query('sort', $filter === 'recent' ? 'opened' : 'updated')] ?? 'n.updated_at';
         $dir = Http::query('dir') === 'asc' ? 'ASC' : 'DESC';
-        $order = ($filter === 'all' ? 'n.is_pinned DESC, ' : '') . "$sort $dir, n.id DESC";
+        // Admin pins for everyone first, then my own pins (or my pin on a note shared with me), then the rest.
+        $order = ($wide ? 'n.pinned_global DESC, IF(n.user_id = ' . (int) $u['id'] . ', n.is_pinned, COALESCE(s.is_pinned, 0)) DESC, ' : '') . "$sort $dir, n.id DESC";
         $perPage = V::int(Http::query('per_page'), 1, 100) ?? 40;
         $page = V::int(Http::query('page'), 1, 100000) ?? 1;
         $whereSql = implode(' AND ', $where);
 
-        $total = (int) DB::val("SELECT COUNT(*) FROM notes n WHERE $whereSql", $params);
+        $from = 'notes n LEFT JOIN note_shares s ON s.note_id = n.id AND s.user_id = ' . (int) $u['id'] . ' LEFT JOIN users o ON o.id = n.user_id';
+        $total = (int) DB::val("SELECT COUNT(*) FROM $from WHERE $whereSql", $params);
         $rows = DB::all(
             "SELECT n.id, n.title, LEFT(n.content_text, 260) AS excerpt, n.note_type, n.color, n.background,
                     n.is_pinned, n.is_favorite, n.is_archived, n.is_locked, n.category_id, n.checklist_total, n.checklist_done,
-                    n.created_at, n.updated_at, n.last_opened_at, n.deleted_at,
+                    n.created_at, n.updated_at, n.last_opened_at, n.deleted_at, n.pinned_global, n.user_id AS owner_id, o.name AS owner_name,
+                    s.permission, s.is_pinned AS share_pinned,
                     (SELECT a.id FROM note_attachments a WHERE a.note_id = n.id AND a.file_kind = 'image' AND a.deleted_at IS NULL ORDER BY a.id LIMIT 1) AS cover_id,
                     (SELECT COUNT(*) FROM note_attachments a WHERE a.note_id = n.id AND a.deleted_at IS NULL) AS attachment_count,
                     (SELECT COUNT(*) FROM audio_notes au WHERE au.note_id = n.id AND au.deleted_at IS NULL) AS audio_count,
                     (SELECT COUNT(*) FROM note_shares s WHERE s.note_id = n.id) AS share_count,
                     (SELECT d.id FROM note_drawings d WHERE d.note_id = n.id AND d.deleted_at IS NULL ORDER BY d.id LIMIT 1) AS drawing_id,
                     (SELECT d.version FROM note_drawings d WHERE d.note_id = n.id AND d.deleted_at IS NULL ORDER BY d.id LIMIT 1) AS drawing_v
-             FROM notes n WHERE $whereSql ORDER BY $order LIMIT $perPage OFFSET " . (($page - 1) * $perPage),
+             FROM $from WHERE $whereSql ORDER BY $order LIMIT $perPage OFFSET " . (($page - 1) * $perPage),
             $params
         );
         $tags = TagsController::forItems('note', array_column($rows, 'id'));
         foreach ($rows as &$r) {
             $r = self::cast($r);
             $r['tags'] = $tags[$r['id']] ?? [];
-            if ($r['is_locked'] && !$unlocked) {
+            $mine = $r['owner_id'] === (int) $u['id'];
+            if (!$mine) {
+                // Someone else's note: shared with me, or pinned by an admin for everyone.
+                $r['shared'] = $r['permission'] !== null;
+                $r['is_pinned'] = (bool) $r['share_pinned'];
+                $r['is_favorite'] = false;
+                $r['category_id'] = null;
+                $r['share_count'] = null;
+            } else {
+                unset($r['owner_name']);
+            }
+            unset($r['share_pinned']);
+            if ($r['is_locked'] && (!$mine || !$unlocked)) {
                 $r = self::masked($r);
             }
         }
@@ -107,7 +126,7 @@ final class NotesController
                 $r[$k] = (int) $r[$k];
             }
         }
-        foreach (['is_pinned', 'is_favorite', 'is_archived', 'is_locked', 'share_pinned'] as $k) {
+        foreach (['is_pinned', 'is_favorite', 'is_archived', 'is_locked', 'share_pinned', 'pinned_global'] as $k) {
             if (array_key_exists($k, $r)) {
                 $r[$k] = (bool) $r[$k];
             }
@@ -129,7 +148,7 @@ final class NotesController
 
     public static function find(int $id, int $userId, bool $withTrashed = false): array
     {
-        $n = DB::one('SELECT * FROM notes WHERE id = ? AND user_id = ?' . ($withTrashed ? '' : ' AND deleted_at IS NULL'), [$id, $userId]);
+        $n = DB::one('SELECT * FROM notes WHERE id = ? AND user_id = ? AND purged_at IS NULL' . ($withTrashed ? '' : ' AND deleted_at IS NULL'), [$id, $userId]);
         if (!$n) {
             throw new HttpException('Note not found.', 404);
         }
@@ -142,7 +161,7 @@ final class NotesController
      */
     public static function access(int $id, int $userId, bool $ownerMayBeTrashed = false): array
     {
-        $n = DB::one('SELECT * FROM notes WHERE id = ?', [$id]);
+        $n = DB::one('SELECT * FROM notes WHERE id = ? AND purged_at IS NULL', [$id]); // deleted forever = only in the admin trash
         if ($n && (int) $n['user_id'] === $userId) {
             if ($n['deleted_at'] && !$ownerMayBeTrashed) {
                 throw new HttpException('Note not found.', 404);
@@ -154,8 +173,44 @@ final class NotesController
             if ($perm) {
                 return [$n, (string) $perm];
             }
+            if ((int) $n['pinned_global'] === 1 && !(int) $n['is_locked']) {
+                return [$n, 'view']; // pinned by an admin for everyone: read-only
+            }
         }
         throw new HttpException('Note not found.', 404);
+    }
+
+    /** Can a user other than the owner read this note (shared with them, or pinned by an admin for everyone)? */
+    public static function readableBy(int $noteId, int $userId): bool
+    {
+        return (bool) DB::val(
+            'SELECT 1 FROM notes n WHERE n.id = ? AND n.deleted_at IS NULL
+               AND (EXISTS (SELECT 1 FROM note_shares s WHERE s.note_id = n.id AND s.user_id = ?) OR (n.pinned_global = 1 AND n.is_locked = 0))',
+            [$noteId, $userId]
+        );
+    }
+
+    /** Admin: pin one of my notes for every user (it appears pinned in everyone's All notes, read-only). */
+    public static function pinGlobal(int $id): void
+    {
+        $u = Auth::require();
+        if (!Auth::isAdmin()) {
+            throw new HttpException('Only administrators can pin notes for everyone.', 403);
+        }
+        $n = self::find($id, $u['id']);
+        $on = V::bool(Http::input('pinned'));
+        if ($on && (int) $n['is_locked']) {
+            throw new HttpException('A locked note cannot be pinned for everyone. Remove the lock first.', 422);
+        }
+        DB::run('UPDATE notes SET pinned_global = ?, pinned_global_at = ?, updated_at = updated_at WHERE id = ?', [$on ? 1 : 0, $on ? now() : null, $id]);
+        if ($on && !(int) $n['pinned_global']) {
+            $title = $n['title'] !== '' ? $n['title'] : 'Tanpa judul';
+            foreach (DB::col("SELECT id FROM users WHERE status = 'active' AND deleted_at IS NULL AND id <> ?", [$u['id']]) as $uid) {
+                Notify::create((int) $uid, 'note', '📌 ' . $u['name'] . ' menyematkan catatan untuk semua: "' . $title . '"', null, '#/notes/' . $id);
+            }
+        }
+        Activity::log($on ? 'note.pin_global' : 'note.unpin_global', 'note', $id, $on ? 'Pinned for everyone' : 'Unpinned for everyone');
+        Http::ok(self::payload($id, $u['id']));
     }
 
     public static function payload(int $id, int $viewerId): array
@@ -182,6 +237,7 @@ final class NotesController
         if ($role === 'owner') {
             $n['shares'] = SharesController::listFor($id);
         } else {
+            $n['shared'] = (bool) DB::val('SELECT 1 FROM note_shares WHERE note_id = ? AND user_id = ?', [$id, $viewerId]);
             $n['share_pinned'] = (bool) DB::val('SELECT is_pinned FROM note_shares WHERE note_id = ? AND user_id = ?', [$id, $viewerId]);
             $n['is_pinned'] = $n['share_pinned'];
             $n['is_favorite'] = false;
@@ -356,6 +412,9 @@ final class NotesController
             if (DB::val('SELECT 1 FROM note_shares WHERE note_id = ? LIMIT 1', [$id])) {
                 throw new HttpException('Shared notes cannot be locked. Stop sharing it first.', 422, ['shared' => true]);
             }
+            if ((int) $n['pinned_global']) {
+                throw new HttpException('This note is pinned for everyone. Unpin it for everyone first.', 422, ['pinned_global' => true]);
+            }
         } elseif (NoteLock::hides($n, $u['id'])) {
             if (Http::has('pin')) {
                 NoteLock::verify($u['id'], Http::input('pin'));
@@ -422,11 +481,11 @@ final class NotesController
         } elseif ($action === 'trash') {
             DB::update('notes', ['deleted_at' => now()], "id IN ($in) AND user_id = ? AND deleted_at IS NULL", $params);
         } elseif ($action === 'restore') {
-            DB::update('notes', ['deleted_at' => null], "id IN ($in) AND user_id = ?", $params);
+            DB::update('notes', ['deleted_at' => null], "id IN ($in) AND user_id = ? AND purged_at IS NULL", $params);
         } elseif ($action === 'destroy') {
             foreach ($ids as $id) {
                 try {
-                    Trash::destroy('note', $id, $u['id']);
+                    Trash::remove('note', $id, $u['id']);
                 } catch (HttpException) {
                     // skip items that are not owned / already gone
                 }

@@ -3,7 +3,7 @@ import { html, icon, h, $, $$, esc, timeAgo, isMobile, modKey } from './dom.js';
 import { state, on, emit, can } from './store.js';
 import { api } from './api.js';
 import { navigate } from './router.js';
-import { menu, popover, toast, avatarHtml, toastError } from './ui.js';
+import { menu, popover, toast, avatarHtml, toastError, modal } from './ui.js';
 import { CREATE_ITEMS, newNote, newTask, newMeeting, newEvent } from './actions.js';
 import { openPalette } from './palette.js';
 import { applyThemeMode, effectiveTheme } from './theme.js';
@@ -186,8 +186,11 @@ async function poll(first = false) {
     const r = await api.get('notifications');
     setUnread(r.unread);
     const newest = r.items[0]?.id || 0;
+    const popped = new Set((r.popups || []).filter((p) => p.kind === 'reminder').map((p) => p.id));
+    if (r.popups?.length) queuePopups(r.popups);
     if (!first && newest > lastSeenId) {
-      r.items.filter((n) => n.id > lastSeenId && !n.is_read).slice(0, 3).forEach((n) => {
+      // Announcements and reminders that pop up get no extra toast.
+      r.items.filter((n) => n.id > lastSeenId && !n.is_read && n.type !== 'announcement' && !popped.has(n.id)).slice(0, 3).forEach((n) => {
         toast(n.title, 'info', { action: n.link ? 'Open' : '', onAction: () => n.link && navigate(n.link.replace(/^#/, '')) , timeout: 8000 });
         if (window.Notification?.permission === 'granted' && document.hidden !== false) {
           try { new Notification(n.title, { body: n.message || '', tag: 'sn-' + n.id }); } catch { /* ignore */ }
@@ -198,6 +201,48 @@ async function poll(first = false) {
     return r;
   } catch { return null; }
 }
+// ---------------------------------------------------------------- pop-ups (v1.9)
+// Admin announcements stay until the user confirms them; reminders pop up once when they fire.
+const popupQueue = [];
+const popupSeen = new Set();
+let popupOpen = false;
+function queuePopups(list) {
+  list.forEach((p) => {
+    const key = p.kind + ':' + p.id;
+    if (popupSeen.has(key)) return;
+    popupSeen.add(key);
+    popupQueue.push(p);
+  });
+  showNextPopup();
+}
+async function showNextPopup() {
+  if (popupOpen || !popupQueue.length) return;
+  popupOpen = true;
+  const p = popupQueue.shift();
+  const ann = p.kind === 'announcement';
+  const important = ann && p.level === 'important';
+  const ack = () => api.post('popups/ack', { kind: p.kind, id: p.id }).catch(() => {});
+  const m = modal({
+    title: null,
+    size: 'sm',
+    className: `popup-modal ${ann ? 'announce' : 'reminder'} ${important ? 'important' : ''}`,
+    dismissible: !ann,
+    body: html`<div class="popup-ic">${icon(ann ? (important ? 'alert-triangle' : 'megaphone') : 'bell-ring', 'lg')}</div>
+      <div class="popup-kind">${ann ? (important ? 'Important announcement' : 'Announcement') : 'Reminder'}${popupQueue.length ? html` <span class="subtle">· ${popupQueue.length} more</span>` : ''}</div>
+      <h2 class="popup-title">${ann ? p.title : String(p.title || '').replace(/^⏰\s*/, '')}</h2>
+      ${p.body ? html`<div class="popup-body">${p.body}</div>` : ''}
+      <div class="popup-meta">${ann ? html`${icon('user', 'xs')} ${p.author || 'Administrator'} · ${timeAgo(p.created_at)}` : html`${icon('clock', 'xs')} ${timeAgo(p.created_at)}`}</div>`,
+    actions: ann
+      ? [{ label: 'Got it', variant: 'primary', icon: 'check', value: 'ok' }]
+      : [{ label: 'Dismiss', value: 'close' }, ...(p.link ? [{ label: 'Open', variant: 'primary', icon: 'arrow-right', value: 'open' }] : [])],
+  });
+  const v = await m.result;
+  await ack();
+  if (v === 'open' && p.link) navigate(p.link.replace(/^#/, ''));
+  popupOpen = false;
+  setTimeout(showNextPopup, 250);
+}
+
 function startNotifications() {
   poll(true);
   clearInterval(pollTimer);

@@ -274,7 +274,7 @@ final class AdminController
     private const GENERAL_KEYS = [
         'app_name', 'app_tagline', 'default_theme', 'default_accent', 'allow_registration', 'allow_note_sharing', 'trash_auto_delete_days',
         'max_image_mb', 'max_audio_mb', 'max_video_mb', 'max_file_mb', 'default_reminder_minutes', 'web_cron_enabled',
-        'upload_kinds', 'min_free_disk_mb', 'storage_plan_gb',
+        'upload_kinds', 'min_free_disk_mb', 'storage_plan_gb', 'admin_trash_days',
     ];
 
     public static function settings(): void
@@ -316,7 +316,7 @@ final class AdminController
         // Upload size limits: 0 = no limit (only the hosting space counts).
         $mb = [0, UploadPolicy::MAX_MB];
         $ints = ['trash_auto_delete_days' => [0, 3650], 'max_image_mb' => $mb, 'max_audio_mb' => $mb, 'max_video_mb' => $mb, 'max_file_mb' => $mb,
-            'default_reminder_minutes' => [0, 10080], 'min_free_disk_mb' => [0, 1048576], 'storage_plan_gb' => [0, 100000]];
+            'default_reminder_minutes' => [0, 10080], 'min_free_disk_mb' => [0, 1048576], 'storage_plan_gb' => [0, 100000], 'admin_trash_days' => [0, 3650]];
         if (array_key_exists('upload_kinds', $in)) {
             $kinds = is_array($in['upload_kinds']) ? $in['upload_kinds'] : explode(',', (string) $in['upload_kinds']);
             $kinds = array_values(array_intersect(UploadPolicy::KINDS, array_map('strval', $kinds)));

@@ -61,11 +61,13 @@ export default {
             ${isOwner ? html`<button class="btn ghost icon sm ${note.is_pinned ? 'active' : ''}" data-a="pin" data-tip="Pin">${icon('pin', 'sm')}</button>
             <button class="btn ghost icon sm ${note.is_favorite ? 'active' : ''}" data-a="favorite" data-tip="Favorite">${icon('star', 'sm')}</button>
             <button class="btn ghost icon sm" data-a="color" data-tip="Color & background">${icon('palette', 'sm')}</button>`
-              : html`<button class="btn ghost icon sm ${note.share_pinned ? 'active' : ''}" data-a="spin" data-tip="Pin to my shared notes">${icon('pin', 'sm')}</button>`}
+              : note.shared ? html`<button class="btn ghost icon sm ${note.share_pinned ? 'active' : ''}" data-a="spin" data-tip="Pin to my shared notes">${icon('pin', 'sm')}</button>` : ''}
+            ${isOwner && note.pinned_global && !trashed ? html`<span class="badge warning" data-global-badge data-tip="Everyone sees this note pinned at the top of their notes">${icon('megaphone', 'sm')}<span class="hide-sm">For everyone</span></span>` : ''}
             <button class="btn ghost icon sm" data-a="info" data-tip="Details">${icon('panel-right', 'sm')}</button>
             <button class="btn ghost icon sm" data-a="more" data-tip="More">${icon('more-horizontal', 'sm')}</button>
           </div>
-          ${!isOwner ? html`<div class="share-banner">${icon('users', 'sm')}<span>Shared by <b>${note.owner?.name || 'another user'}</b> · ${role === 'edit' ? 'you can edit the title and text' : 'view only'}${note.updated_by_name ? html` · last edited by ${note.updated_by_name}` : ''}</span></div>` : ''}
+          ${!isOwner && note.pinned_global ? html`<div class="share-banner global">${icon('megaphone', 'sm')}<span>Pinned for everyone by <b>${note.owner?.name || 'an administrator'}</b>${note.shared ? (role === 'edit' ? ' · shared with you, you can edit the title and text' : ' · view only') : ' · view only'}</span></div>` : ''}
+          ${!isOwner && !note.pinned_global ? html`<div class="share-banner">${icon('users', 'sm')}<span>Shared by <b>${note.owner?.name || 'another user'}</b> · ${role === 'edit' ? 'you can edit the title and text' : 'view only'}${note.updated_by_name ? html` · last edited by ${note.updated_by_name}` : ''}</span></div>` : ''}
           <div data-toolbar></div>
           <div class="editor-paper" style="position:relative">
             <div class="drop-hint">${icon('upload', 'lg')}&nbsp; Drop to attach</div>
@@ -385,21 +387,27 @@ export default {
           { label: 'Export as HTML', icon: 'file-code', onClick: () => exportNote('html') },
           { label: 'Export as text', icon: 'file-text', onClick: () => exportNote('txt') },
           { label: 'Print / save as PDF', icon: 'printer', onClick: () => window.print() },
-          { divider: true },
+          ...(note.shared ? [{ divider: true },
           { label: 'Remove from my shared notes', icon: 'log-out', danger: true, onClick: async () => {
             if (!(await confirm({ title: 'Remove this note?', message: 'You will no longer see this shared note. The owner keeps it.', confirmText: 'Remove' }))) return;
             await save();
             await api.post(`notes/${id}/leave`).catch(toastError);
             ctx.beforeLeave = null;
             navigate('/notes?filter=shared');
-          } },
+          } }] : []),
         ], { align: 'end' });
       }
       if (a === 'more') {
         menu(btn, [
           { label: note.is_archived ? 'Unarchive' : 'Archive', icon: 'archive', onClick: async () => { const r = await saveField({ is_archived: !note.is_archived }); toast(r?.is_archived ? 'Note archived' : 'Note unarchived', 'success'); } },
           { label: 'Duplicate', icon: 'copy', onClick: async () => { await save(); const r = await api.post(`notes/${id}/duplicate`).catch(toastError); if (r) navigate(`/notes/${r.id}`); } },
-          ...(trashed ? [] : [{ label: note.is_locked ? 'Remove lock' : 'Lock with PIN', icon: note.is_locked ? 'lock-open' : 'lock', onClick: async () => { await save(); if (await toggleNoteLock(note)) remount(); } }]),
+          ...(!trashed && state.user.role === 'admin' ? [{ label: note.pinned_global ? 'Unpin for everyone' : 'Pin for everyone', icon: 'megaphone', disabled: note.is_locked, onClick: async () => {
+            const on = !note.pinned_global;
+            if (on && !(await confirm({ title: 'Pin for everyone?', message: 'This note appears pinned at the top of every user\'s notes (read-only for them) and they get a notification.', confirmText: 'Pin for everyone', danger: false, icon: 'megaphone' }))) return;
+            await save();
+            try { const r = await api.post(`notes/${id}/pin-global`, { pinned: on }); note.pinned_global = r.pinned_global; toast(on ? 'Pinned for everyone' : 'Unpinned for everyone', 'success'); emit('notes:changed'); remount(); } catch (e) { toastError(e); }
+          } }] : []),
+          ...(trashed || note.pinned_global ? [] : [{ label: note.is_locked ? 'Remove lock' : 'Lock with PIN', icon: note.is_locked ? 'lock-open' : 'lock', onClick: async () => { await save(); if (await toggleNoteLock(note)) remount(); } }]),
           { label: 'Export as HTML', icon: 'file-code', onClick: () => exportNote('html') },
           { label: 'Export as text', icon: 'file-text', onClick: () => exportNote('txt') },
           { label: 'Print / save as PDF', icon: 'printer', onClick: () => window.print() },

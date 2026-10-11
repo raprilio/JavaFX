@@ -117,6 +117,7 @@ const tabs = {
         <div class="setting-row"><div class="info"><b>Task reminders</b><span>Before a task's due date/time.</span></div>${switchHtml('notify_task', s.notify_task)}</div>
         <div class="setting-row"><div class="info"><b>Meeting reminders</b><span>e.g. “Meeting Project Dukcapil akan dimulai 30 menit lagi.”</span></div>${switchHtml('notify_meeting', s.notify_meeting)}</div>
         <div class="setting-row"><div class="info"><b>Schedule reminders</b><span>Calendar events, schedules and reminders.</span></div>${switchHtml('notify_schedule', s.notify_schedule)}</div>
+        <div class="setting-row"><div class="info"><b>Show reminder pop-ups</b><span>A reminder opens as a pop-up window while SmartNotes is open (it is always in the bell too).</span></div>${switchHtml('popup_reminders', s.popup_reminders !== false)}</div>
         <div class="setting-row"><div class="info"><b>Default reminder</b><span>Pre-selected when you create tasks, events and meetings.</span></div>
           <select class="select sm" style="width:auto" data-default>${REMINDERS.map(([v, l]) => html`<option value="${v}" ${String(s.default_reminder ?? '') === v ? 'selected' : ''}>${l}</option>`)}</select></div>`)}
       ${card('Desktop notifications', 'Show a system notification when a reminder arrives while SmartNotes is open in a background tab.', html`

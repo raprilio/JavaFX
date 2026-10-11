@@ -28,13 +28,48 @@ final class EventsController
         return $e;
     }
 
-    /** Calendar events the user owns or is tagged in. */
-    public const VISIBLE_SQL = "(e.user_id = ? OR EXISTS (SELECT 1 FROM item_shares ts WHERE ts.item_type = 'event' AND ts.item_id = e.id AND ts.user_id = ?))";
+    /** Calendar events the user owns, is tagged in, or that an admin made for every user. */
+    public const VISIBLE_SQL = "(e.user_id = ? OR e.share_all = 1 OR EXISTS (SELECT 1 FROM item_shares ts WHERE ts.item_type = 'event' AND ts.item_id = e.id AND ts.user_id = ?))";
+
+    /** People (besides the owner) who see an event and get its reminders. */
+    public static function recipients(int $id): array
+    {
+        $e = DB::one('SELECT user_id, share_all FROM calendar_events WHERE id = ?', [$id]);
+        if (!$e || !(int) $e['share_all']) {
+            return Shares::recipients('event', $id);
+        }
+        return DB::all(
+            "SELECT u.id, u.name, u.email, COALESCE(st.email_notifications, 1) AS email_on, COALESCE(st.notify_schedule, 1) AS n_schedule
+             FROM users u LEFT JOIN user_settings st ON st.user_id = u.id
+             WHERE u.id <> ? AND u.status = 'active' AND u.deleted_at IS NULL",
+            [(int) $e['user_id']]
+        );
+    }
+
+    /** "All users" switch (administrators only): everyone sees the event in their calendar right away. */
+    private static function setShareAll(int $id, array $u): void
+    {
+        if (!Http::has('share_all')) {
+            return;
+        }
+        $all = V::bool(Http::input('share_all'));
+        if ($all && !Auth::isAdmin()) {
+            throw new HttpException('Only administrators can add an event to every user\'s calendar.', 403);
+        }
+        $was = (int) DB::val('SELECT share_all FROM calendar_events WHERE id = ?', [$id]);
+        DB::run('UPDATE calendar_events SET share_all = ?, updated_at = updated_at WHERE id = ?', [$all ? 1 : 0, $id]);
+        if ($all && !$was) {
+            $title = (string) DB::val('SELECT title FROM calendar_events WHERE id = ?', [$id]);
+            foreach (self::recipients($id) as $p) {
+                Notify::create((int) $p['id'], 'event', '📅 ' . $u['name'] . ' menambahkan jadwal untuk semua: "' . $title . '"', null, '#/calendar?event=' . $id);
+            }
+        }
+    }
 
     public static function payload(int $id, int $userId): array
     {
-        [, $role] = Shares::require('event', $id, $userId);
         $e = DB::one('SELECT * FROM calendar_events WHERE id = ?', [$id]);
+        $role = $e && !$e['deleted_at'] && (int) $e['share_all'] && (int) $e['user_id'] !== $userId ? 'view' : Shares::require('event', $id, $userId)[1];
         $ownerId = (int) $e['user_id'];
         unset($e['user_id']);
         $e['access'] = $role;
@@ -46,6 +81,7 @@ final class EventsController
             }
         }
         $e['all_day'] = (bool) $e['all_day'];
+        $e['share_all'] = (bool) $e['share_all'];
         $e['participants'] = DB::all('SELECT id, name, email FROM event_participants WHERE event_id = ? ORDER BY id', [$id]);
         // The owner's linked note/task stay private to the owner.
         $e['note_title'] = $role === 'owner' && $e['note_id'] ? DB::val('SELECT title FROM notes WHERE id = ?', [$e['note_id']]) : null;
@@ -73,6 +109,7 @@ final class EventsController
             self::syncParticipants($id, Http::input('participants'));
             return $id;
         });
+        self::setShareAll($id, $u);
         if (Http::has('tag_user_ids')) {
             Shares::sync('event', $id, $u, V::ids(Http::input('tag_user_ids')));
         }
@@ -92,6 +129,7 @@ final class EventsController
                 self::syncParticipants($id, Http::input('participants'));
             }
         });
+        self::setShareAll($id, $u);
         if (Http::has('tag_user_ids')) {
             Shares::sync('event', $id, $u, V::ids(Http::input('tag_user_ids')));
         }

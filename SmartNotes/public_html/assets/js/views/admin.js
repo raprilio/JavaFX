@@ -1,5 +1,5 @@
 // Admin panel: overview & charts, users, branding, general settings, e-mail & reminders, categories, backup, activity log.
-import { html, icon, fmtBytes, fmtDateTime, timeAgo, loadScript, debounce, h, initials } from '../core/dom.js';
+import { html, icon, fmtBytes, fmtDateTime, timeAgo, loadScript, debounce, h, initials, raw } from '../core/dom.js';
 import { api } from '../core/api.js';
 import { state, can, emit } from '../core/store.js';
 import { toast, toastError, confirm, modal, formData, showFieldErrors, withLoading, switchHtml, ACCENTS, empty, prompt } from '../core/ui.js';
@@ -7,12 +7,25 @@ import { pickFiles } from '../components/attachments.js';
 import { themeColors } from '../components/canvas.js';
 import { mailSettingsPanel } from '../components/mailConnections.js';
 import { brandHtml } from '../core/shell.js';
+import { userPicker } from '../components/userPicker.js';
 
 const TABS = [
   ['overview', 'Overview', 'chart-column', 'view_stats'], ['users', 'Users', 'users', 'manage_users'], ['branding', 'Branding', 'image', 'manage_branding'],
   ['general', 'General', 'sliders-horizontal', 'manage_settings'], ['uploads', 'Uploads & storage', 'hard-drive-upload', 'manage_settings'], ['email', 'Email & reminders', 'mail', 'manage_email'], ['categories', 'Categories', 'folder', 'manage_categories'],
+  ['announcements', 'Announcements', 'megaphone', 'admin_only'], ['trash', 'Admin trash', 'trash-2', 'admin_only'],
   ['backup', 'Backup & data', 'database-backup', 'manage_backup'], ['activity', 'Activity log', 'activity', 'view_stats'],
 ];
+// 'admin_only' is no grantable permission: can() lets only the Admin role through (announcements, users' deleted notes).
+
+// Deleted note bodies were sanitised when saved; strip active content again before showing them here.
+function safeHtml(src) {
+  const doc = new DOMParser().parseFromString(`<div>${src || ''}</div>`, 'text/html');
+  doc.querySelectorAll('script,style,iframe,object,embed,link,meta,form').forEach((n) => n.remove());
+  doc.querySelectorAll('*').forEach((n) => [...n.attributes].forEach((a) => {
+    if (/^on/i.test(a.name) || (/^(href|src|xlink:href)$/i.test(a.name) && /^\s*javascript:/i.test(a.value))) n.removeAttribute(a.name);
+  }));
+  return doc.body.firstElementChild.innerHTML;
+}
 const remount = (el, fn) => {
   const fresh = el.cloneNode(false);
   el.replaceWith(fresh);
@@ -403,6 +416,146 @@ const tabs = {
       const lines = (s) => s.split('\n').map((x) => x.trim()).filter(Boolean);
       try { const r = await api.post('admin/categories', { note: lines(f.note), task: lines(f.task), apply_to_existing: f.apply }); toast(`Saved${r.applied ? ` · ${r.applied} categories added to users` : ''}`, 'success'); } catch (err) { toastError(err); }
     });
+  },
+
+  async announcements(el) {
+    el.innerHTML = String(html`
+      ${card(html`${icon('megaphone', 'sm')} New announcement`, html`<form class="form-grid" data-form autocomplete="off">
+        <div class="field span-2"><label>Title</label><input class="input" name="title" maxlength="160" required placeholder="e.g. Server maintenance on Saturday 22:00"></div>
+        <div class="field span-2"><label>Message</label><textarea class="textarea" name="body" rows="4" maxlength="5000" placeholder="What everyone needs to know…"></textarea></div>
+        <div class="field"><label>Type</label><select class="select" name="level"><option value="info">Information</option><option value="important">Important (highlighted)</option></select></div>
+        <div class="field"><label>Show until <span class="subtle small">(optional)</span></label><input class="input" type="datetime-local" name="ends_at"><span class="hint">Users who have not confirmed it by then no longer see the pop-up.</span></div>
+        <div class="field span-2"><label>Send to</label><div class="row wrap" style="gap:16px">
+          <label class="check"><input type="radio" name="audience" value="all" checked> ${icon('globe', 'sm')} All users</label>
+          <label class="check"><input type="radio" name="audience" value="users"> ${icon('users', 'sm')} Chosen users</label></div></div>
+        <div class="field span-2 hidden" data-pick-wrap><label>Users</label><div data-pick></div></div>
+        <div class="field span-2">${switchHtml('send_email', false, 'Also send it by e-mail (users who allow e-mail notifications)')}</div>
+        <div class="field span-2"><button class="btn primary" type="submit" style="width:max-content">${icon('send', 'sm')} Publish announcement</button>
+          <span class="hint">It pops up for every recipient the next time the app checks for notifications (within a minute) and stays until they press “Got it”.</span></div>
+      </form>`)}
+      ${card(html`${icon('list', 'sm')} Published`, html`<div data-list><div style="padding:30px;text-align:center"><span class="spinner"></span></div></div>`)}`);
+    const form = el.querySelector('[data-form]');
+    const picker = userPicker({ placeholder: 'Type a name…' });
+    form.querySelector('[data-pick]').appendChild(picker.el);
+    form.addEventListener('change', () => form.querySelector('[data-pick-wrap]').classList.toggle('hidden', form.audience.value !== 'users'));
+    const list = el.querySelector('[data-list]');
+    let items = [];
+    const load = async () => {
+      items = await api.get('admin/announcements');
+      list.innerHTML = items.length ? String(html`<div class="col" style="gap:10px">${items.map((a) => html`<div class="ann-row ${a.level} ${a.active ? '' : 'ended'}" data-id="${a.id}">
+          <span class="ann-ic">${icon(a.level === 'important' ? 'alert-triangle' : 'megaphone', 'sm')}</span>
+          <div class="grow" style="min-width:0">
+            <div class="row" style="gap:6px;flex-wrap:wrap"><b>${a.title}</b>${a.active ? html`<span class="badge success">Active</span>` : html`<span class="badge">Ended</span>`}
+              <span class="badge info">${icon(a.audience === 'all' ? 'globe' : 'users', 'xs')} ${a.audience === 'all' ? 'All users' : `${a.audience_count} user${a.audience_count === 1 ? '' : 's'}`}</span></div>
+            ${a.body ? html`<div class="small muted ann-body">${a.body}</div>` : ''}
+            <div class="tiny subtle">${a.author || ''} · ${fmtDateTime(a.created_at)}${a.ends_at ? html` · until ${fmtDateTime(a.ends_at)}` : ''}</div>
+          </div>
+          <button class="btn ghost sm" data-act="readers" data-tip="Who confirmed it">${icon('eye', 'sm')} ${a.read_count}/${a.audience_count}</button>
+          <button class="btn ghost icon sm danger" data-act="delete" data-tip="Remove" aria-label="Remove ${a.title}">${icon('trash-2', 'sm')}</button>
+        </div>`)}</div>`) : String(empty({ icon: 'megaphone', title: 'No announcements yet', text: 'Published announcements pop up for users until they confirm them.' }));
+    };
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const d = formData(form);
+      const payload = { title: d.title, body: d.body, level: d.level, audience: d.audience, send_email: !!d.send_email,
+        ends_at: d.ends_at ? d.ends_at.replace('T', ' ') + ':00' : null, user_ids: d.audience === 'users' ? picker.get() : [] };
+      if (d.audience === 'users' && !payload.user_ids.length) return toast('Choose at least one user', 'warning');
+      await withLoading(form.querySelector('[type=submit]'), async () => {
+        try {
+          const r = await api.post('admin/announcements', payload);
+          toast(`Announcement sent to ${r.recipients} user${r.recipients === 1 ? '' : 's'}`, 'success');
+          form.reset(); picker.set([]); form.querySelector('[data-pick-wrap]').classList.add('hidden');
+          load();
+        } catch (err) { showFieldErrors(form, err.errors); toastError(err); }
+      });
+    });
+    list.addEventListener('click', async (e) => {
+      const b = e.target.closest('[data-act]');
+      if (!b) return;
+      const a = items.find((x) => x.id === +b.closest('[data-id]').dataset.id);
+      try {
+        if (b.dataset.act === 'delete') {
+          if (!(await confirm({ title: 'Remove announcement?', message: 'It stops popping up for users who have not confirmed it yet.', confirmText: 'Remove' }))) return;
+          await api.post(`admin/announcements/${a.id}/delete`);
+          toast('Announcement removed', 'success');
+          load();
+        } else if (b.dataset.act === 'readers') {
+          const rows = await api.get(`admin/announcements/${a.id}/readers`);
+          modal({ title: a.title, size: 'sm', body: html`<div class="list">${rows.map((r) => html`<div class="list-item" style="cursor:default"><span class="avatar sm">${initials(r.name)}</span>
+              <div class="li-main"><div class="li-title">${r.name}</div><div class="li-sub">${r.email}</div></div>
+              ${r.read_at ? html`<span class="badge success" title="${r.read_at}">${icon('check', 'xs')} ${timeAgo(r.read_at)}</span>` : html`<span class="badge">Not yet</span>`}</div>`)}</div>`,
+            actions: [{ label: 'Close', variant: 'primary' }] });
+        }
+      } catch (err) { toastError(err); }
+    });
+    await load();
+  },
+
+  async trash(el) {
+    const s = await api.get('admin/settings');
+    el.innerHTML = String(html`
+      <div class="callout warning">${icon('shield-alert', 'sm')}<div><b>Notes users deleted forever land here first.</b> Only administrators see this list. It shows the full content, including notes that were locked with a PIN — the PIN protects a note inside the app, it does not encrypt it. Every view, restore and delete is written to the activity log.</div></div>
+      ${card(html`${icon('trash-2', 'sm')} Deleted notes <span class="subtle small" data-count></span>`, html`
+        <div class="row wrap mb-2" style="gap:8px"><input class="input" data-q placeholder="Search title, text or user…" style="max-width:320px">
+          <div class="grow"></div><button class="btn sm danger-text" data-empty>${icon('trash', 'sm')} Empty admin trash</button></div>
+        <div data-list><div style="padding:30px;text-align:center"><span class="spinner"></span></div></div>`)}
+      ${card(html`${icon('timer', 'sm')} Retention`, html`<form class="row wrap" data-ret style="gap:10px;align-items:flex-end">
+        <div class="field" style="margin:0"><label>Delete from the admin trash after (days)</label><input class="input" type="number" min="0" max="3650" name="admin_trash_days" value="${s.admin_trash_days ?? 0}" style="max-width:160px"></div>
+        <button class="btn" type="submit">${icon('save', 'sm')} Save</button><span class="hint" style="flex-basis:100%">0 = keep until an administrator deletes them.</span></form>`)}`);
+    const list = el.querySelector('[data-list]');
+    let q = '';
+    let items = [];
+    const load = async () => {
+      const r = await api.get('admin/trash', { q });
+      items = r.items;
+      el.querySelector('[data-count]').textContent = items.length ? String(items.length) : '';
+      list.innerHTML = items.length ? String(html`<div class="table-wrap"><table class="table"><thead><tr><th>Note</th><th>Owner</th><th class="hide-sm">Deleted forever</th><th></th></tr></thead><tbody>
+        ${items.map((n) => html`<tr data-id="${n.id}"><td style="min-width:200px"><b>${n.title || 'Untitled'}</b> ${n.is_locked ? html`<span class="badge warning" data-tip="Was locked with a PIN">${icon('lock', 'xs')} PIN</span>` : ''}${n.attachment_count ? html` <span class="badge">${icon('paperclip', 'xs')} ${n.attachment_count}</span>` : ''}
+            <div class="tiny subtle truncate" style="max-width:420px">${n.excerpt || ''}</div></td>
+          <td class="small">${n.owner.name}<div class="tiny subtle">${n.owner.email}</div></td>
+          <td class="small hide-sm nowrap" title="${n.purged_at}">${timeAgo(n.purged_at)}</td>
+          <td class="nowrap" style="text-align:right"><button class="btn ghost sm" data-act="view">${icon('eye', 'sm')} View</button>
+            <button class="btn ghost sm" data-act="restore" data-tip="Give it back to ${n.owner.name}">${icon('rotate-ccw', 'sm')} Restore</button>
+            <button class="btn ghost icon sm danger" data-act="delete" data-tip="Delete forever" aria-label="Delete forever">${icon('trash-2', 'sm')}</button></td></tr>`)}</tbody></table></div>`)
+        : String(empty({ icon: 'trash-2', title: q ? 'Nothing found' : 'Admin trash is empty', text: q ? '' : 'When a user deletes a note forever, it waits here for an administrator.' }));
+    };
+    const restore = async (n) => { await api.post(`admin/trash/${n.id}/restore`); toast(`Restored to ${n.owner.name}`, 'success'); load(); };
+    const destroy = async (n) => {
+      if (!(await confirm({ title: 'Delete forever?', message: `"${n.title || 'Untitled'}" of ${n.owner.name} and its attachments are erased. This cannot be undone.`, confirmText: 'Delete forever' }))) return false;
+      await api.post(`admin/trash/${n.id}/delete`); toast('Deleted forever', 'success'); load(); return true;
+    };
+    list.addEventListener('click', async (e) => {
+      const b = e.target.closest('[data-act]');
+      if (!b) return;
+      const n = items.find((x) => x.id === +b.closest('[data-id]').dataset.id);
+      try {
+        if (b.dataset.act === 'restore') await restore(n);
+        else if (b.dataset.act === 'delete') await destroy(n);
+        else if (b.dataset.act === 'view') {
+          const d = await api.get(`admin/trash/${n.id}`);
+          const v = await modal({ title: d.title || 'Untitled', size: 'lg', className: 'admin-trash-view',
+            body: html`<div class="tiny subtle mb-2">${icon('user', 'xs')} ${d.owner?.name} (${d.owner?.email}) · created ${fmtDateTime(d.created_at)} · deleted forever ${fmtDateTime(d.purged_at)}${d.is_locked ? ' · was PIN-locked' : ''}</div>
+              <div class="rte trash-preview">${raw(safeHtml(d.content))}</div>
+              ${d.attachments.length ? html`<div class="section-title mt-3">${icon('paperclip', 'sm')} Attachments</div><div class="col" style="gap:6px">${d.attachments.map((a) => html`<a class="row small" href="${a.download_url}" target="_blank" rel="noopener" style="gap:6px">${icon(a.kind === 'image' ? 'image' : 'file', 'sm')} ${a.name} <span class="subtle">${fmtBytes(a.size)}</span></a>`)}</div>` : ''}`,
+            actions: [{ label: 'Delete forever', variant: 'ghost danger-text', left: true, value: 'delete' }, { label: 'Close', value: null }, { label: 'Restore to owner', variant: 'primary', icon: 'rotate-ccw', value: 'restore' }] }).result;
+          if (v === 'restore') await restore(n);
+          else if (v === 'delete') await destroy(n);
+        }
+      } catch (err) { toastError(err); }
+    });
+    el.querySelector('[data-q]').addEventListener('input', debounce((e) => { q = e.target.value.trim(); load(); }, 300));
+    el.querySelector('[data-empty]').addEventListener('click', async () => {
+      if (!items.length) return;
+      if (!(await confirm({ title: 'Empty the admin trash?', message: 'Every note here and its attachments are erased for good. This cannot be undone.', confirmText: 'Empty admin trash' }))) return;
+      try { const r = await api.post('admin/trash/empty'); toast(`${r.count} note${r.count === 1 ? '' : 's'} deleted forever`, 'success'); load(); } catch (err) { toastError(err); }
+    });
+    el.querySelector('[data-ret]').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      await withLoading(e.target.querySelector('[type=submit]'), async () => {
+        try { await api.post('admin/settings', { admin_trash_days: +e.target.admin_trash_days.value || 0 }); toast('Retention saved', 'success'); } catch (err) { toastError(err); }
+      });
+    });
+    await load();
   },
 
   async backup(el) {

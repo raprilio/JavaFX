@@ -44,13 +44,51 @@ final class Trash
     public static function restore(string $type, int $id, int $userId): void
     {
         $t = self::table($type);
-        $n = DB::update($t, ['deleted_at' => null], 'id = ? AND user_id = ? AND deleted_at IS NOT NULL', [$id, $userId]);
+        // A note the user deleted forever sits in the admin trash: only an administrator can bring it back.
+        $n = DB::update($t, ['deleted_at' => null], 'id = ? AND user_id = ? AND deleted_at IS NOT NULL' . ($type === 'note' ? ' AND purged_at IS NULL' : ''), [$id, $userId]);
         if (!$n) {
             throw new HttpException('Item not found in trash.', 404);
         }
         if (isset(self::REMINDABLE[$type])) {
             Scheduler::sync(self::REMINDABLE[$type], $id);
         }
+    }
+
+    /**
+     * "Delete forever" by a user (or the trash auto-delete). Notes go to the admin trash first (v1.9):
+     * they vanish for the user but an administrator can still read, restore or really delete them.
+     */
+    public static function remove(string $type, int $id, int $userId): void
+    {
+        if ($type !== 'note') {
+            self::destroy($type, $id, $userId);
+            return;
+        }
+        $n = DB::run(
+            'UPDATE notes SET purged_at = NOW(), purged_by = ?, pinned_global = 0, deleted_at = COALESCE(deleted_at, NOW()) WHERE id = ? AND user_id = ? AND purged_at IS NULL',
+            [$userId, $id, $userId]
+        )->rowCount();
+        if (!$n) {
+            throw new HttpException('Item not found.', 404);
+        }
+    }
+
+    /** Admin trash: delete for good the notes that users deleted more than $days ago (0 = keep until an admin deletes them). */
+    public static function purgeAdminTrash(int $days): int
+    {
+        if ($days <= 0) {
+            return 0;
+        }
+        $count = 0;
+        foreach (DB::all('SELECT id, user_id FROM notes WHERE purged_at IS NOT NULL AND purged_at < ? LIMIT 500', [date('Y-m-d H:i:s', time() - $days * 86400)]) as $r) {
+            try {
+                self::destroy('note', (int) $r['id'], (int) $r['user_id']);
+                $count++;
+            } catch (Throwable $e) {
+                error_log('Admin trash purge failed: ' . $e->getMessage());
+            }
+        }
+        return $count;
     }
 
     /** Permanently delete a record and its stored files. */
@@ -102,7 +140,7 @@ final class Trash
     public static function items(int $userId): array
     {
         $q = [
-            "SELECT 'note' AS type, id, IF(title = '', '(Untitled note)', title) AS title, deleted_at FROM notes WHERE user_id = ? AND deleted_at IS NOT NULL",
+            "SELECT 'note' AS type, id, IF(title = '', '(Untitled note)', title) AS title, deleted_at FROM notes WHERE user_id = ? AND deleted_at IS NOT NULL AND purged_at IS NULL",
             "SELECT 'task', id, title, deleted_at FROM tasks WHERE user_id = ? AND deleted_at IS NOT NULL",
             "SELECT 'event', id, title, deleted_at FROM calendar_events WHERE user_id = ? AND deleted_at IS NOT NULL",
             "SELECT 'meeting', id, title, deleted_at FROM meetings WHERE user_id = ? AND deleted_at IS NOT NULL",
@@ -124,9 +162,9 @@ final class Trash
         $cutoff = date('Y-m-d H:i:s', time() - $days * 86400);
         $count = 0;
         foreach (self::TABLES as $type => $t) {
-            foreach (DB::all("SELECT id, user_id FROM `$t` WHERE deleted_at IS NOT NULL AND deleted_at < ? LIMIT 500", [$cutoff]) as $r) {
+            foreach (DB::all("SELECT id, user_id FROM `$t` WHERE deleted_at IS NOT NULL AND deleted_at < ?" . ($type === 'note' ? ' AND purged_at IS NULL' : '') . ' LIMIT 500', [$cutoff]) as $r) {
                 try {
-                    self::destroy($type, (int) $r['id'], (int) $r['user_id']);
+                    self::remove($type, (int) $r['id'], (int) $r['user_id']);
                     $count++;
                 } catch (Throwable $e) {
                     error_log('Trash purge failed: ' . $e->getMessage());

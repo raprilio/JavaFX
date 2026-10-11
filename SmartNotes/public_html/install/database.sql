@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS `user_settings` (
   `notify_schedule`        TINYINT(1) NOT NULL DEFAULT 1,
   `notify_daily_agenda`    TINYINT(1) NOT NULL DEFAULT 0,
   `notify_weekly_agenda`   TINYINT(1) NOT NULL DEFAULT 0,
+  `popup_reminders`        TINYINT(1) NOT NULL DEFAULT 1,
   `email_notifications`    TINYINT(1) NOT NULL DEFAULT 1,
   `daily_agenda_time`      TIME NOT NULL DEFAULT '07:00:00',
   `default_reminder`       SMALLINT NULL DEFAULT 30 COMMENT 'minutes before',
@@ -166,6 +167,8 @@ CREATE TABLE IF NOT EXISTS `notes` (
   `color`           VARCHAR(20) NULL,
   `background`      VARCHAR(40) NULL,
   `is_pinned`       TINYINT(1) NOT NULL DEFAULT 0,
+  `pinned_global`   TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Pinned by an admin for every user (v1.9)',
+  `pinned_global_at` DATETIME NULL,
   `is_favorite`     TINYINT(1) NOT NULL DEFAULT 0,
   `is_archived`     TINYINT(1) NOT NULL DEFAULT 0,
   `is_locked`       TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Requires the owner''s notes PIN to open',
@@ -176,6 +179,8 @@ CREATE TABLE IF NOT EXISTS `notes` (
   `created_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `deleted_at`      DATETIME NULL,
+  `purged_at`       DATETIME NULL COMMENT 'Deleted forever by the user: kept in the admin trash (v1.9)',
+  `purged_by`       INT UNSIGNED NULL,
   PRIMARY KEY (`id`),
   KEY `idx_notes_list` (`user_id`, `deleted_at`, `is_archived`, `is_pinned`, `updated_at`),
   KEY `idx_notes_opened` (`user_id`, `last_opened_at`),
@@ -339,6 +344,7 @@ CREATE TABLE IF NOT EXISTS `calendar_events` (
   `status`            ENUM('scheduled','completed','cancelled') NOT NULL DEFAULT 'scheduled',
   `created_at`        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at`        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `share_all`         TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Admin event for every user (v1.9)',
   `deleted_at`        DATETIME NULL,
   PRIMARY KEY (`id`),
   KEY `idx_events_range` (`user_id`, `deleted_at`, `start_at`, `end_at`),
@@ -696,6 +702,41 @@ CREATE TABLE IF NOT EXISTS `email_logs` (
   CONSTRAINT `fk_el_notification` FOREIGN KEY (`email_notification_id`) REFERENCES `email_notifications` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `announcements` (
+  `id`          INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `created_by`  INT UNSIGNED NULL,
+  `title`       VARCHAR(160) NOT NULL,
+  `body`        TEXT NULL,
+  `level`       ENUM('info','important') NOT NULL DEFAULT 'info',
+  `audience`    ENUM('all','users') NOT NULL DEFAULT 'all',
+  `starts_at`   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `ends_at`     DATETIME NULL,
+  `created_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `deleted_at`  DATETIME NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_announcements_active` (`deleted_at`, `starts_at`),
+  CONSTRAINT `fk_announcements_user` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `announcement_targets` (
+  `announcement_id` INT UNSIGNED NOT NULL,
+  `user_id`         INT UNSIGNED NOT NULL,
+  PRIMARY KEY (`announcement_id`, `user_id`),
+  KEY `idx_ann_targets_user` (`user_id`),
+  CONSTRAINT `fk_ann_targets_ann` FOREIGN KEY (`announcement_id`) REFERENCES `announcements` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_ann_targets_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `announcement_reads` (
+  `announcement_id` INT UNSIGNED NOT NULL,
+  `user_id`         INT UNSIGNED NOT NULL,
+  `read_at`         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`announcement_id`, `user_id`),
+  KEY `idx_ann_reads_user` (`user_id`),
+  CONSTRAINT `fk_ann_reads_ann` FOREIGN KEY (`announcement_id`) REFERENCES `announcements` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_ann_reads_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `notifications` (
   `id`          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `user_id`     INT UNSIGNED NOT NULL,
@@ -705,6 +746,7 @@ CREATE TABLE IF NOT EXISTS `notifications` (
   `link`        VARCHAR(255) NULL,
   `is_read`     TINYINT(1) NOT NULL DEFAULT 0,
   `read_at`     DATETIME NULL,
+  `popped_at`   DATETIME NULL COMMENT 'Reminder pop-up closed (v1.9)',
   `created_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_notif_user` (`user_id`, `is_read`, `created_at`),
@@ -767,7 +809,7 @@ INSERT IGNORE INTO `settings` (`setting_key`, `setting_value`) VALUES
 ('smtp_encryption', 'tls'),
 ('smtp_from_name', 'SmartNotes'),
 ('smtp_from_email', ''),
-('schema_version', '7'),
+('schema_version', '8'),
 ('allow_note_sharing', '1'),
 ('logo_display', 'logo'),
 ('logo_height', '34'),

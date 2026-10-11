@@ -51,6 +51,7 @@ final class AppController
             'notify_schedule' => (bool) $s['notify_schedule'],
             'notify_daily_agenda' => (bool) $s['notify_daily_agenda'],
             'notify_weekly_agenda' => (bool) $s['notify_weekly_agenda'],
+            'popup_reminders' => (bool) ($s['popup_reminders'] ?? 1),
             'email_notifications' => (bool) $s['email_notifications'],
             'daily_agenda_time' => substr((string) $s['daily_agenda_time'], 0, 5),
             'default_reminder' => $s['default_reminder'] === null ? null : (int) $s['default_reminder'],
