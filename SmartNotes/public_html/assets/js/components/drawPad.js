@@ -191,6 +191,7 @@ export function openDrawingEditor({ data = null, title = 'Handwriting' } = {}) {
           <button class="btn ghost icon sm" data-d="penonly" data-tip="Pen only: fingers scroll, palm is ignored" aria-label="Pen only">${icon('hand', 'sm')}</button>
           <button class="btn ghost icon sm" data-d="addpage" data-tip="Add a page" aria-label="Add page">${icon('file-plus', 'sm')}</button>
           <span class="draw-pageinfo" data-pageinfo aria-live="polite"></span>
+          <button class="btn ghost sm draw-zoom" data-d="zoom" data-tip="Zoom — pinch with two fingers or Ctrl + wheel. Click to fit the width" aria-label="Reset zoom"><span data-zoomval>100%</span></button>
         </div>
         <button class="btn primary sm" data-d="save">${icon('check', 'sm')} Done</button>
       </header>
@@ -204,6 +205,8 @@ export function openDrawingEditor({ data = null, title = 'Handwriting' } = {}) {
     const wrap = root.querySelector('[data-pages]');
     let k = 1; // css px per logical unit
     let cssW = 0;
+    let zoom = 1; // v1.12: pinch / Ctrl+wheel zoom on top of "page fits the width"
+    const ZMIN = 0.5, ZMAX = 4;
     let quietUntil = 0; // no automatic new page right after pages were removed (the shrink scrolls by itself)
     const els = []; // per page: { el, ink, live, ictx, lctx, dpr, on }
 
@@ -235,13 +238,16 @@ export function openDrawingEditor({ data = null, title = 'Handwriting' } = {}) {
       });
       pageInfo();
     }
-    function sizePage(p) {
+    function sizePage(p, live = false) {
       const cssH = PAGE_H * k;
       p.el.style.width = cssW + 'px';
       p.el.style.height = cssH + 'px';
       p.el.style.setProperty('--line', 40 * k + 'px');
       p.el.dataset.bg = bg;
-      if (p.on) alloc(p);
+      if (!p.on) return;
+      // While pinching only the CSS size changes (the bitmap stretches); it is redrawn sharp when the fingers lift.
+      if (live) [p.ink, p.live].forEach((c) => { c.style.width = cssW + 'px'; c.style.height = cssH + 'px'; });
+      else alloc(p);
     }
     function alloc(p) {
       const cssH = PAGE_H * k;
@@ -280,10 +286,23 @@ export function openDrawingEditor({ data = null, title = 'Handwriting' } = {}) {
       });
     }, { root: scroller, rootMargin: '120% 0px' });
 
-    function layout() {
-      cssW = Math.min(scroller.clientWidth - 24, 1150);
+    function layout(live = false) {
+      cssW = Math.min(scroller.clientWidth - 24, 1150) * zoom;
       k = cssW / W;
-      els.forEach(sizePage);
+      els.forEach((p) => sizePage(p, live));
+      const zv = root.querySelector('[data-zoomval]');
+      if (zv) zv.textContent = Math.round(zoom * 100) + '%';
+    }
+    /** Zoom to z keeping the content point under (cx, cy) (client px) in place. */
+    function zoomAt(z, cx, cy, live = false, from = null) {
+      z = Math.min(ZMAX, Math.max(ZMIN, z));
+      const r = scroller.getBoundingClientRect();
+      const f = from || { x: scroller.scrollLeft + cx - r.left, y: scroller.scrollTop + cy - r.top, z: zoom };
+      zoom = z;
+      layout(live);
+      scroller.scrollLeft = f.x * (z / f.z) - (cx - r.left);
+      scroller.scrollTop = f.y * (z / f.z) - (cy - r.top);
+      pageInfo();
     }
     const pageHasInk = (i) => strokes.some((s) => onPage(s, i));
     function currentPage() {
@@ -527,6 +546,102 @@ export function openDrawingEditor({ data = null, title = 'Handwriting' } = {}) {
     }, { root: scroller, threshold: 0.6 });
     scroller.addEventListener('scroll', () => pageInfo(), { passive: true });
 
+    // ------------------------------------------------------------ touch: two fingers zoom & scroll (v1.12)
+    // One finger writes on the paper (or scrolls in pen-only mode / outside the paper); two fingers pinch to
+    // zoom and drag to scroll up, down and sideways. A stroke the first finger had just started is dropped.
+    const touches = new Map();
+    let gesture = null; // { kind: 'pinch', d0, z0, from } | { kind: 'pan', id, x, y, sl, st, moved, v, t } | { kind: 'hold' }
+    let fling = 0;
+    const dist = () => { const [a, b] = [...touches.values()]; return Math.hypot(a.x - b.x, a.y - b.y) || 1; };
+    const mid = () => { const [a, b] = [...touches.values()]; return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; };
+    function abortStroke() {
+      if (activeId === null) return;
+      if (erasing) {
+        erasing.removed.slice().sort((a, b) => a[0] - b[0]).forEach(([i, st]) => strokes.splice(i, 0, st));
+        paintFor(erasing.removed.map(([, st]) => st));
+      }
+      cur = null;
+      erasing = null;
+      activeId = null;
+      els.forEach((p) => p.on && clearLive(p));
+    }
+    scroller.addEventListener('pointerdown', (e) => {
+      if (e.pointerType !== 'touch') return;
+      cancelAnimationFrame(fling);
+      touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (touches.size === 2) {
+        if (activeId !== null && touches.has(activeId)) abortStroke();
+        fingerScroll = null;
+        const m = mid();
+        const r = scroller.getBoundingClientRect();
+        gesture = { kind: 'pinch', d0: dist(), from: { x: scroller.scrollLeft + m.x - r.left, y: scroller.scrollTop + m.y - r.top, z: zoom } };
+        e.stopPropagation();
+        e.preventDefault();
+      } else if (touches.size === 1 && (penOnly || !pageOf(e.target))) {
+        gesture = { kind: 'pan', id: e.pointerId, x: e.clientX, y: e.clientY, sl: scroller.scrollLeft, st: scroller.scrollTop, moved: false, v: { x: 0, y: 0 }, t: e.timeStamp };
+        if (pageOf(e.target)) e.stopPropagation(); // pen-only: a finger never draws
+      } else if (touches.size > 2) e.stopPropagation();
+    }, true);
+    scroller.addEventListener('pointermove', (e) => {
+      if (e.pointerType !== 'touch' || !touches.has(e.pointerId)) return;
+      touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (gesture?.kind === 'pinch' && touches.size >= 2) {
+        const m = mid();
+        zoomAt(gesture.from.z * (dist() / gesture.d0), m.x, m.y, true, gesture.from);
+        e.stopPropagation();
+        e.preventDefault();
+      } else if (gesture?.kind === 'pan' && e.pointerId === gesture.id) {
+        const dx = e.clientX - gesture.x, dy = e.clientY - gesture.y;
+        if (!gesture.moved && Math.hypot(dx, dy) < 6) return;
+        gesture.moved = true;
+        const dt = Math.max(1, e.timeStamp - gesture.t);
+        gesture.v = { x: (gesture.sl - dx - scroller.scrollLeft) / dt, y: (gesture.st - dy - scroller.scrollTop) / dt }; // px/ms in the scroll direction
+        gesture.t = e.timeStamp;
+        scroller.scrollLeft = gesture.sl - dx;
+        scroller.scrollTop = gesture.st - dy;
+        e.stopPropagation();
+      } else if (gesture?.kind === 'hold') e.stopPropagation();
+    }, true);
+    const touchEnd = (e) => {
+      if (e.pointerType !== 'touch' || !touches.has(e.pointerId)) return;
+      touches.delete(e.pointerId);
+      if (gesture?.kind === 'pinch') {
+        e.stopPropagation();
+        if (touches.size < 2) {
+          zoomAt(zoom, ...(() => { const r = scroller.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()); // sharp redraw
+          gesture = touches.size ? { kind: 'hold' } : null; // the finger left on the glass must not start writing
+        }
+      } else if (gesture?.kind === 'pan' && e.pointerId === gesture.id) {
+        const { v, moved } = gesture;
+        gesture = null;
+        if (moved) {
+          e.stopPropagation();
+          let vx = v.x, vy = v.y, last = performance.now();
+          const step = (now) => {
+            const dt = now - last; last = now;
+            scroller.scrollLeft += vx * dt; scroller.scrollTop += vy * dt;
+            vx *= 0.94; vy *= 0.94;
+            if (Math.hypot(vx, vy) > 0.02) fling = requestAnimationFrame(step);
+          };
+          if (Math.hypot(vx, vy) > 0.3) fling = requestAnimationFrame(step);
+        }
+      } else if (gesture?.kind === 'hold') {
+        e.stopPropagation();
+        if (!touches.size) gesture = null;
+      }
+    };
+    scroller.addEventListener('pointerup', touchEnd, true);
+    scroller.addEventListener('pointercancel', touchEnd, true);
+    // Desktop: Ctrl + wheel (and trackpad pinch) zooms around the cursor.
+    let wheelCommit = 0;
+    scroller.addEventListener('wheel', (e) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      zoomAt(zoom * Math.exp(-e.deltaY * 0.0025), e.clientX, e.clientY, true);
+      clearTimeout(wheelCommit);
+      wheelCommit = setTimeout(() => layout(), 180);
+    }, { passive: false });
+
     // ------------------------------------------------------------ actions
     async function close(result) {
       window.removeEventListener('resize', onResize);
@@ -576,6 +691,7 @@ export function openDrawingEditor({ data = null, title = 'Handwriting' } = {}) {
       if (d === 'undo') return undo();
       if (d === 'redo') return redo();
       if (d === 'addpage') return addPage({ scroll: true });
+      if (d === 'zoom') { const r = scroller.getBoundingClientRect(); return zoomAt(1, r.left + r.width / 2, r.top); }
       if (d === 'penonly') { penOnly = !penOnly; persist(); paintTools(); hint(penOnly ? 'Pen only: fingers scroll the page, palm touches are ignored.' : 'Fingers can draw again.'); return; }
       if (d === 'bg') { const order = ['lines', 'grid', 'dots', 'none']; bg = order[(order.indexOf(bg) + 1) % order.length]; persist(); paintTools(); hint(`Paper: ${bg === 'none' ? 'blank' : bg}`); }
     });
@@ -586,6 +702,7 @@ export function openDrawingEditor({ data = null, title = 'Handwriting' } = {}) {
       else if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
       else if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
       else if (mod && e.key === 'Enter') { e.preventDefault(); save(); }
+      else if (mod && ['=', '+', '-', '0'].includes(e.key)) { e.preventDefault(); const r = scroller.getBoundingClientRect(); zoomAt(e.key === '0' ? 1 : zoom * (e.key === '-' ? 1 / 1.25 : 1.25), r.left + r.width / 2, r.top + r.height / 2); }
       else if (!mod && ['p', 'h', 'e'].includes(e.key.toLowerCase())) { tool = { p: 'pen', h: 'hl', e: 'eraser' }[e.key.toLowerCase()]; paintTools(); }
       else return;
       e.stopPropagation();
@@ -601,7 +718,7 @@ export function openDrawingEditor({ data = null, title = 'Handwriting' } = {}) {
       syncPages();
       paintTools();
       grow.observe(sentinel);
-      if (!strokes.length) hint(matchMedia('(pointer: coarse)').matches ? 'Write with your pen or finger. Scroll down for a new page.' : 'Write with a pen, touch or mouse. Scroll down for a new page. E = eraser, H = highlighter.');
+      if (!strokes.length) hint(matchMedia('(pointer: coarse)').matches ? 'Write with your pen or finger. Two fingers: pinch to zoom, drag to scroll.' : 'Write with a pen, touch or mouse. Ctrl + wheel zooms. E = eraser, H = highlighter.');
     });
   });
 }

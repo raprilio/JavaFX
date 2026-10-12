@@ -1342,3 +1342,8 @@ body:has(> .draw-root) > .modal-root { z-index: 420; }
   .canvas-palette .shape-btn span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
 .fc-node .hit { pointer-events: stroke; }
+
+/* v1.12 handwriting: two-finger pinch zoom & scroll (handled in JS, so the browser must not zoom the page) */
+.draw-root:not(.draw-viewer) .draw-scroll { touch-action: none; }
+.draw-pages { width: max-content; min-width: 100%; }
+.draw-zoom { min-width: 54px; font-variant-numeric: tabular-nums; font-size: 12px; padding-inline: 6px; flex: none; }
