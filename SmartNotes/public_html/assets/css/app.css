@@ -1347,3 +1347,7 @@ body:has(> .draw-root) > .modal-root { z-index: 420; }
 .draw-root:not(.draw-viewer) .draw-scroll { touch-action: none; }
 .draw-pages { width: max-content; min-width: 100%; }
 .draw-zoom { min-width: 54px; font-variant-numeric: tabular-nums; font-size: 12px; padding-inline: 6px; flex: none; }
+/* v1.13 eraser modes: Area (pixels) / Stroke (whole lines) */
+.draw-erase-mode { flex: none; margin-right: 4px; }
+.draw-erase-mode .btn { font-size: 12px; padding-inline: 8px; }
+.draw-erase-mode .btn.active { background: var(--accent); color: var(--accent-contrast); }

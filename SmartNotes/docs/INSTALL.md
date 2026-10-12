@@ -196,6 +196,8 @@ File backup disimpan di `storage/backups/` (tidak bisa diakses publik). Simpan s
 2. Upload ulang semua file **kecuali** `app/config.php`, `uploads/`, dan `storage/`.
 3. Buka aplikasi. Perubahan skema dijalankan **otomatis** oleh migrator saat request pertama (tidak perlu phpMyAdmin). Versi skema tersimpan di tabel `settings` (`schema_version`).
 
+**Upgrade ke v1.13** (penghapus per area di tulisan tangan): cukup timpa file; tidak ada perubahan database. Tulisan lama tetap sama.
+
 **Upgrade ke v1.12** (zoom & scroll dua jari di kertas tulisan tangan): cukup timpa file; tidak ada perubahan database.
 
 **Upgrade ke v1.11** (flowchart: ikon elektronik, bentuk bebas, tanpa isi, urutan depan/belakang): timpa file; migrasi v10 otomatis menambah kolom `flowchart_nodes.sort_order` (urutan gambar). Diagram lama tidak berubah.

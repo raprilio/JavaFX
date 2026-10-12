@@ -202,7 +202,7 @@ final class DrawingsController
                 $clean[] = round(max(0, min(1, (float) $p[$i + 2])), 2);
             }
             $strokes[] = [
-                't' => ($s['t'] ?? 'pen') === 'hl' ? 'hl' : 'pen',
+                't' => in_array($s['t'] ?? 'pen', ['hl', 'er'], true) ? $s['t'] : 'pen', // er = pixel eraser (v1.13)
                 'c' => is_string($s['c'] ?? null) && preg_match(self::COLOR, $s['c']) ? strtolower($s['c']) : '#111827',
                 's' => round(max(0.5, min(60, (float) ($s['s'] ?? 3))), 1),
                 'p' => $clean,

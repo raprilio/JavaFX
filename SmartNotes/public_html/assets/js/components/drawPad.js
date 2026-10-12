@@ -2,6 +2,8 @@
 // - Pointer Events with pressure and coalesced events for smooth, low-latency ink.
 // - Pen-only mode (palm rejection): when a pen is detected, fingers scroll instead of drawing.
 // - Stylus eraser end, or the S Pen side button held down, erases.
+// - v1.13: the eraser cuts only the pixels it passes over (an 'er' stroke drawn with destination-out),
+//   stored like any stroke so it survives zoom, undo and re-opening; "whole stroke" erasing stays as a mode.
 // - Strokes are stored as vectors in a 1000-unit wide coordinate space, so they look the same on every screen.
 // - v1.10: real pages (A4 ratio, like Samsung Notes). Scrolling past the last written page adds a new one.
 //   Strokes keep one continuous y axis (page n spans n*PAGE_H … (n+1)*PAGE_H); only pages near the
@@ -14,7 +16,8 @@ export const PAGE_H = 1414; // A4: 1000 × 1414
 export const MAX_PAGES = 50;
 const PEN_COLORS = ['#111827', '#e11d48', '#2563eb', '#16a34a', '#f59e0b', '#7c3aed', '#64748b'];
 const HL_COLORS = ['#fde047', '#86efac', '#93c5fd', '#f9a8d4', '#fdba74'];
-const SIZES = { pen: [1.5, 3, 5, 9], hl: [14, 22, 32], eraser: [10, 22, 44] };
+const SIZES = { pen: [1.5, 3, 5, 9], hl: [14, 22, 32], eraser: [8, 16, 30, 60] };
+const isInk = (s) => s.t !== 'er';
 const PREF_KEY = 'sn.drawpad';
 
 function loadPrefs() {
@@ -34,6 +37,23 @@ export function drawStroke(ctx, s, k) {
   ctx.lineJoin = 'round';
   ctx.strokeStyle = s.c;
   ctx.fillStyle = s.c;
+  if (s.t === 'er') {
+    // Pixel eraser: punch a hole only where the eraser passed (earlier ink only — the paper is not on this canvas).
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.strokeStyle = ctx.fillStyle = '#000';
+    ctx.lineWidth = s.s * k;
+    ctx.beginPath();
+    if (n === 1) {
+      ctx.arc(p[0] * k, p[1] * k, (s.s * k) / 2, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.moveTo(p[0] * k, p[1] * k);
+      for (let i = 1; i < n; i++) ctx.lineTo(p[i * 3] * k, p[i * 3 + 1] * k);
+      ctx.stroke();
+    }
+    ctx.restore();
+    return;
+  }
   if (s.t === 'hl') {
     // Highlighter: one path, constant width, translucent — overlapping segments never darken.
     ctx.globalAlpha = 0.38;
@@ -87,7 +107,7 @@ export function bounds(s) {
 export function normalizeDrawing(data) {
   const strokes = (data?.strokes || []).map((s) => ({ t: s.t, c: s.c, s: s.s, p: s.p.slice() }));
   let maxY = 0;
-  strokes.forEach((s) => { maxY = Math.max(maxY, bounds(s)[3]); });
+  strokes.filter(isInk).forEach((s) => { maxY = Math.max(maxY, bounds(s)[3]); });
   const declared = data?.v === 2 ? +data.pages || 1 : Math.ceil((+data?.h || PAGE_H) / PAGE_H);
   const pages = Math.max(1, Math.min(MAX_PAGES, Math.max(declared, Math.ceil((maxY - 10) / PAGE_H))));
   return { pages, bg: data?.bg || 'none', strokes };
@@ -119,6 +139,7 @@ function distToSeg(px, py, ax, ay, bx, by) {
 }
 
 function hits(s, x, y, r) {
+  if (!isInk(s)) return false;
   const [x0, y0, x1, y1] = bounds(s);
   if (x < x0 - r || x > x1 + r || y < y0 - r || y > y1 + r) return false;
   const p = s.p;
@@ -133,15 +154,17 @@ function hits(s, x, y, r) {
 /** Render strokes to a transparent PNG: the pages one below the other, cropped to the used height. */
 export async function exportPng(strokes, pages) {
   let maxY = 0;
-  strokes.forEach((s) => { maxY = Math.max(maxY, bounds(s)[3]); });
+  strokes.filter(isInk).forEach((s) => { maxY = Math.max(maxY, bounds(s)[3]); });
   const hLog = Math.max(120, Math.min(pages * PAGE_H, Math.ceil(maxY + 24)));
   const sc = Math.min(2, Math.sqrt(16e6 / (W * hLog)), 16000 / hLog);
   const c = document.createElement('canvas');
   c.width = Math.round(W * sc);
   c.height = Math.round(hLog * sc);
   const ctx = c.getContext('2d');
+  strokes.forEach((s) => drawStroke(ctx, s, sc));
   // Page breaks as a light dashed line so a multi-page drawing still reads as pages.
   ctx.save();
+  ctx.globalCompositeOperation = 'destination-over'; // behind the ink, so the eraser never cuts them
   ctx.strokeStyle = 'rgba(148,163,184,.7)';
   ctx.lineWidth = Math.max(1, 2 * sc);
   ctx.setLineDash([12 * sc, 10 * sc]);
@@ -149,7 +172,6 @@ export async function exportPng(strokes, pages) {
     ctx.beginPath(); ctx.moveTo(0, y * sc); ctx.lineTo(c.width, y * sc); ctx.stroke();
   }
   ctx.restore();
-  strokes.forEach((s) => drawStroke(ctx, s, sc));
   return new Promise((resolve) => c.toBlob((b) => resolve(b), 'image/png'));
 }
 
@@ -167,6 +189,7 @@ export function openDrawingEditor({ data = null, title = 'Handwriting' } = {}) {
   const color = { pen: prefs.penColor || PEN_COLORS[0], hl: prefs.hlColor || HL_COLORS[0] };
   const size = { pen: prefs.penSize ?? 1, hl: prefs.hlSize ?? 1, eraser: prefs.eraserSize ?? 1 };
   let penOnly = !!prefs.penOnly;
+  let eraseMode = prefs.eraseMode === 'stroke' ? 'stroke' : 'pixel'; // pixel = cut only what the eraser touches
   let penSeen = false;
   const undoStack = [];
   const redoStack = [];
@@ -304,7 +327,7 @@ export function openDrawingEditor({ data = null, title = 'Handwriting' } = {}) {
       scroller.scrollTop = f.y * (z / f.z) - (cy - r.top);
       pageInfo();
     }
-    const pageHasInk = (i) => strokes.some((s) => onPage(s, i));
+    const pageHasInk = (i) => strokes.some((s) => isInk(s) && onPage(s, i));
     function currentPage() {
       const mid = scroller.scrollTop + scroller.clientHeight / 2;
       let best = 0;
@@ -349,13 +372,13 @@ export function openDrawingEditor({ data = null, title = 'Handwriting' } = {}) {
       root.querySelectorAll('[data-tool]').forEach((b) => b.classList.toggle('active', b.dataset.tool === tool));
       const cols = tool === 'hl' ? HL_COLORS : PEN_COLORS;
       root.querySelector('[data-colors]').innerHTML = tool === 'eraser' ? '' : cols.map((c) => `<button class="draw-color ${color[tool] === c ? 'on' : ''}" data-color="${c}" style="--c:${c}" aria-label="Color ${c}"></button>`).join('');
-      root.querySelector('[data-sizes]').innerHTML = SIZES[tool].map((s, i) => `<button class="draw-size ${size[tool] === i ? 'on' : ''}" data-size="${i}" aria-label="Size ${i + 1}"><span style="width:${Math.min(22, 4 + i * 6)}px;height:${Math.min(22, 4 + i * 6)}px"></span></button>`).join('');
+      root.querySelector('[data-sizes]').innerHTML = (tool === 'eraser' ? `<div class="btn-group draw-erase-mode"><button class="btn sm ${eraseMode === 'pixel' ? 'active' : ''}" data-emode="pixel" data-tip="Erase only where you rub (pixels)">Area</button><button class="btn sm ${eraseMode === 'stroke' ? 'active' : ''}" data-emode="stroke" data-tip="Erase whole lines you touch">Stroke</button></div>` : '') + SIZES[tool].map((s, i) => `<button class="draw-size ${size[tool] === i ? 'on' : ''}" data-size="${i}" aria-label="Size ${i + 1}"><span style="width:${Math.min(22, 4 + i * 6)}px;height:${Math.min(22, 4 + i * 6)}px"></span></button>`).join('');
       root.querySelector('[data-d="penonly"]').classList.toggle('active', penOnly);
       root.querySelector('[data-d="undo"]').disabled = !undoStack.length;
       root.querySelector('[data-d="redo"]').disabled = !redoStack.length;
       els.forEach((p) => { p.el.dataset.bg = bg; p.el.classList.toggle('erasing', tool === 'eraser'); });
     }
-    const persist = () => savePrefs({ penColor: color.pen, hlColor: color.hl, penSize: size.pen, hlSize: size.hl, eraserSize: size.eraser, penOnly, bg });
+    const persist = () => savePrefs({ penColor: color.pen, hlColor: color.hl, penSize: size.pen, hlSize: size.hl, eraserSize: size.eraser, eraseMode, penOnly, bg });
     function hint(text) {
       const el = root.querySelector('[data-hint]');
       el.textContent = text;
@@ -451,6 +474,18 @@ export function openDrawingEditor({ data = null, title = 'Handwriting' } = {}) {
       });
     }
 
+    /** Pixel eraser: cut the newest piece straight into the ink canvas of every page it crosses. */
+    function cutSegment(pts) {
+      const seg = { t: 'er', c: '#000', s: SIZES.eraser[size.eraser], p: pts };
+      const b = bounds(seg);
+      for (let i = Math.max(0, Math.floor(b[1] / PAGE_H)); i <= Math.min(pages - 1, Math.floor(b[3] / PAGE_H)); i++) {
+        const pe = els[i];
+        if (!pe?.on) continue;
+        pe.ictx.setTransform(1, 0, 0, 1, 0, -i * PAGE_H * k * pe.dpr);
+        drawStroke(pe.ictx, seg, k * pe.dpr);
+        pe.ictx.setTransform(1, 0, 0, 1, 0, 0);
+      }
+    }
     function down(e) {
       const p = pageOf(e.target);
       if (!p || activeId !== null) return;
@@ -473,6 +508,12 @@ export function openDrawingEditor({ data = null, title = 'Handwriting' } = {}) {
       curPage = p;
       try { p.live.setPointerCapture(e.pointerId); } catch { /* synthetic or already released pointer */ }
       const [x, y] = toLogical(e, p);
+      if (wantsEraser(e) && eraseMode === 'pixel') {
+        cur = { t: 'er', c: '#000000', s: SIZES.eraser[size.eraser], p: [Math.round(x * 10) / 10, Math.round(y * 10) / 10, 0.5] };
+        cutSegment(cur.p);
+        drawEraserCursor(p, x, y);
+        return;
+      }
       if (wantsEraser(e)) {
         erasing = { removed: [], dirty: [] };
         eraseAt(x, y);
@@ -503,7 +544,9 @@ export function openDrawingEditor({ data = null, title = 'Handwriting' } = {}) {
         const lx = p[p.length - 3], ly = p[p.length - 2];
         if (Math.abs(x - lx) + Math.abs(y - ly) < 0.6) continue;
         p.push(Math.round(x * 10) / 10, Math.round(y * 10) / 10, Math.round(pressure(ev) * 100) / 100);
+        if (cur.t === 'er') cutSegment(p.slice(-6));
       }
+      if (cur?.t === 'er') { const [x, y] = toLogical(e, curPage); drawEraserCursor(curPage, x, y); return; }
       if (erasing) {
         if (erasing.dirty.length) { paintFor(erasing.dirty); erasing.dirty = []; }
         const [x, y] = toLogical(e, curPage);
@@ -527,7 +570,7 @@ export function openDrawingEditor({ data = null, title = 'Handwriting' } = {}) {
         paintFor([s]);
         commit({ op: 'add', stroke: s });
         // Writing at the bottom of the last page opens the next one, like a notebook.
-        if (bounds(s)[3] > pages * PAGE_H - 160 && pages < MAX_PAGES) addPage({ record: false });
+        if (isInk(s) && bounds(s)[3] > pages * PAGE_H - 160 && pages < MAX_PAGES) addPage({ record: false });
       }
     }
     wrap.addEventListener('pointerdown', down);
@@ -560,7 +603,9 @@ export function openDrawingEditor({ data = null, title = 'Handwriting' } = {}) {
         erasing.removed.slice().sort((a, b) => a[0] - b[0]).forEach(([i, st]) => strokes.splice(i, 0, st));
         paintFor(erasing.removed.map(([, st]) => st));
       }
+      const cut = cur?.t === 'er' ? cur : null;
       cur = null;
+      if (cut) paintFor([cut]); // undo the holes the dropped eraser stroke had cut
       erasing = null;
       activeId = null;
       els.forEach((p) => p.on && clearLive(p));
@@ -658,14 +703,17 @@ export function openDrawingEditor({ data = null, title = 'Handwriting' } = {}) {
     }
     async function save() {
       if (!dirty) return close(null);
-      if (!strokes.length) {
+      // Eraser strokes that cut nothing (no earlier ink under them) are dropped.
+      const hit = (a, b) => a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1];
+      strokes = strokes.filter((s, i) => isInk(s) || strokes.slice(0, i).some((o) => isInk(o) && hit(bounds(o), bounds(s))));
+      if (!strokes.some(isInk)) {
         if (data && await confirm({ title: 'Remove this drawing?', message: 'The pages are empty. Remove the handwriting from the note?', confirmText: 'Remove' })) return close({ remove: true });
         if (!data) return close(null);
         return;
       }
       // Empty pages at the end are not kept.
       let last = 0;
-      strokes.forEach((s) => { last = Math.max(last, Math.floor(s.p[1] / PAGE_H), Math.floor((bounds(s)[3] - 10) / PAGE_H)); });
+      strokes.filter(isInk).forEach((s) => { last = Math.max(last, Math.floor(s.p[1] / PAGE_H), Math.floor((bounds(s)[3] - 10) / PAGE_H)); });
       const keep = Math.max(1, Math.min(pages, last + 1));
       const btn = root.querySelector('[data-d="save"]');
       btn.classList.add('loading');
@@ -683,6 +731,8 @@ export function openDrawingEditor({ data = null, title = 'Handwriting' } = {}) {
       if (t) { tool = t.dataset.tool; paintTools(); return; }
       const c = e.target.closest('[data-color]');
       if (c) { color[tool] = c.dataset.color; persist(); paintTools(); return; }
+      const em = e.target.closest('[data-emode]');
+      if (em) { eraseMode = em.dataset.emode; persist(); paintTools(); hint(eraseMode === 'pixel' ? 'Eraser: only what you rub over is erased.' : 'Eraser: touching a line erases the whole line.'); return; }
       const z = e.target.closest('[data-size]');
       if (z) { size[tool] = +z.dataset.size; persist(); paintTools(); return; }
       const d = e.target.closest('[data-d]')?.dataset.d;
