@@ -403,6 +403,11 @@ export default {
       editor?.commit();
       const node = gNodes.querySelector(`[data-key="${CSS.escape(k)}"] .body`);
       if (!node) return;
+      // Phones: bring the shape into the upper part of the screen first, so the keyboard does not cover the text box.
+      if (matchMedia('(pointer: coarse)').matches) {
+        const rr = node.getBoundingClientRect();
+        if (rr.bottom > window.innerHeight * 0.42) { stage.vp.y -= rr.top - window.innerHeight * 0.2; stage.apply(); }
+      }
       const r = node.getBoundingClientRect();
       const sr = stageEl.getBoundingClientRect();
       const ta = h(`<textarea class="node-editor" rows="1"></textarea>`);

@@ -40,12 +40,18 @@ $theme = in_array($branding['default_theme'] ?? '', ['light', 'dark'], true) ? $
 <html lang="en"<?= $theme ? ' data-theme="' . e($theme) . '"' : '' ?>>
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <meta name="theme-color" content="#f5f6f8">
 <meta name="color-scheme" content="light dark">
 <meta name="robots" content="noindex, nofollow">
 <title><?= e((string) $branding['app_name']) ?></title>
 <link rel="icon" href="<?= !empty($branding['favicon_url']) ? e((string) $branding['favicon_url']) : 'data:image/svg+xml,' . rawurlencode('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="' . (V::color($branding['default_accent'] ?? '') ?? '#6366f1') . '"/></svg>') ?>">
+<link rel="manifest" href="manifest.php">
+<link rel="apple-touch-icon" href="icon.php?s=180">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="<?= e((string) $branding['app_name']) ?>">
 <link rel="preload" href="assets/fonts/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="<?= e($css) ?>?v=<?= e($ver) ?>">
 <script type="module" src="<?= e($js) ?>?v=<?= e($ver) ?>"></script>

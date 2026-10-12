@@ -196,6 +196,8 @@ File backup disimpan di `storage/backups/` (tidak bisa diakses publik). Simpan s
 2. Upload ulang semua file **kecuali** `app/config.php`, `uploads/`, dan `storage/`.
 3. Buka aplikasi. Perubahan skema dijalankan **otomatis** oleh migrator saat request pertama (tidak perlu phpMyAdmin). Versi skema tersimpan di tabel `settings` (`schema_version`).
 
+**Upgrade ke v1.15** (full screen Android / PWA, keyboard HP, Assign to): timpa file — termasuk file baru di root `public_html/`: `manifest.php`, `icon.php`, `sw.js`. Tidak ada perubahan database. Agar bisa di-*install*, situs harus memakai **HTTPS**. Di HP yang sudah punya shortcut lama: hapus shortcut, buka situs di Chrome, lalu **⋮ → Add to Home screen** lagi.
+
 **Upgrade ke v1.14** (folder Drive di catatan, perbaikan input nama flowchart/mind map): timpa file; migrasi v11 otomatis membuat tabel `note_folders`.
 
 **Upgrade ke v1.13** (penghapus per area di tulisan tangan): cukup timpa file; tidak ada perubahan database. Tulisan lama tetap sama.

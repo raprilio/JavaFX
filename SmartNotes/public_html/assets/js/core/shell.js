@@ -164,6 +164,7 @@ function bindShell() {
         { label: 'Appearance', icon: 'palette', onClick: () => navigate('/settings/appearance') },
         { label: 'Keyboard shortcuts', icon: 'keyboard', onClick: showShortcuts },
         ...(state.isAdminArea ? [{ label: 'Admin panel', icon: 'shield-check', onClick: () => navigate('/admin') }] : []),
+        ...(state.installPrompt ? [{ label: 'Install app (full screen)', icon: 'smartphone', onClick: async () => { const p = state.installPrompt; state.installPrompt = null; p.prompt(); try { await p.userChoice; } catch { /* dismissed */ } } }] : []),
         { divider: true },
         { label: 'Sign out', icon: 'log-out', danger: true, onClick: () => emit('logout') },
       ]);

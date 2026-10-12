@@ -406,6 +406,11 @@ export default {
       const n = byKey(k);
       const g = gNodes.querySelector(`[data-key="${CSS.escape(k)}"] .body`);
       if (!n || !g) return;
+      // Phones: bring the shape into the upper part of the screen first, so the keyboard does not cover the text box.
+      if (matchMedia('(pointer: coarse)').matches) {
+        const rr = g.getBoundingClientRect();
+        if (rr.bottom > window.innerHeight * 0.42) { stage.vp.y -= rr.top - window.innerHeight * 0.2; stage.apply(); }
+      }
       const r = g.getBoundingClientRect(), sr = stageEl.getBoundingClientRect();
       const ta = h('<textarea class="node-editor"></textarea>');
       ta.value = n.label;

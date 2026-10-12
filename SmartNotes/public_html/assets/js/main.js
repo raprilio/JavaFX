@@ -188,6 +188,33 @@ async function boot() {
   if (b) { b.classList.add('fade'); setTimeout(() => b.remove(), 350); }
 }
 
+// ------------------------------------------------------------------ installable app (v1.15)
+// "Add to Home screen" opens SmartNotes full screen (manifest.php). The service worker only adds an offline page.
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname))) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+}
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); state.installPrompt = e; });
+window.addEventListener('appinstalled', () => { state.installPrompt = null; toast('App installed — open it from your home screen', 'success'); });
+
+// ------------------------------------------------------------------ on-screen keyboard (v1.15)
+// Bottom sheets (dialogs on phones) and focused fields stay above the keyboard. Android Chrome resizes the page
+// (interactive-widget=resizes-content); for other browsers --kb is the part of the screen the keyboard covers.
+if (window.visualViewport) {
+  const vv = window.visualViewport;
+  const kb = () => {
+    const covered = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+    document.documentElement.style.setProperty('--kb', covered > 80 ? covered + 'px' : '0px');
+  };
+  vv.addEventListener('resize', kb);
+  vv.addEventListener('scroll', kb);
+}
+document.addEventListener('focusin', (e) => {
+  const t = e.target;
+  if (!t.matches?.('input:not([type=checkbox]):not([type=radio]), textarea, select, [contenteditable="true"]') || !matchMedia('(pointer: coarse)').matches) return;
+  if (!t.closest('.modal, .canvas-panel, [data-panel], .node-editor') && !t.matches('.node-editor')) return;
+  setTimeout(() => t.scrollIntoView({ block: 'center', behavior: 'smooth' }), 320); // after the keyboard has opened
+});
+
 window.addEventListener('unhandledrejection', (e) => {
   if (e.reason?.name === 'AbortError') e.preventDefault();
 });

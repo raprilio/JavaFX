@@ -67,7 +67,7 @@ export async function openTaskForm(task = null, defaults = {}) {
     ${locked.size ? html`<div class="share-banner" style="margin:0 0 12px">${icon('user-check', 'sm')}<span>Assigned to you by <b>${t.assigned_by_name || 'an administrator'}</b>. You can update the status, category, tags, related note and reminder.</span></div>` : ''}
     ${canAssign ? html`<div class="field assign-field"><label>${icon('user-plus', 'sm')} Assign to</label><select class="select" name="assign_to">
       <option value="${me}" ${assignedTo === me ? 'selected' : ''}>Me (${state.user.name})</option>
-      ${people.map((p) => html`<option value="${p.id}" ${assignedTo === p.id ? 'selected' : ''}>${p.name} — ${p.email}</option>`)}</select>
+      ${people.map((p) => html`<option value="${p.id}" ${assignedTo === p.id ? 'selected' : ''}>${p.name}${people.filter((x) => x.name.trim().toLowerCase() === p.name.trim().toLowerCase()).length > 1 ? ` (${p.email.split('@')[0]})` : ''}</option>`)}</select>
       <span class="hint">The user gets a notification and e-mail, and sees it in their Tasks. You follow it under <b>Assigned by me</b>.</span></div>` : ''}
     <div class="field"><input class="input" name="title" value="${t.title || ''}" placeholder="What needs to be done?" style="font-size:16px;font-weight:600;height:46px" autofocus ${lock('title')}></div>
     <div class="field"><textarea class="textarea" name="description" placeholder="Add a description…" rows="3" ${lock('description')}>${t.description || ''}</textarea></div>

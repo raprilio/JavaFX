@@ -19,6 +19,8 @@
 }
 
 :root {
+  --safe-top: 0px; /* v1.15: status-bar / camera cut-out when opened full screen from the home screen */
+  --tb: calc(var(--topbar-h) + var(--safe-top));
   --font: 'InterVariable', 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
 
@@ -214,7 +216,7 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 16px 0; }
 
 .main { min-width: 0; display: flex; flex-direction: column; position: relative; z-index: 1; }
 .topbar {
-  position: sticky; top: 0; z-index: 20; height: var(--topbar-h); display: flex; align-items: center; gap: 12px; padding: 0 var(--pad);
+  position: sticky; top: 0; z-index: 20; height: var(--tb); display: flex; align-items: center; gap: 12px; padding: 0 var(--pad);
   background: color-mix(in srgb, var(--bg) 78%, transparent); backdrop-filter: saturate(160%) blur(14px); -webkit-backdrop-filter: saturate(160%) blur(14px);
   border-bottom: 1px solid transparent; transition: border-color var(--t);
 }
@@ -613,7 +615,7 @@ mark.hl { background: color-mix(in srgb, var(--warning) 30%, transparent); color
 [data-nbg='paper'] { background-image: linear-gradient(90deg, transparent 54px, color-mix(in srgb, var(--danger) 25%, transparent) 54px, color-mix(in srgb, var(--danger) 25%, transparent) 55px, transparent 55px), linear-gradient(color-mix(in srgb, var(--info) 10%, transparent) 1px, transparent 1px); background-size: 100% 100%, 100% 28px; }
 
 /* Editor */
-.editor-shell { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 0; min-height: calc(100dvh - var(--topbar-h)); }
+.editor-shell { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 0; min-height: calc(100dvh - var(--tb)); }
 .editor-shell.no-inspector { grid-template-columns: minmax(0, 1fr); }
 .editor-main { min-width: 0; display: flex; flex-direction: column; background: var(--nc, transparent); transition: background var(--t); }
 .editor-top { display: flex; align-items: center; gap: 6px; padding: 10px var(--pad); flex-wrap: wrap; }
@@ -623,7 +625,7 @@ mark.hl { background: color-mix(in srgb, var(--warning) 30%, transparent); color
 .save-state.dirty .d { background: var(--text-3); }
 .save-state.error .d { background: var(--danger); }
 .fmt-bar {
-  position: sticky; top: var(--topbar-h); z-index: 15; display: flex; align-items: center; gap: 2px; padding: 6px var(--pad); overflow-x: auto; scrollbar-width: none;
+  position: sticky; top: var(--tb); z-index: 15; display: flex; align-items: center; gap: 2px; padding: 6px var(--pad); overflow-x: auto; scrollbar-width: none;
   background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
 }
 .fmt-bar::-webkit-scrollbar { display: none; }
@@ -663,7 +665,7 @@ ul.checklist li[data-checked='true'] { color: var(--text-3); text-decoration: li
 ul.checklist li[data-checked='true']::before { background: var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E") center / 12px no-repeat; border-color: var(--accent); }
 .drop-hint { position: absolute; inset: 0; z-index: 50; display: none; align-items: center; justify-content: center; border: 2px dashed var(--accent); border-radius: 16px; background: var(--accent-softer); color: var(--accent); font-weight: 650; pointer-events: none; }
 .dragging-file .drop-hint { display: flex; }
-.inspector { border-left: 1px solid var(--border); background: color-mix(in srgb, var(--bg-elev) 90%, transparent); padding: 18px; overflow-y: auto; height: calc(100dvh - var(--topbar-h)); position: sticky; top: var(--topbar-h); }
+.inspector { border-left: 1px solid var(--border); background: color-mix(in srgb, var(--bg-elev) 90%, transparent); padding: 18px; overflow-y: auto; height: calc(100dvh - var(--tb)); position: sticky; top: var(--tb); }
 .inspector h4 { font-size: 11.5px; font-weight: 680; text-transform: uppercase; letter-spacing: .05em; color: var(--text-3); margin: 18px 0 8px; }
 .inspector h4:first-child { margin-top: 0; }
 .attach-section { margin-top: 26px; }
@@ -777,7 +779,7 @@ ul.checklist li[data-checked='true']::before { background: var(--accent) url("da
 /* =====================================================================
    Canvas editors (mind map & flowchart)
    ===================================================================== */
-.canvas-page { position: relative; height: calc(100dvh - var(--topbar-h)); display: flex; flex-direction: column; overflow: hidden; }
+.canvas-page { position: relative; height: calc(100dvh - var(--tb)); display: flex; flex-direction: column; overflow: hidden; }
 .canvas-bar { display: flex; align-items: center; gap: 6px; padding: 8px 14px; border-bottom: 1px solid var(--border); background: var(--bg-elev); flex-wrap: wrap; z-index: 5; }
 .canvas-bar .title-input { border: 0; background: transparent; outline: 0; font-size: 16px; font-weight: 680; min-width: 80px; max-width: 320px; padding: 6px 8px; border-radius: 8px; }
 .canvas-bar .title-input:hover, .canvas-bar .title-input:focus { background: var(--bg-soft); }
@@ -837,7 +839,7 @@ svg .edge-path.selected { stroke: var(--accent) !important; }
 
 /* Settings & admin */
 .settings-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 28px; align-items: start; }
-.settings-nav { position: sticky; top: calc(var(--topbar-h) + 10px); display: flex; flex-direction: column; gap: 2px; }
+.settings-nav { position: sticky; top: calc(var(--tb) + 10px); display: flex; flex-direction: column; gap: 2px; }
 .settings-nav .nav-item.active::before { display: none; }
 .settings-card { max-width: 820px; }
 .settings-card > .card { margin-bottom: 18px; }
@@ -943,7 +945,7 @@ svg .edge-path.selected { stroke: var(--accent) !important; }
   .editor-paper { padding: 18px var(--pad) 120px; }
   .note-title { font-size: 25px; }
   .rte { font-size: 16px; }
-  .canvas-page { height: calc(100dvh - var(--topbar-h) - var(--bottomnav-h) - env(safe-area-inset-bottom)); }
+  .canvas-page { height: calc(100dvh - var(--tb) - var(--bottomnav-h) - env(safe-area-inset-bottom)); }
   .canvas-palette { position: absolute; left: 0; right: 0; bottom: 0; width: auto; flex-direction: row; overflow-x: auto; border-right: 0; border-top: 1px solid var(--border); padding: 6px; }
   .canvas-zoom { bottom: 96px; }
   .canvas-hint { display: none; }
@@ -1019,7 +1021,7 @@ svg .edge-path.selected { stroke: var(--accent) !important; }
 @media (max-width: 767px) { .logo-preview { grid-template-columns: 1fr; } .logo-preview .mock.collapsed { display: none; } .pdf-modal { height: 92dvh; } }
 
 /* ===================== v1.2 · Mail (Hostinger Mail API) ===================== */
-.mail { display: grid; grid-template-columns: 220px minmax(300px, 380px) minmax(0, 1fr); height: calc(100dvh - var(--topbar-h) - var(--pad) - 30px); min-height: 460px; border: 1px solid var(--border); border-radius: 16px; background: var(--bg-elev); overflow: hidden; }
+.mail { display: grid; grid-template-columns: 220px minmax(300px, 380px) minmax(0, 1fr); height: calc(100dvh - var(--tb) - var(--pad) - 30px); min-height: 460px; border: 1px solid var(--border); border-radius: 16px; background: var(--bg-elev); overflow: hidden; }
 .mail-side { display: flex; flex-direction: column; gap: 10px; padding: 14px 10px; border-right: 1px solid var(--border); min-height: 0; background: color-mix(in srgb, var(--bg-soft) 45%, transparent); }
 .mail-addr { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-2); padding: 2px 6px; }
 .mail-folders { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; min-height: 0; flex: 1; }
@@ -1091,7 +1093,7 @@ svg .edge-path.selected { stroke: var(--accent) !important; }
 .mail-drive-pick { max-height: 50vh; overflow-y: auto; }
 .mail-drive-pick .list-item { gap: 10px; cursor: pointer; }
 .sidebar .nav-item[data-path="/mail"] .count { font-weight: 700; color: var(--accent); }
-@media (max-width: 767px) { .mail { height: calc(100dvh - var(--topbar-h) - var(--bottomnav-h) - 40px - env(safe-area-inset-bottom)); } }
+@media (max-width: 767px) { .mail { height: calc(100dvh - var(--tb) - var(--bottomnav-h) - 40px - env(safe-area-inset-bottom)); } }
 @media (max-width: 1180px) {
   .mail { grid-template-columns: minmax(280px, 340px) minmax(0, 1fr); }
   .mail-side { display: none; }
@@ -1111,7 +1113,7 @@ svg .edge-path.selected { stroke: var(--accent) !important; }
 }
 
 /* ===================== v1.3 · Notes PIN, shared meetings, video, dashboard customisation ===================== */
-.lock-screen { min-height: calc(100dvh - var(--topbar-h) - 80px); display: grid; place-items: center; padding: 20px; }
+.lock-screen { min-height: calc(100dvh - var(--tb) - 80px); display: grid; place-items: center; padding: 20px; }
 .lock-card { width: min(380px, 100%); display: grid; justify-items: center; gap: 12px; text-align: center; padding: 34px 28px; border: 1px solid var(--border); border-radius: 22px; background: var(--bg-elev); box-shadow: var(--shadow-lg, 0 20px 50px -20px rgba(0,0,0,.25)); }
 .lock-card h2 { margin: 0; font-size: 20px; word-break: break-word; }
 .lock-card p { margin: 0; }
@@ -1378,3 +1380,17 @@ body:has(> .draw-root) > .modal-root { z-index: 420; }
 .nf-pick-row:hover:not(:disabled) { background: var(--bg-hover); }
 .nf-pick-row:disabled { opacity: .55; cursor: default; }
 .drive-linked-notes { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 12px; font-size: 12.5px; color: var(--text-3); }
+
+
+/* v1.15 installed app (Add to Home screen → full screen): keep the top bar clear of the camera cut-out */
+@media (display-mode: fullscreen), (display-mode: standalone) {
+  :root { --safe-top: env(safe-area-inset-top, 0px); }
+  .topbar { padding-top: var(--safe-top); }
+  .boot { padding-top: var(--safe-top); }
+}
+.topbar { height: var(--tb); }
+/* v1.15 phones: dialogs (bottom sheets) sit above the on-screen keyboard instead of under it */
+@media (max-width: 767px) {
+  .modal-root { padding-bottom: var(--kb, 0px); transition: padding-bottom .15s ease; }
+  .modal, .modal.lg, .modal.xl, .modal.sm { max-height: calc(92dvh - var(--kb, 0px)); }
+}
