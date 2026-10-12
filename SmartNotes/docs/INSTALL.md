@@ -196,6 +196,8 @@ File backup disimpan di `storage/backups/` (tidak bisa diakses publik). Simpan s
 2. Upload ulang semua file **kecuali** `app/config.php`, `uploads/`, dan `storage/`.
 3. Buka aplikasi. Perubahan skema dijalankan **otomatis** oleh migrator saat request pertama (tidak perlu phpMyAdmin). Versi skema tersimpan di tabel `settings` (`schema_version`).
 
+**Upgrade ke v1.14** (folder Drive di catatan, perbaikan input nama flowchart/mind map): timpa file; migrasi v11 otomatis membuat tabel `note_folders`.
+
 **Upgrade ke v1.13** (penghapus per area di tulisan tangan): cukup timpa file; tidak ada perubahan database. Tulisan lama tetap sama.
 
 **Upgrade ke v1.12** (zoom & scroll dua jari di kertas tulisan tangan): cukup timpa file; tidak ada perubahan database.

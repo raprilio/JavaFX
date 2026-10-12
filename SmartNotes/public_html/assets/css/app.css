@@ -1351,3 +1351,30 @@ body:has(> .draw-root) > .modal-root { z-index: 420; }
 .draw-erase-mode { flex: none; margin-right: 4px; }
 .draw-erase-mode .btn { font-size: 12px; padding-inline: 8px; }
 .draw-erase-mode .btn.active { background: var(--accent); color: var(--accent-contrast); }
+
+/* v1.14 Drive folders linked to a note */
+.attach-section[data-folders] h4 { display: flex; align-items: center; gap: 6px; }
+.nf-add { margin-left: auto; text-transform: none; letter-spacing: 0; }
+.nf-card { border: 1px solid var(--border); border-radius: 12px; background: var(--bg-elev); overflow: hidden; }
+.nf-card.open { border-color: color-mix(in srgb, var(--fc) 45%, var(--border)); }
+.nf-head { display: flex; align-items: center; gap: 10px; padding: 10px 12px; cursor: pointer; }
+.nf-card.locked .nf-head { cursor: default; opacity: .8; }
+.nf-head:hover { background: var(--bg-hover); }
+.nf-ic { width: 32px; height: 32px; flex: none; border-radius: 9px; display: grid; place-items: center; color: var(--fc); background: color-mix(in srgb, var(--fc) 14%, transparent); }
+.nf-name { font-weight: 600; }
+.nf-chev { color: var(--text-3); transition: transform .15s; display: grid; }
+.nf-card.open .nf-chev { transform: rotate(180deg); }
+.nf-body { padding: 4px 12px 12px; border-top: 1px solid var(--border); }
+.nf-trail { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; margin: 8px 0 4px; color: var(--text-3); }
+.nf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; margin-top: 8px; }
+.nf-tile { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 6px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; min-width: 0; }
+.nf-tile:hover { border-color: var(--accent); }
+.nf-tile img { width: 100%; height: 64px; object-fit: cover; border-radius: 6px; }
+.nf-tile .file-icon { width: 44px; height: 54px; }
+.nf-tile.dir { color: var(--fc); }
+.nf-tile span.truncate { max-width: 100%; color: var(--text); }
+.nf-pick { max-height: 52vh; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.nf-pick-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px 8px calc(10px + var(--d, 0) * 18px); border: 0; border-radius: 8px; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; min-width: 0; }
+.nf-pick-row:hover:not(:disabled) { background: var(--bg-hover); }
+.nf-pick-row:disabled { opacity: .55; cursor: default; }
+.drive-linked-notes { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 12px; font-size: 12.5px; color: var(--text-3); }

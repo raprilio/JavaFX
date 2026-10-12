@@ -454,6 +454,7 @@ final class NotesController
             DB::run('UPDATE notes SET content = ? WHERE id = ?', [$copied, $new]);
         }
         TagsController::sync('note', $new, $u['id'], TagsController::forItems('note', [$id])[$id] ?? []);
+        NoteFoldersController::copy($id, $new, (int) $u['id']);
         Activity::log('note.duplicate', 'note', $new, 'Duplicated note #' . $id);
         Http::ok(self::payload($new, $u['id']));
     }

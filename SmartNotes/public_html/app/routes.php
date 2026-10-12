@@ -60,6 +60,10 @@ return [
     ['POST', 'notes-pin/lock', 'NotesPinController::lockNow', 'auth'],
     ['POST', 'notes/{id}/leave', 'SharesController::leave', 'auth'],
     ['GET', 'notes/{id}/related-files', 'DriveController::relatedFiles', 'auth'],
+    ['GET', 'notes/{id}/folders', 'NoteFoldersController::index', 'auth'],
+    ['POST', 'notes/{id}/folders', 'NoteFoldersController::store', 'auth'],
+    ['POST', 'notes/{id}/folders/{id}/delete', 'NoteFoldersController::destroy', 'auth'],
+    ['GET', 'drive/folders/{id}/notes', 'NoteFoldersController::notesOfFolder', 'auth'],
     ['GET', 'users/directory', 'SharesController::directory', 'auth'],
 
     // Drive

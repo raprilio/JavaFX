@@ -215,7 +215,7 @@ export default {
     const snapshot = () => JSON.stringify({ nodes, edges });
     const pushHistory = () => { undoStack.push(snapshot()); if (undoStack.length > 100) undoStack.shift(); redoStack.length = 0; };
     const restoreSnap = (s) => { const d = JSON.parse(s); nodes = d.nodes; edges = d.edges; };
-    function change(fn) { if (!canEdit) return; pushHistory(); fn(); render(); markDirty(); }
+    function change(fn, { panel = true } = {}) { if (!canEdit) return; pushHistory(); fn(); render({ panel }); markDirty(); }
 
     // ------------------------------------------------------------ render
     function edgeGeom(e) {
@@ -230,7 +230,8 @@ export default {
       const my = mt ** 3 * y1 + 3 * mt * mt * t * c1[1] + 3 * mt * t * t * c2[1] + t ** 3 * y2;
       return { d: `M${x1} ${y1} C${c1[0]} ${c1[1]}, ${c2[0]} ${c2[1]}, ${x2} ${y2}`, mx, my };
     }
-    function render() {
+    /** Redraw the canvas; the inspector is rebuilt too unless the user is typing in it (it would lose focus). */
+    function render({ panel = true } = {}) {
       const th = themeColors();
       markerPath.setAttribute('fill', th.text2);
       markerSelPath.setAttribute('fill', th.accent);
@@ -306,7 +307,7 @@ export default {
         });
         gNodes.appendChild(g);
       });
-      renderPanel();
+      if (panel) renderPanel();
       $('[data-a="undo"]').disabled = !undoStack.length;
       $('[data-a="redo"]').disabled = !redoStack.length;
     }
@@ -413,20 +414,24 @@ export default {
       ta.focus();
       ta.select();
       let done = false;
-      const commit = (save) => {
+      // Clicking a field in the inspector must not rebuild it (the clicked field would vanish) nor refocus the canvas.
+      const commit = (save, to = null) => {
         if (done) return;
         done = true;
         const v = ta.value.trim().slice(0, 500);
+        const intoPanel = !!to?.closest?.('[data-panel]');
         ta.remove();
-        if (save && v !== n.label) change(() => (n.label = v));
-        stage.svg.focus({ preventScroll: true });
+        if (save && v !== n.label) change(() => (n.label = v), { panel: !intoPanel });
+        if (intoPanel) { const f = $('[data-panel] [data-node-label]'); if (f && f.value !== n.label) f.value = n.label; }
+        else stage.svg.focus({ preventScroll: true });
       };
       ta.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commit(true); } if (e.key === 'Escape') commit(false); });
-      ta.addEventListener('blur', () => commit(true));
+      ta.addEventListener('blur', (e) => commit(true, e.relatedTarget));
     }
 
     // ------------------------------------------------------------ pointer interaction
     let op = null; // {kind:'move'|'resize'|'connect', ...}
+    let lastDown = null; // double-click / double-tap: detected here, because the first click redraws the shape
     stage.cancelInteraction = () => { op = null; gTemp.innerHTML = ''; };
     stage.onBackgroundClick = () => { selected.clear(); selEdge = null; render(); };
     gNodes.addEventListener('pointerdown', (e) => {
@@ -449,6 +454,16 @@ export default {
         op = { kind: 'resize', k, c: handle.dataset.handle, sx: w.x, sy: w.y, orig: { ...n }, moved: false, pointerId: e.pointerId };
         return;
       }
+      if (lastDown && lastDown.k === k && e.timeStamp - lastDown.t < 400 && !e.shiftKey) {
+        lastDown = null;
+        e.preventDefault(); // no mousedown default action: it would move focus to the canvas and close the text box
+        try { stage.svg.releasePointerCapture(e.pointerId); } catch { /* not captured */ }
+        selected = new Set([k]);
+        selEdge = null;
+        render();
+        return setTimeout(() => editLabel(k), 0);
+      }
+      lastDown = { k, t: e.timeStamp };
       selEdge = null;
       if (e.shiftKey) { selected.has(k) ? selected.delete(k) : selected.add(k); }
       else if (!selected.has(k)) selected = new Set([k]);
@@ -645,9 +660,10 @@ export default {
     el.addEventListener('input', (e) => {
       const t = e.target;
       const n = selected.size === 1 ? byKey([...selected][0]) : null;
-      if (t.matches('[data-node-label]') && n) { n.label = t.value.slice(0, 500); render(); markDirty(); t.focus(); }
-      if (t.matches('[data-edge-label]') && selEdge) { edges.find((x) => x.key === selEdge).label = t.value.slice(0, 255); render(); markDirty(); t.focus(); }
-      if (t.matches('[data-size]') && n && +t.value >= 20) { n[t.dataset.size] = Math.min(2000, +t.value); render(); markDirty(); t.focus(); }
+      // Typing in the inspector updates the canvas only — the field keeps focus, caret and IME composition.
+      if (t.matches('[data-node-label]') && n) { n.label = t.value.slice(0, 500); render({ panel: false }); markDirty(); }
+      if (t.matches('[data-edge-label]') && selEdge) { edges.find((x) => x.key === selEdge).label = t.value.slice(0, 255); render({ panel: false }); markDirty(); }
+      if (t.matches('[data-size]') && n && +t.value >= 20) { n[t.dataset.size] = Math.min(2000, +t.value); render({ panel: false }); markDirty(); }
       if (t.matches('[data-desc]')) { data.description = t.value; markDirty(); }
       if (t.matches('[data-title]')) { ctx.setTitle(t.value); markDirty(); }
     });

@@ -9,7 +9,7 @@ defined('SN_APP') || exit;
  */
 final class Migrator
 {
-    public const VERSION = 10;
+    public const VERSION = 11;
 
     public static function run(): void
     {
@@ -48,6 +48,9 @@ final class Migrator
             }
             if ($current < 10) {
                 self::v10();
+            }
+            if ($current < 11) {
+                self::v11();
             }
             Settings::set('schema_version', (string) self::VERSION);
         } finally {
@@ -264,6 +267,27 @@ final class Migrator
             DB::pdo()->exec(self::MAILBOX_ASSIGNMENTS_SQL);
         }
     }
+
+    /** v1.14: Drive folders linked to notes. */
+    private static function v11(): void
+    {
+        if (!self::hasTable('note_folders')) {
+            DB::pdo()->exec(self::NOTE_FOLDERS_SQL);
+        }
+    }
+
+    public const NOTE_FOLDERS_SQL = "CREATE TABLE `note_folders` (
+  `note_id`     INT UNSIGNED NOT NULL,
+  `folder_id`   INT UNSIGNED NOT NULL,
+  `user_id`     INT UNSIGNED NOT NULL COMMENT 'Who linked it (the note owner)',
+  `created_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`note_id`, `folder_id`),
+  KEY `idx_note_folders_folder` (`folder_id`),
+  KEY `fk_note_folders_user` (`user_id`),
+  CONSTRAINT `fk_note_folders_note` FOREIGN KEY (`note_id`) REFERENCES `notes` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_note_folders_folder` FOREIGN KEY (`folder_id`) REFERENCES `drive_folders` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_note_folders_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
 
     /** v1.11: flowchart shapes keep their drawing order (to front / to back). */
     private static function v10(): void

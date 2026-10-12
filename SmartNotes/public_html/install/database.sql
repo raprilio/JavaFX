@@ -401,6 +401,20 @@ CREATE TABLE IF NOT EXISTS `drive_folders` (
   CONSTRAINT `fk_df_parent` FOREIGN KEY (`parent_id`) REFERENCES `drive_folders` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- v1.14: Drive folders linked to notes
+CREATE TABLE IF NOT EXISTS `note_folders` (
+  `note_id`     INT UNSIGNED NOT NULL,
+  `folder_id`   INT UNSIGNED NOT NULL,
+  `user_id`     INT UNSIGNED NOT NULL COMMENT 'Who linked it (the note owner)',
+  `created_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`note_id`, `folder_id`),
+  KEY `idx_note_folders_folder` (`folder_id`),
+  KEY `fk_note_folders_user` (`user_id`),
+  CONSTRAINT `fk_note_folders_note` FOREIGN KEY (`note_id`) REFERENCES `notes` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_note_folders_folder` FOREIGN KEY (`folder_id`) REFERENCES `drive_folders` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_note_folders_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `note_attachments` (
   `id`             INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `user_id`        INT UNSIGNED NOT NULL,
@@ -827,7 +841,7 @@ INSERT IGNORE INTO `settings` (`setting_key`, `setting_value`) VALUES
 ('smtp_encryption', 'tls'),
 ('smtp_from_name', 'SmartNotes'),
 ('smtp_from_email', ''),
-('schema_version', '10'),
+('schema_version', '11'),
 ('allow_note_sharing', '1'),
 ('logo_display', 'logo'),
 ('logo_height', '34'),

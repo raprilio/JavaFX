@@ -175,11 +175,11 @@ export default {
       const mx = (x1 + x2) / 2;
       return `M${x1} ${y1} C${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`;
     }
-    function render() {
+    function render({ panel = true } = {}) {
       kidsCache = buildKids();
-      try { renderInner(); } finally { kidsCache = null; }
+      try { renderInner(panel); } finally { kidsCache = null; }
     }
-    function renderInner() {
+    function renderInner(panel = true) {
       const th = themeColors();
       markerPath.setAttribute('fill', th.text2);
       [...nodes.values()].forEach(measure);
@@ -246,7 +246,7 @@ export default {
         if (connectFrom === n.key) g.appendChild(svgEl('rect', { class: 'sel-ring', x: -8, y: -8, width: s.w + 16, height: s.h + 16, rx: 16, style: 'stroke:#f59e0b' }));
         gNodes.appendChild(g);
       });
-      renderPanel();
+      if (panel) renderPanel(); // not while the user types in it
       $('[data-a="undo"]').disabled = !undoStack.length;
       $('[data-a="redo"]').disabled = !redoStack.length;
     }
@@ -307,12 +307,12 @@ export default {
     }
 
     // ------------------------------------------------------------ mutations
-    function change(fn, { layout = false } = {}) {
+    function change(fn, { layout = false, panel = true } = {}) {
       if (!canEdit) return;
       pushHistory();
       fn();
       if (layout) autoLayout();
-      render();
+      render({ panel });
       markDirty();
     }
     function addChild(parentKey) {
@@ -416,15 +416,19 @@ export default {
       ta.focus();
       ta.select();
       let done = false;
-      const commit = (save = true) => {
+      // `to`: where the focus is going. Clicking a field in the side panel must not rebuild the panel
+      // (that would throw away the field just clicked) nor pull the focus back to the canvas.
+      const commit = (save = true, to = null) => {
         if (done) return;
         done = true;
         const v = ta.value.trim();
+        const intoPanel = !!to?.closest?.('[data-panel]');
         ta.remove();
         editor = null;
-        if (save && v && v !== n.label) change(() => (n.label = v.slice(0, 500)), { layout: true });
+        if (save && v && v !== n.label) change(() => (n.label = v.slice(0, 500)), { layout: true, panel: !intoPanel });
         else if (isNew && !save) removeNode(k);
-        stage.svg.focus({ preventScroll: true });
+        if (intoPanel) { const f = $('[data-panel] [data-label]'); if (f && f.value !== n.label) f.value = n.label; }
+        else stage.svg.focus({ preventScroll: true });
       };
       ta.addEventListener('keydown', (e) => {
         e.stopPropagation();
@@ -432,7 +436,7 @@ export default {
         if (e.key === 'Escape') { e.preventDefault(); commit(false); }
         if (e.key === 'Tab') { e.preventDefault(); commit(); addChild(k); }
       });
-      ta.addEventListener('blur', () => commit());
+      ta.addEventListener('blur', (e) => commit(true, e.relatedTarget));
       editor = { commit };
     }
 
@@ -611,10 +615,10 @@ export default {
       }
     });
     el.addEventListener('input', (e) => {
-      if (e.target.matches('[data-label]') && sel) { nodes.get(sel).label = e.target.value.slice(0, 500); render(); markDirty(); e.target.focus(); }
+      if (e.target.matches('[data-label]') && sel) { nodes.get(sel).label = e.target.value.slice(0, 500); render({ panel: false }); markDirty(); }
       if (e.target.matches('[data-notes]') && sel) { nodes.get(sel).notes = e.target.value; markDirty(); }
       if (e.target.matches('[data-desc]')) { data.description = e.target.value; markDirty(); }
-      if (e.target.matches('[data-link-label]') && selLink >= 0) { links[selLink].label = e.target.value.slice(0, 255); render(); markDirty(); }
+      if (e.target.matches('[data-link-label]') && selLink >= 0) { links[selLink].label = e.target.value.slice(0, 255); render({ panel: false }); markDirty(); }
       if (e.target.matches('[data-title]')) { ctx.setTitle(e.target.value); markDirty(); }
     });
     el.addEventListener('focusin', (e) => { if (e.target.matches('[data-label],[data-notes],[data-link-label]')) pushHistory(); });

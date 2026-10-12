@@ -46,6 +46,7 @@ export default {
         <div class="btn-group">${[['grid', 'layout-grid'], ['list', 'list']].map(([v, i]) => html`<button class="btn ${f.layout === v ? 'active' : ''}" data-layout="${v}">${icon(i, 'sm')}</button>`)}</div>
       </div>
       <nav class="drive-crumbs" data-crumbs></nav>
+      <div class="drive-linked-notes" data-linked-notes hidden></div>
       <div class="drive-drop" data-drop>
         <div class="drop-hint">${icon('upload-cloud', 'lg')}&nbsp; Drop files to upload here</div>
         <div data-body><div style="padding:50px;text-align:center"><span class="spinner"></span></div></div>
@@ -76,10 +77,24 @@ export default {
         c.innerHTML = String(html`<a href="#" data-goto="">${icon('users', 'sm')} Shared with me</a>${path.map((p) => html`${icon('chevron-right', 'sm')}<a href="#" data-goto="${p.id}">${p.name}</a>`)}`);
         return;
       }
-      if (f.view !== 'drive') { c.innerHTML = ''; return; }
+      if (f.view !== 'drive') { c.innerHTML = ''; linkedNotes(null); return; }
+      linkedNotes(f.folder);
       c.innerHTML = String(html`<a href="#" data-goto="" data-drop-folder="">${icon('hard-drive', 'sm')} My Drive</a>${path.map((p) => html`${icon('chevron-right', 'sm')}<a href="#" data-goto="${p.id}" data-drop-folder="${p.id}">${p.name}</a>`)}`);
     }
 
+    /** v1.14: notes this folder is linked to (one click back to the note). */
+    let lnReq = 0;
+    async function linkedNotes(folderId) {
+      const box = el.querySelector('[data-linked-notes]');
+      if (!box) return;
+      const req = ++lnReq;
+      if (!folderId) { box.hidden = true; box.innerHTML = ''; return; }
+      let notes = [];
+      try { notes = await api.get(`drive/folders/${folderId}/notes`); } catch { /* ignore */ }
+      if (req !== lnReq) return;
+      box.hidden = !notes.length;
+      box.innerHTML = notes.length ? String(html`${icon('link', 'sm')} Linked to ${notes.map((n) => html`<a class="tag" href="#/notes/${n.id}">${icon('notebook-pen', 'xs')} ${n.title}</a>`)}`) : '';
+    }
     function fileCard(x) {
       return html`<div class="file-card" data-id="${x.id}" draggable="${x.shared ? 'false' : 'true'}" tabindex="0">
         <div class="fc-thumb">${x.kind === 'image' ? html`<img src="${x.thumb_url}" alt="" loading="lazy">` : x.kind === 'video' ? html`<video src="${x.url}#t=0.5" preload="metadata" muted playsinline tabindex="-1"></video><span class="fc-play">${icon('play', 'sm')}</span>` : fileBadge(x.name)}

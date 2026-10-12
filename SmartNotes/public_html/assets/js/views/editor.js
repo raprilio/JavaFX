@@ -4,7 +4,7 @@ import { api, url as apiUrl, getCsrf } from '../core/api.js';
 import { state, emit } from '../core/store.js';
 import { navigate } from '../core/router.js';
 import { shell } from '../core/shell.js';
-import { toast, toastError, menu, confirm, colorPicker, setTitle, prompt } from '../core/ui.js';
+import { toast, toastError, menu, confirm, colorPicker, setTitle, prompt, modal } from '../core/ui.js';
 import { createRTE } from '../components/rte.js';
 import { tagInput, normalizeTag } from '../components/tagInput.js';
 import { uploadFile, pickFiles } from '../components/attachments.js';
@@ -77,6 +77,7 @@ export default {
             <section class="attach-section" data-images></section>
             <section class="attach-section" data-audio></section>
             <section class="attach-section" data-files></section>
+            <section class="attach-section" data-folders></section>
             <div data-uploads></div>
           </div>
         </div>
@@ -90,6 +91,7 @@ export default {
             <button class="btn sm" data-a="checklist-task">${icon('square-check-big', 'sm')} Create task from note</button>
             <button class="btn sm" data-a="record">${icon('mic', 'sm')} Record audio</button>
             <button class="btn sm" data-a="attach">${icon('paperclip', 'sm')} Attach file</button>
+            <button class="btn sm" data-a="link-folder">${icon('folder-plus', 'sm')} Link Drive folder</button>
           </div>
           <h4>Related tasks</h4><div data-tasks></div>
           <h4>Linked Drive files <span class="subtle" style="text-transform:none;letter-spacing:0">(same #tag)</span></h4><div data-related class="related-files"></div>`
@@ -435,6 +437,7 @@ export default {
       if (a === 'more') {
         menu(btn, [
           { label: note.is_archived ? 'Unarchive' : 'Archive', icon: 'archive', onClick: async () => { const r = await saveField({ is_archived: !note.is_archived }); toast(r?.is_archived ? 'Note archived' : 'Note unarchived', 'success'); } },
+          ...(trashed ? [] : [{ label: 'Link Drive folder', icon: 'folder-plus', onClick: () => linkFolder() }]),
           { label: 'Duplicate', icon: 'copy', onClick: async () => { await save(); const r = await api.post(`notes/${id}/duplicate`).catch(toastError); if (r) navigate(`/notes/${r.id}`); } },
           ...(!trashed && state.user.role === 'admin' ? [{ label: note.pinned_global ? 'Unpin for everyone' : 'Pin for everyone', icon: 'megaphone', disabled: note.is_locked, onClick: async () => {
             const on = !note.pinned_global;
@@ -486,6 +489,133 @@ export default {
       } catch { /* ignore */ }
     }
     if (isOwner) { loadTasks(); loadRelated(); }
+
+    // ------------------------------------------------------------ linked Drive folders (v1.14)
+    // The note shows the files of the folders linked to it; a click previews a file, sub-folders open in place.
+    let linkedFolders = [];
+    const browse = new Map(); // folder id -> { trail: [{id, name}], folders, items, total, loading }
+    const SHOW = 48;
+    async function loadFolders() {
+      try { linkedFolders = await api.get(`notes/${id}/folders`); } catch { linkedFolders = []; }
+      renderFolders();
+    }
+    function folderCount(f) {
+      if (!f.access) return 'Not shared with you';
+      const parts = [`${f.file_count} file${f.file_count === 1 ? '' : 's'}`];
+      if (f.folder_count) parts.push(`${f.folder_count} folder${f.folder_count === 1 ? '' : 's'}`);
+      if (!f.mine) parts.push(`${f.owner_name}'s Drive`);
+      return parts.join(' · ');
+    }
+    const driveHref = (f, cur) => (f.access === 'owner' ? `#/drive?folder=${cur}` : `#/drive?view=shared&folder=${cur}`);
+    function renderFolders() {
+      const box = $('[data-folders]');
+      if (!box) return;
+      const canLink = isOwner && !trashed;
+      box.innerHTML = linkedFolders.length ? String(html`<h4>${icon('folder-open', 'sm')} Drive folders <span class="subtle">${linkedFolders.length}</span>
+          ${canLink ? html`<button class="btn ghost xs nf-add" data-a="link-folder">${icon('plus', 'sm')} Link folder</button>` : ''}</h4>
+        <div class="col" style="gap:8px">${linkedFolders.map((f) => {
+          const b = browse.get(f.id);
+          const cur = b ? b.trail[b.trail.length - 1].id : f.id;
+          return html`<div class="nf-card ${b ? 'open' : ''} ${f.access ? '' : 'locked'}" data-nf="${f.id}" style="--fc:${f.color || 'var(--accent)'}">
+            <div class="nf-head" data-nf-toggle="${f.id}" role="button" tabindex="0" aria-expanded="${b ? 'true' : 'false'}">
+              <span class="nf-ic">${icon(f.access ? (b ? 'folder-open' : 'folder') : 'folder-lock', 'sm')}</span>
+              <div class="grow" style="min-width:0"><div class="truncate nf-name">${f.name}</div><div class="tiny subtle truncate">${folderCount(f)}</div></div>
+              ${f.access ? html`<a class="btn ghost icon xs" href="${driveHref(f, cur)}" data-tip="Open in Drive" aria-label="Open in Drive">${icon('external-link', 'sm')}</a>` : ''}
+              ${canLink ? html`<button class="btn ghost icon xs" data-nf-unlink="${f.id}" data-tip="Unlink from this note" aria-label="Unlink ${f.name}">${icon('unlink', 'sm')}</button>` : ''}
+              ${f.access ? html`<span class="nf-chev">${icon('chevron-down', 'sm')}</span>` : ''}
+            </div>
+            ${b ? html`<div class="nf-body">
+              ${b.trail.length > 1 ? html`<div class="nf-trail small">${b.trail.map((t, i) => html`${i ? icon('chevron-right', 'xs') : ''}<a href="#" data-nf-go="${f.id}:${i}">${t.name}</a>`)}</div>` : ''}
+              ${b.loading ? html`<div class="small subtle" style="padding:10px"><span class="spinner"></span></div>`
+                : b.error ? html`<div class="small subtle">${b.error}</div>`
+                : !b.folders.length && !b.items.length ? html`<div class="small subtle" style="padding:6px 2px">This folder is empty.</div>`
+                : html`<div class="nf-grid">
+                  ${b.folders.map((d) => html`<button type="button" class="nf-tile dir" data-nf-sub="${f.id}:${d.id}" title="${d.name}">${icon('folder', 'lg')}<span class="truncate">${d.name}</span></button>`)}
+                  ${b.items.slice(0, SHOW).map((x, i) => html`<button type="button" class="nf-tile" data-nf-file="${f.id}:${i}" title="${x.name}">${x.thumb_url ? html`<img src="${x.thumb_url}" alt="" loading="lazy">` : fileBadge(x.name)}<span class="truncate">${x.name}</span></button>`)}</div>
+                  ${b.total > SHOW ? html`<a class="small" href="${driveHref(f, cur)}">${icon('external-link', 'xs')} ${b.total - SHOW} more in Drive</a>` : ''}`}
+            </div>` : ''}
+          </div>`;
+        })}</div>`)
+        : '';
+    }
+    async function openSub(fid, folderId, name) {
+      const f = linkedFolders.find((x) => x.id === fid);
+      if (!f?.access) return;
+      const b = browse.get(fid) || { trail: [{ id: f.id, name: f.name }], folders: [], items: [], total: 0 };
+      if (folderId !== f.id && !b.trail.some((t) => t.id === folderId)) b.trail.push({ id: folderId, name });
+      b.loading = true;
+      b.error = null;
+      browse.set(fid, b);
+      renderFolders();
+      try {
+        const r = await api.get('drive', f.access === 'owner' ? { folder: folderId, per_page: 200, sort: 'name' } : { view: 'shared', folder: folderId });
+        Object.assign(b, { folders: r.folders || [], items: r.items || [], total: r.total ?? (r.items || []).length, loading: false });
+      } catch (err) { Object.assign(b, { loading: false, error: err.message }); }
+      renderFolders();
+    }
+    async function pickFolder() {
+      let mine = [], shared = [];
+      try { [mine, shared] = await Promise.all([api.get('drive/folders'), api.get('drive', { view: 'shared' }).then((r) => r.folders || []).catch(() => [])]); } catch (e) { return toastError(e); }
+      const kids = new Map();
+      mine.forEach((f) => { const k = f.parent_id || 0; kids.set(k, [...(kids.get(k) || []), f]); });
+      const linked = new Set(linkedFolders.map((f) => f.id));
+      const rows = [];
+      const walk = (pid, depth, trail) => (kids.get(pid) || []).forEach((f) => { rows.push({ ...f, depth, path: [...trail, f.name].join(' / ') }); walk(f.id, depth + 1, [...trail, f.name]); });
+      walk(0, 0, []);
+      shared.forEach((f) => rows.push({ ...f, depth: 0, path: f.name, owner: f.owner_name }));
+      if (!rows.length) {
+        toast('You have no Drive folders yet — create one in Drive first', 'info', { action: 'Open Drive', onAction: () => navigate('/drive') });
+        return null;
+      }
+      const body = h(String(html`<div><input class="input mb-2" type="search" placeholder="Search folders…" data-q autocomplete="off">
+        <div class="nf-pick">${rows.map((f) => html`<button type="button" class="nf-pick-row ${linked.has(f.id) ? 'done' : ''}" data-pick="${f.id}" data-path="${f.path.toLowerCase()}" style="--d:${f.depth}" ${linked.has(f.id) ? 'disabled' : ''}>
+          <span style="color:${f.color || 'var(--accent)'}">${icon('folder', 'sm')}</span><span class="grow truncate">${f.name}${f.owner ? html` <span class="subtle small">· ${f.owner}</span>` : ''}</span>${linked.has(f.id) ? html`<span class="tiny subtle">linked</span>` : ''}</button>`)}</div></div>`));
+      const m = modal({ title: 'Link a Drive folder', size: 'sm', body, actions: [{ label: 'Cancel', value: null }] });
+      body.querySelector('[data-q]').addEventListener('input', (e) => {
+        const q = e.target.value.trim().toLowerCase();
+        body.querySelectorAll('[data-pick]').forEach((b) => { b.style.display = !q || b.dataset.path.includes(q) ? '' : 'none'; b.style.setProperty('--d', q ? 0 : rows.find((r) => r.id === +b.dataset.pick).depth); });
+      });
+      body.addEventListener('click', (e) => { const b = e.target.closest('[data-pick]'); if (b && !b.disabled) m.close(+b.dataset.pick); });
+      setTimeout(() => body.querySelector('[data-q]').focus(), 50);
+      return m.result;
+    }
+    async function linkFolder() {
+      const fid = await pickFolder();
+      if (!fid) return;
+      try {
+        linkedFolders = await api.post(`notes/${id}/folders`, { folder_id: fid });
+        toast('Folder linked to this note', 'success', { timeout: 1500 });
+        openSub(fid, fid);
+      } catch (e) { toastError(e); }
+    }
+    el.addEventListener('click', async (e) => {
+      const t = e.target;
+      if (t.closest('[data-a="link-folder"]')) { e.preventDefault(); return linkFolder(); }
+      const un = t.closest('[data-nf-unlink]');
+      if (un) {
+        const f = linkedFolders.find((x) => x.id === +un.dataset.nfUnlink);
+        if (!(await confirm({ title: `Unlink "${f.name}"?`, message: 'The folder and its files stay in Drive; only the link from this note is removed.', confirmText: 'Unlink' }))) return;
+        try { linkedFolders = await api.post(`notes/${id}/folders/${f.id}/delete`); browse.delete(f.id); renderFolders(); } catch (err) { toastError(err); }
+        return;
+      }
+      if (t.closest('.nf-head a')) return;
+      const tg = t.closest('[data-nf-toggle]');
+      if (tg) {
+        const fid = +tg.dataset.nfToggle;
+        const f = linkedFolders.find((x) => x.id === fid);
+        if (!f.access) return toast(`${f.owner_name} has not shared this folder with you`, 'info');
+        if (browse.has(fid)) { browse.delete(fid); renderFolders(); } else openSub(fid, fid);
+        return;
+      }
+      const sub = t.closest('[data-nf-sub]');
+      if (sub) { const [fid, did] = sub.dataset.nfSub.split(':').map(Number); return openSub(fid, did, sub.title); }
+      const go = t.closest('[data-nf-go]');
+      if (go) { e.preventDefault(); const [fid, i] = go.dataset.nfGo.split(':').map(Number); const b = browse.get(fid); b.trail = b.trail.slice(0, i + 1); return openSub(fid, b.trail[i].id); }
+      const fl = t.closest('[data-nf-file]');
+      if (fl) { const [fid, i] = fl.dataset.nfFile.split(':').map(Number); const b = browse.get(fid); openFilePreview(b.items[i], b.items); }
+    });
+    el.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[data-nf-toggle]')) { e.preventDefault(); e.target.click(); } });
+    loadFolders();
     el.addEventListener('click', (e) => {
       const r = e.target.closest('[data-rel]');
       if (r) openFilePreview(related.find((f) => f.id === +r.dataset.rel), related);
