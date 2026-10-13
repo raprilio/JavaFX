@@ -70,6 +70,10 @@ final class NotesController
         if (Http::query('locked') === '1') {
             $where[] = 'n.is_locked = 1';
         }
+        if ($who = self::mentionFilter($u['id'])) {
+            $where[] = 'EXISTS (SELECT 1 FROM note_mentions m WHERE m.note_id = n.id AND m.user_id = ?)';
+            $params[] = $who;
+        }
 
         $sortMap = ['updated' => 'n.updated_at', 'created' => 'n.created_at', 'title' => 'n.title', 'opened' => 'n.last_opened_at'];
         $sort = $sortMap[Http::query('sort', $filter === 'recent' ? 'opened' : 'updated')] ?? 'n.updated_at';
@@ -97,9 +101,11 @@ final class NotesController
             $params
         );
         $tags = TagsController::forItems('note', array_column($rows, 'id'));
+        $people = Mentions::forNotes(array_map('intval', array_column($rows, 'id')));
         foreach ($rows as &$r) {
             $r = self::cast($r);
             $r['tags'] = $tags[$r['id']] ?? [];
+            $r['mentions'] = $people[$r['id']] ?? [];
             $mine = $r['owner_id'] === (int) $u['id'];
             if (!$mine) {
                 // Someone else's note: shared with me, or pinned by an admin for everyone.
@@ -114,9 +120,24 @@ final class NotesController
             unset($r['share_pinned']);
             if ($r['is_locked'] && (!$mine || !$unlocked)) {
                 $r = self::masked($r);
+                $r['mentions'] = [];
             }
         }
         Http::ok(['items' => $rows, 'total' => $total, 'page' => $page, 'per_page' => $perPage, 'unlocked' => $unlocked]);
+    }
+
+    /** People @mentioned in the notes I can see, most mentioned first (people filter). */
+    public static function people(): void
+    {
+        $u = Auth::require();
+        Http::ok(Mentions::people((int) $u['id']));
+    }
+
+    /** ?mention=me | <user id>: notes that @mention this person (v1.16). */
+    private static function mentionFilter(int $me): ?int
+    {
+        $m = Http::query('mention');
+        return $m === 'me' ? $me : V::id($m);
     }
 
     private static function cast(array $r): array
@@ -268,6 +289,10 @@ final class NotesController
             $extra = ' AND (n.title LIKE ? OR n.content_text LIKE ?)';
             array_push($params, $like, $like);
         }
+        if ($who = self::mentionFilter($uid)) {
+            $extra .= ' AND EXISTS (SELECT 1 FROM note_mentions m WHERE m.note_id = n.id AND m.user_id = ?)';
+            $params[] = $who;
+        }
         $rows = DB::all(
             "SELECT n.id, n.title, LEFT(n.content_text, 260) AS excerpt, n.note_type, n.color, n.background, n.checklist_total, n.checklist_done,
                     n.created_at, n.updated_at, s.last_opened_at, s.permission, s.is_pinned AS share_pinned, n.user_id AS owner_id, o.name AS owner_name,
@@ -279,9 +304,11 @@ final class NotesController
             $params
         );
         $tags = TagsController::forItems('note', array_column($rows, 'id'));
+        $people = Mentions::forNotes(array_map('intval', array_column($rows, 'id')));
         foreach ($rows as &$r) {
             $r = self::cast($r);
             $r['tags'] = $tags[$r['id']] ?? [];
+            $r['mentions'] = $people[$r['id']] ?? [];
             $r['is_pinned'] = $r['share_pinned'];
             $r['is_favorite'] = false;
             $r['is_archived'] = false;
@@ -366,6 +393,7 @@ final class NotesController
         if (array_key_exists('content', $in)) {
             self::refreshType($id, $userId);
             DrawingsController::syncNote($id, $data['content']);
+            Mentions::sync($id, $data['content'], $editorId ?? $userId);
         }
     }
 
@@ -455,6 +483,7 @@ final class NotesController
         }
         TagsController::sync('note', $new, $u['id'], TagsController::forItems('note', [$id])[$id] ?? []);
         NoteFoldersController::copy($id, $new, (int) $u['id']);
+        DB::run('INSERT IGNORE INTO note_mentions (note_id, user_id, mentioned_by) SELECT ?, user_id, mentioned_by FROM note_mentions WHERE note_id = ?', [$new, $id]);
         Activity::log('note.duplicate', 'note', $new, 'Duplicated note #' . $id);
         Http::ok(self::payload($new, $u['id']));
     }

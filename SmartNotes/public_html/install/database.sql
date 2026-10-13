@@ -415,6 +415,19 @@ CREATE TABLE IF NOT EXISTS `note_folders` (
   CONSTRAINT `fk_note_folders_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `note_mentions` (
+  `note_id`       INT UNSIGNED NOT NULL,
+  `user_id`       INT UNSIGNED NOT NULL COMMENT 'Mentioned user (@name in the note text)',
+  `mentioned_by`  INT UNSIGNED NULL COMMENT 'Who added the first mention',
+  `created_at`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`note_id`, `user_id`),
+  KEY `idx_note_mentions_user` (`user_id`),
+  KEY `fk_note_mentions_by` (`mentioned_by`),
+  CONSTRAINT `fk_note_mentions_note` FOREIGN KEY (`note_id`) REFERENCES `notes` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_note_mentions_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_note_mentions_by` FOREIGN KEY (`mentioned_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `note_attachments` (
   `id`             INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `user_id`        INT UNSIGNED NOT NULL,
@@ -557,6 +570,7 @@ CREATE TABLE IF NOT EXISTS `mindmaps` (
   `title`           VARCHAR(255) NOT NULL,
   `description`     TEXT NULL,
   `viewport`        VARCHAR(120) NULL COMMENT 'JSON {x,y,zoom}',
+  `theme`           VARCHAR(500) NULL COMMENT 'JSON look: preset, branches, layout, background, font (v1.16)',
   `last_opened_at`  DATETIME NULL,
   `updated_by`      INT UNSIGNED NULL COMMENT 'Last editor (owner or a user it is shared with)',
   `revision`        INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Incremented on every save (conflict detection)',
@@ -580,6 +594,7 @@ CREATE TABLE IF NOT EXISTS `mindmap_nodes` (
   `height`      DECIMAL(10,2) NULL,
   `color`       VARCHAR(9) NULL,
   `icon`        VARCHAR(40) NULL,
+  `style`       VARCHAR(255) NULL COMMENT 'JSON: shape, emoji, size, bold (v1.16)',
   `notes`       TEXT NULL,
   `collapsed`   TINYINT(1) NOT NULL DEFAULT 0,
   `sort_order`  INT NOT NULL DEFAULT 0,
@@ -841,7 +856,7 @@ INSERT IGNORE INTO `settings` (`setting_key`, `setting_value`) VALUES
 ('smtp_encryption', 'tls'),
 ('smtp_from_name', 'SmartNotes'),
 ('smtp_from_email', ''),
-('schema_version', '11'),
+('schema_version', '12'),
 ('allow_note_sharing', '1'),
 ('logo_display', 'logo'),
 ('logo_height', '34'),

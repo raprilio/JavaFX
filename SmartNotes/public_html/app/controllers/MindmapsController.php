@@ -77,6 +77,7 @@ final class MindmapsController
             'h' => $n['height'] !== null ? (float) $n['height'] : null,
             'color' => $n['color'],
             'icon' => $n['icon'],
+            'style' => json_decode_array($n['style'] ?? null) ?: null,
             'notes' => $n['notes'],
             'collapsed' => (bool) $n['collapsed'],
             'order' => (int) $n['sort_order'],
@@ -92,6 +93,7 @@ final class MindmapsController
             'title' => $m['title'],
             'description' => $m['description'],
             'viewport' => json_decode_array($m['viewport']) ?: null,
+            'theme' => json_decode_array($m['theme'] ?? null) ?: null,
             'created_at' => $m['created_at'],
             'updated_at' => $m['updated_at'],
             'access' => $role,
@@ -150,6 +152,9 @@ final class MindmapsController
             if (array_key_exists('description', $in)) {
                 $meta['description'] = V::str($in['description'], 2000);
             }
+            if (array_key_exists('theme', $in)) {
+                $meta['theme'] = self::theme($in['theme']);
+            }
             if (isset($in['viewport']) && is_array($in['viewport'])) {
                 $meta['viewport'] = json_encode([
                     'x' => round(V::float($in['viewport']['x'] ?? 0), 2),
@@ -166,6 +171,69 @@ final class MindmapsController
             }
         });
         Http::ok(['id' => $id, 'updated_at' => $ts, 'revision' => (int) DB::val('SELECT revision FROM mindmaps WHERE id = ?', [$id])]);
+    }
+
+    /** Look of the whole map (v1.16): only known values are kept. */
+    private const THEME = [
+        'preset' => ['classic', 'vivid', 'pastel', 'organic', 'neon', 'mono'],
+        'edge' => ['curve', 'taper', 'elbow', 'straight'],
+        'layout' => ['balanced', 'right', 'down'],
+        'bg' => ['plain', 'dots', 'grid', 'gradient'],
+        'font' => ['sans', 'rounded', 'serif', 'hand'],
+    ];
+    private const SHAPES = ['rounded', 'pill', 'rect', 'ellipse', 'hexagon', 'underline', 'plain', 'cloud'];
+
+    public static function theme(mixed $in): ?string
+    {
+        if (!is_array($in)) {
+            return null;
+        }
+        $out = [];
+        foreach (self::THEME as $k => $allowed) {
+            if (isset($in[$k]) && in_array($in[$k], $allowed, true)) {
+                $out[$k] = $in[$k];
+            }
+        }
+        if (array_key_exists('rainbow', $in)) {
+            $out['rainbow'] = V::bool($in['rainbow']);
+        }
+        if (array_key_exists('motion', $in)) {
+            $out['motion'] = V::bool($in['motion']);
+        }
+        return $out ? json_encode($out) : null;
+    }
+
+    /** Look of one topic (v1.16): shape, emoji sticker, text size, bold. */
+    public static function nodeStyle(mixed $in): ?string
+    {
+        if (!is_array($in)) {
+            return null;
+        }
+        $out = [];
+        if (isset($in['shape']) && in_array($in['shape'], self::SHAPES, true)) {
+            $out['shape'] = $in['shape'];
+        }
+        if (isset($in['emoji']) && is_string($in['emoji'])) {
+            // A short sticker (emoji or a couple of characters); never markup.
+            $e = trim(preg_replace('/[\x00-\x1F<>&"\\\\]/u', '', strip_tags($in['emoji'])) ?? '');
+            if ($e !== '') {
+                $out['emoji'] = mb_substr($e, 0, 8);
+            }
+        }
+        if (isset($in['size']) && in_array($in['size'], ['s', 'm', 'l', 'xl'], true) && $in['size'] !== 'm') {
+            $out['size'] = $in['size'];
+        }
+        if (!empty($in['bold'])) {
+            $out['bold'] = true;
+        }
+        if (isset($in['fill']) && in_array($in['fill'], ['solid', 'soft', 'none'], true)) {
+            $out['fill'] = $in['fill'];
+        }
+        if (!$out) {
+            return null;
+        }
+        $json = json_encode($out, JSON_UNESCAPED_UNICODE);
+        return strlen($json) <= 255 ? $json : null;
     }
 
     public static function saveGraph(int $mapId, array $nodes, array $edges): void
@@ -192,6 +260,7 @@ final class MindmapsController
                 'height' => isset($n['h']) && is_numeric($n['h']) ? round((float) $n['h'], 2) : null,
                 'color' => V::color($n['color'] ?? null),
                 'icon' => V::token($n['icon'] ?? null),
+                'style' => self::nodeStyle($n['style'] ?? null),
                 'notes' => V::str($n['notes'] ?? null, 10000),
                 'collapsed' => V::bool($n['collapsed'] ?? false),
                 'sort_order' => V::int($n['order'] ?? $i, -100000, 100000) ?? $i,
@@ -250,6 +319,7 @@ final class MindmapsController
                 'title' => mb_substr($src['title'] . ' (copy)', 0, 255),
                 'description' => $src['description'],
                 'viewport' => $src['viewport'] ? json_encode($src['viewport']) : null,
+                'theme' => self::theme($src['theme']),
             ]);
             self::saveGraph($newId, $src['nodes'], $src['edges']);
             return $newId;

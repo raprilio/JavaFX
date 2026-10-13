@@ -99,7 +99,9 @@ final class SharesController
             if (!$exists) {
                 $added++;
                 $title = $note['title'] !== '' ? $note['title'] : 'Untitled note';
-                Notify::create($rid, 'share', "{$u['name']} membagikan catatan \"{$title}\" dengan Anda", $perm === 'edit' ? 'Anda dapat melihat dan mengedit.' : 'Anda dapat melihat.', '#/notes/' . $noteId);
+                // Shared because they were @mentioned (v1.16): the link jumps to their name in the note.
+                $mentioned = (bool) DB::val('SELECT 1 FROM note_mentions WHERE note_id = ? AND user_id = ?', [$noteId, $rid]);
+                Notify::create($rid, $mentioned ? 'mention' : 'share', $mentioned ? "@ {$u['name']} menyebut Anda di catatan \"{$title}\"" : "{$u['name']} membagikan catatan \"{$title}\" dengan Anda", ($perm === 'edit' ? 'Anda dapat melihat dan mengedit.' : 'Anda dapat melihat.') . ($mentioned ? ' Catatan ini dibagikan dengan Anda.' : ''), '#/notes/' . $noteId . ($mentioned ? '?mention=' . $rid : ''));
                 $wantsMail = (int) (DB::val('SELECT email_notifications FROM user_settings WHERE user_id = ?', [$rid]) ?? 1);
                 if ($wantsMail && Mailer::isConfigured()) {
                     $html = Mailer::template('Catatan dibagikan', '<p>Halo ' . e($r['name']) . ',</p><p><strong>' . e($u['name']) . '</strong> membagikan catatan <strong>' . e($title) . '</strong> dengan Anda (' . ($perm === 'edit' ? 'dapat mengedit' : 'hanya melihat') . ').</p><p style="margin:24px 0"><a class="btn" href="' . e(app_url() . '#/notes/' . $noteId) . '">Buka catatan</a></p>');

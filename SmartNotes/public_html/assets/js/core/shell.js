@@ -261,7 +261,7 @@ async function openNotifications(anchor) {
   const list = $('.notif-list', wrap);
   const items = r?.items || [];
   list.innerHTML = items.length ? items.map((n) => String(html`<div class="notif ${n.is_read ? '' : 'unread'}" data-id="${n.id}" data-link="${n.link || ''}">
-      <span class="n-icon">${icon(n.type === 'reminder' ? 'alarm-clock' : 'bell', 'sm')}</span>
+      <span class="n-icon">${icon(n.type === 'reminder' ? 'alarm-clock' : n.type === 'mention' ? 'at-sign' : 'bell', 'sm')}</span>
       <div class="grow" style="min-width:0"><b>${n.title}</b>${n.message ? html`<div class="small muted" style="margin:2px 0">${n.message}</div>` : ''}<span>${timeAgo(n.created_at)}</span></div></div>`)).join('')
     : String(html`<div class="empty" style="padding:34px 16px"><div class="empty-art">${icon('bell-off', 'xl')}</div><h3>All caught up</h3><p>Reminders for tasks, meetings and schedules appear here.</p></div>`);
   wrap.addEventListener('click', async (e) => {

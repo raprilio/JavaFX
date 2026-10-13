@@ -15,6 +15,7 @@ import { openShareDialog } from '../components/share.js';
 import { openFilePreview } from '../components/filePreview.js';
 import { renderLockScreen, unlockNotes, toggleNoteLock, lockNow } from '../components/notePin.js';
 import { openDrawingEditor, openDrawingViewer, normalizeDrawing } from '../components/drawPad.js';
+import { openHref } from '../components/rteInline.js';
 
 export default {
   title: 'Note',
@@ -73,7 +74,9 @@ export default {
             <div class="drop-hint">${icon('upload', 'lg')}&nbsp; Drop to attach</div>
             <textarea class="note-title" rows="1" placeholder="Title" maxlength="255" data-title>${note.title || ''}</textarea>
             <div class="note-dates"><span>${icon('calendar-plus', 'sm')} Created ${fmtDateTime(note.created_at)}</span><span data-updated>${icon('clock', 'sm')} Edited ${timeAgo(note.updated_at)}</span><span data-words></span></div>
+            <div class="mf-bar" data-mf hidden></div>
             <div data-editor></div>
+            <section class="attach-section" data-refs></section>
             <section class="attach-section" data-images></section>
             <section class="attach-section" data-audio></section>
             <section class="attach-section" data-files></section>
@@ -110,8 +113,11 @@ export default {
     // ------------------------------------------------------------ editor
     const rte = createRTE({
       content: note.content,
-      placeholder: 'Start writing… Type "# " for a heading, "- " for a list, "[] " for a checklist.',
-      onChange: () => markDirty(),
+      placeholder: 'Start writing… "@" mentions someone, "#" adds a link or a note reference, "# " makes a heading, "[] " a checklist.',
+      noteId: id,
+      onChange: () => { markDirty(); people(); },
+      onMention: (u) => offerShare(u),
+      onFocusPerson: (uid) => setFocus(uid),
       onImages: isOwner ? (list) => uploadImages(list, true) : undefined,
       onAudio: isOwner ? (list) => (list ? uploadAudios(list) : record()) : undefined,
       onFiles: isOwner ? (list) => uploadFiles(list) : undefined,
@@ -129,6 +135,81 @@ export default {
     if (readOnly) { rte.editor.contentEditable = 'false'; titleEl.readOnly = true; rte.toolbar.style.display = 'none'; }
     const tags = isOwner && tagInput({ value: note.tags, suggestions: state.tags.map((t) => t.name), placeholder: 'Add tag…', normalize: normalizeTag, prefix: '#', onChange: (v) => saveField({ tags: v }).then(refreshTags).then(() => loadRelated()) });
     if (tags) $('[data-tags]').appendChild(tags.el);
+
+    // ------------------------------------------------------------ @mentions: focus on a person (v1.16)
+    // Everyone who can read the note can narrow it to the parts that mention them (or anyone else mentioned).
+    let focusId = null, hits = [], hitAt = 0;
+    const mfBar = $('[data-mf]');
+    function paintPeople() {
+      const list = rte.mentions();
+      if (focusId && !list.some((p) => p.id === focusId)) { focusId = null; rte.focusPerson(null); }
+      rte.editor.querySelectorAll('.sn-mention').forEach((m) => m.classList.toggle('me', +m.dataset.userId === state.user.id));
+      mfBar.hidden = !list.length;
+      if (!list.length) return;
+      const me = list.find((p) => p.id === state.user.id);
+      const ordered = me ? [me, ...list.filter((p) => p !== me)] : list;
+      mfBar.innerHTML = String(html`<span class="mf-lbl">${icon('at-sign', 'xs')} Mentioned</span>
+        ${ordered.map((p) => html`<button type="button" class="mf-chip ${p.id === focusId ? 'active' : ''} ${p.id === state.user.id ? 'me' : ''}" data-mf-user="${p.id}" aria-pressed="${p.id === focusId}">${p.id === state.user.id ? 'Me' : p.name}<b>${p.count}</b></button>`)}
+        ${focusId ? html`<span class="mf-nav"><button type="button" class="btn ghost icon xs" data-mf-go="-1" aria-label="Previous mention">${icon('chevron-up', 'sm')}</button><span class="tiny" data-mf-pos>${hits.length ? hitAt + 1 : 0} / ${hits.length}</span><button type="button" class="btn ghost icon xs" data-mf-go="1" aria-label="Next mention">${icon('chevron-down', 'sm')}</button><button type="button" class="btn ghost icon xs" data-mf-user="0" data-tip="Show everything" aria-label="Show everything">${icon('x', 'sm')}</button></span>` : ''}`);
+    }
+    const people = debounce(() => { paintPeople(); paintRefs(); if (focusId) { hits = rte.focusPerson(focusId); hitAt = Math.min(hitAt, Math.max(0, hits.length - 1)); } }, 300);
+    function setFocus(uid) {
+      focusId = uid && uid !== focusId ? +uid : null;
+      hits = rte.focusPerson(focusId);
+      hitAt = 0;
+      paintPeople();
+      if (focusId && !hits.length) toast('This note does not mention them', 'info', { timeout: 1800 });
+      hits[0]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+    mfBar.addEventListener('click', (e) => {
+      const u = e.target.closest('[data-mf-user]');
+      if (u) return setFocus(+u.dataset.mfUser === focusId ? null : +u.dataset.mfUser || null);
+      const g = e.target.closest('[data-mf-go]');
+      if (g && hits.length) {
+        hitAt = (hitAt + +g.dataset.mfGo + hits.length) % hits.length;
+        hits[hitAt].scrollIntoView({ block: 'center', behavior: 'smooth' });
+        const pos = mfBar.querySelector('[data-mf-pos]');
+        if (pos) pos.textContent = `${hitAt + 1} / ${hits.length}`;
+      }
+    });
+    /** A person was just mentioned: the owner may share the note with them so they can open it. */
+    async function offerShare(u) {
+      if (!u || u.id === state.user.id || !isOwner) return;
+      if (note.pinned_global || (note.shares || []).some((s) => s.user_id === u.id)) return;
+      if (note.is_locked) return toast(`${u.name} cannot open a locked note`, 'info', { timeout: 2500 });
+      if (state.branding?.allow_note_sharing === false) return;
+      toast(`${u.name} cannot open this note yet`, 'info', { timeout: 9000, action: 'Share (view)', onAction: async () => {
+        try {
+          await save();
+          await api.post(`notes/${id}/shares`, { user_ids: [u.id], permission: 'view' });
+          note.shares = (await api.get(`notes/${id}`)).shares || [];
+          const b = el.querySelector('[data-a="share"]');
+          if (b) { b.classList.toggle('active', note.shares.length > 0); b.querySelector('[data-share-count]').textContent = note.shares.length || ''; }
+          toast(`Shared with ${u.name} — they were notified`, 'success', { timeout: 2000 });
+        } catch (err) { toastError(err); }
+      } });
+    }
+
+    // ------------------------------------------------------------ references: every link in the note (v1.16)
+    function paintRefs() {
+      const box = $('[data-refs]');
+      const list = rte.links();
+      box.innerHTML = list.length ? String(html`<h4>${icon('link', 'sm')} References <span class="subtle">${list.length}</span></h4>
+        <div class="ref-list">${list.map((l, i) => html`<a class="ref-row" href="${l.href}" data-ref="${i}" ${l.internal ? '' : raw('target="_blank" rel="noopener noreferrer"')}>
+          <span class="ref-ic">${icon(l.internal ? 'file-text' : 'globe', 'sm')}</span>
+          <span class="ref-main"><b class="truncate">${l.text || l.href}</b><span class="tiny subtle truncate" style="display:block">${l.internal ? 'Note in SmartNotes' : l.href.replace(/^https?:\/\/(www\.)?/i, '')}</span></span>
+          ${icon(l.internal ? 'chevron-right' : 'external-link', 'sm')}</a>`)}</div>`) : '';
+      box._links = list;
+    }
+    $('[data-refs]').addEventListener('click', (e) => {
+      const r = e.target.closest('[data-ref]');
+      if (!r) return;
+      e.preventDefault();
+      openHref(r.getAttribute('href'));
+    });
+    paintPeople();
+    paintRefs();
+    if (ctx.query.mention) setTimeout(() => setFocus(ctx.query.mention === 'me' ? state.user.id : +ctx.query.mention), 120);
 
     // ------------------------------------------------------------ save
     const saveEl = $('[data-save]');

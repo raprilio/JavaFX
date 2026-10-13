@@ -9,7 +9,7 @@ defined('SN_APP') || exit;
  */
 final class Migrator
 {
-    public const VERSION = 11;
+    public const VERSION = 12;
 
     public static function run(): void
     {
@@ -51,6 +51,9 @@ final class Migrator
             }
             if ($current < 11) {
                 self::v11();
+            }
+            if ($current < 12) {
+                self::v12();
             }
             Settings::set('schema_version', (string) self::VERSION);
         } finally {
@@ -267,6 +270,29 @@ final class Migrator
             DB::pdo()->exec(self::MAILBOX_ASSIGNMENTS_SQL);
         }
     }
+
+    /** v1.16: @mentions in notes; mind map look (theme per map, style per topic). */
+    private static function v12(): void
+    {
+        if (!self::hasTable('note_mentions')) {
+            DB::pdo()->exec(self::NOTE_MENTIONS_SQL);
+        }
+        self::addColumn('mindmaps', 'theme', "VARCHAR(500) NULL COMMENT 'JSON look: preset, branches, layout, background, font (v1.16)' AFTER `viewport`");
+        self::addColumn('mindmap_nodes', 'style', "VARCHAR(255) NULL COMMENT 'JSON: shape, emoji, size, bold (v1.16)' AFTER `icon`");
+    }
+
+    public const NOTE_MENTIONS_SQL = "CREATE TABLE `note_mentions` (
+  `note_id`       INT UNSIGNED NOT NULL,
+  `user_id`       INT UNSIGNED NOT NULL COMMENT 'Mentioned user (@name in the note text)',
+  `mentioned_by`  INT UNSIGNED NULL COMMENT 'Who added the first mention',
+  `created_at`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`note_id`, `user_id`),
+  KEY `idx_note_mentions_user` (`user_id`),
+  KEY `fk_note_mentions_by` (`mentioned_by`),
+  CONSTRAINT `fk_note_mentions_note` FOREIGN KEY (`note_id`) REFERENCES `notes` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_note_mentions_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_note_mentions_by` FOREIGN KEY (`mentioned_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
 
     /** v1.14: Drive folders linked to notes. */
     private static function v11(): void

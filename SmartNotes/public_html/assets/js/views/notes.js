@@ -28,6 +28,7 @@ function card(n, selecting, selected) {
         ${n.checklist_total ? html`<span class="badge ${n.checklist_done === n.checklist_total ? 'success' : ''}">${icon('list-checks', 'sm')} ${n.checklist_done}/${n.checklist_total}</span>` : ''}
         ${cat ? html`<span class="badge"><span class="dot" style="width:7px;height:7px;border-radius:50%;background:${cat.color}"></span>${cat.name}</span>` : ''}
         ${n.tags.slice(0, 3).map((t) => html`<span class="tag">#${t}</span>`)}
+        ${(n.mentions || []).length ? html`<span class="nc-people" title="${n.mentions.map((p) => '@' + p.name).join(', ')}">${icon('at-sign', 'sm')}${n.mentions.slice(0, 2).map((p) => (p.id === state.user.id ? 'Me' : p.name.split(' ')[0])).join(', ')}${n.mentions.length > 2 ? ' +' + (n.mentions.length - 2) : ''}</span>` : ''}
         ${n.attachment_count ? html`<span>${icon('paperclip', 'sm')}${n.attachment_count}</span>` : ''}
         ${n.audio_count ? html`<span>${icon('mic', 'sm')}${n.audio_count}</span>` : ''}
         ${n.is_favorite ? html`<span style="color:var(--warning)">${icon('star', 'sm')}</span>` : ''}
@@ -54,7 +55,7 @@ export default {
   async render(el, ctx) {
     const q0 = ctx.query;
     const f = {
-      filter: q0.filter || 'all', category: q0.category || '', tag: q0.tag || '', q: q0.q || '', sort: q0.sort || 'updated',
+      filter: q0.filter || 'all', category: q0.category || '', tag: q0.tag || '', q: q0.q || '', sort: q0.sort || 'updated', mention: q0.mention || '',
       view: state.settings?.notes_view || 'grid',
     };
     let items = [], page = 1, total = 0, loading = false, done = false;
@@ -77,6 +78,7 @@ export default {
         <div class="input-icon" style="width:min(260px,100%)">${icon('search', 'sm')}<input class="input sm" type="search" placeholder="Search notes…" value="${f.q}" data-search></div>
         <button class="btn sm" data-act="category">${icon('folder', 'sm')} <span data-cat-label>${cat ? cat.name : 'Category'}</span></button>
         <button class="btn sm" data-act="tag">${icon('hash', 'sm')} <span>${f.tag ? '#' + f.tag : 'Tag'}</span></button>
+        <button class="btn sm ${f.mention ? 'active' : ''}" data-act="people" data-tip="Notes that @mention a person">${icon('at-sign', 'sm')} <span data-people-label>${f.mention === 'me' ? 'Mentions me' : f.mention ? 'Person' : 'People'}</span></button>
         <button class="btn sm" data-act="sort">${icon('arrow-up-down', 'sm')} <span class="hide-sm">Sort</span></button>
       </div>
       <div class="drop-wrap" style="position:relative">
@@ -88,14 +90,24 @@ export default {
 
     const grid = el.querySelector('[data-grid]');
     const sentinel = el.querySelector('[data-sentinel]');
-    const sync = () => setQuery({ filter: f.filter !== 'all' ? f.filter : '', category: f.category, tag: f.tag, q: f.q, sort: f.sort !== 'updated' ? f.sort : '' });
+    const sync = () => setQuery({ filter: f.filter !== 'all' ? f.filter : '', category: f.category, tag: f.tag, q: f.q, sort: f.sort !== 'updated' ? f.sort : '', mention: f.mention });
+    // People filter (v1.16): notes that @mention me or someone else.
+    let peopleList = null;
+    async function loadPeople() { if (!peopleList) peopleList = await api.get('notes/people').catch(() => []); return peopleList; }
+    const peopleLabel = () => {
+      const b = el.querySelector('[data-act="people"]');
+      const p = peopleList?.find((x) => String(x.id) === String(f.mention));
+      b.classList.toggle('active', !!f.mention);
+      b.querySelector('[data-people-label]').textContent = f.mention === 'me' ? 'Mentions me' : p ? '@' + p.name : f.mention ? 'Person' : 'People';
+    };
+    if (f.mention && f.mention !== 'me') loadPeople().then(peopleLabel);
 
     async function load(reset = false) {
       if (loading || (done && !reset)) return;
       loading = true;
       if (reset) { page = 1; done = false; items = []; }
       try {
-        const r = await api.get('notes', { filter: f.filter, category: f.category, tag: f.tag, q: f.q, sort: f.sort, dir: f.sort === 'title' ? 'asc' : 'desc', page, per_page: 40 });
+        const r = await api.get('notes', { filter: f.filter, category: f.category, tag: f.tag, q: f.q, mention: f.mention, sort: f.sort, dir: f.sort === 'title' ? 'asc' : 'desc', page, per_page: 40 });
         total = r.total;
         items = reset ? r.items : items.concat(r.items);
         el.querySelector('[data-act="lock-now"]')?.classList.toggle('hidden', !(r.unlocked && items.some((x) => x.is_locked)));
@@ -106,10 +118,12 @@ export default {
     }
 
     function paint() {
-      el.querySelector('[data-count]').textContent = `${total} note${total === 1 ? '' : 's'}${f.q ? ` matching “${f.q}”` : ''}`;
+      const who = f.mention === 'me' ? 'you' : peopleList?.find((x) => String(x.id) === String(f.mention))?.name;
+      el.querySelector('[data-count]').textContent = `${total} note${total === 1 ? '' : 's'}${f.q ? ` matching “${f.q}”` : ''}${f.mention ? ` mentioning ${who || 'this person'}` : ''}`;
       grid.classList.toggle('selecting', selecting);
       if (!items.length) {
-        const msg = f.q ? ['search-x', 'No matching notes', 'Try a different keyword or clear the filters.']
+        const msg = f.mention ? ['at-sign', 'No notes mention them yet', 'Type "@" and a name inside a note to mention someone.']
+          : f.q ? ['search-x', 'No matching notes', 'Try a different keyword or clear the filters.']
           : f.filter === 'archived' ? ['archive', 'No archived notes', 'Archived notes are kept out of your main list.']
           : f.filter === 'shared' ? ['users', 'Nothing shared with you yet', 'When a colleague shares a note with you it appears here. Pin the ones you need often.']
           : f.filter === 'shared_by_me' ? ['share-2', 'You have not shared any notes', 'Open a note and press Share to give specific users view or edit access.']
@@ -236,6 +250,17 @@ export default {
         return menu(t, [{ label: 'All tags', icon: 'hash', checked: !f.tag, onClick: () => { f.tag = ''; t.querySelector('span').textContent = 'Tag'; sync(); load(true); } },
           ...(state.tags.length ? [{ divider: true }] : [{ title: 'No tags yet — add tags inside a note' }]),
           ...state.tags.map((tg) => ({ label: `#${tg.name}`, checked: f.tag === tg.name, onClick: () => { f.tag = tg.name; t.querySelector('span').textContent = '#' + tg.name; sync(); load(true); } }))]);
+      }
+      if (act === 'people') {
+        const t = e.target.closest('[data-act]');
+        const list = await loadPeople();
+        const pick = (v) => { f.mention = v; peopleLabel(); sync(); load(true); };
+        return menu(t, [
+          { label: 'Everyone', icon: 'users', checked: !f.mention, onClick: () => pick('') },
+          { label: 'Mentions me', icon: 'at-sign', checked: f.mention === 'me', onClick: () => pick('me') },
+          ...(list.filter((p) => p.id !== state.user.id).length ? [{ divider: true }, { title: 'Mentioned in notes' }] : [{ title: 'Nobody is @mentioned yet' }]),
+          ...list.filter((p) => p.id !== state.user.id).map((p) => ({ label: `@${p.name}`, kbd: String(p.count), checked: String(p.id) === String(f.mention), onClick: () => pick(String(p.id)) })),
+        ]);
       }
       if (act === 'sort') {
         return menu(e.target.closest('[data-act]'), [['updated', 'Last modified', 'clock'], ['created', 'Date created', 'calendar-plus'], ['opened', 'Last opened', 'eye'], ['title', 'Title (A–Z)', 'arrow-down-a-z']]

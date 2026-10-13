@@ -38,6 +38,7 @@ return [
 
     // Notes
     ['GET', 'notes', 'NotesController::index', 'auth'],
+    ['GET', 'notes/people', 'NotesController::people', 'auth'],
     ['POST', 'notes', 'NotesController::store', 'auth'],
     ['POST', 'notes/bulk', 'NotesController::bulk', 'auth'],
     ['GET', 'notes/{id}', 'NotesController::show', 'auth'],

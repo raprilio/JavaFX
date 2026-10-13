@@ -211,7 +211,7 @@ final class DataPort
                 if (!is_array($m)) {
                     continue;
                 }
-                $id = DB::insert('mindmaps', ['user_id' => $userId, 'title' => V::str($m['title'] ?? 'Mind map', 255) ?? 'Mind map', 'description' => V::str($m['description'] ?? null, 2000)]);
+                $id = DB::insert('mindmaps', ['user_id' => $userId, 'title' => V::str($m['title'] ?? 'Mind map', 255) ?? 'Mind map', 'description' => V::str($m['description'] ?? null, 2000), 'theme' => MindmapsController::theme($m['theme'] ?? null)]);
                 MindmapsController::saveGraph($id, (array) ($m['nodes'] ?? []), (array) ($m['edges'] ?? []));
                 $counts['mindmaps']++;
             }

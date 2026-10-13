@@ -11,12 +11,12 @@ final class Sanitizer
 {
     private const TAGS = [
         'p' => ['style', 'class'], 'div' => ['style', 'class', 'data-checked'], 'br' => [], 'hr' => ['class'],
-        'span' => ['style', 'class'], 'b' => [], 'strong' => [], 'i' => [], 'em' => [], 'u' => [],
+        'span' => ['style', 'class', 'data-user-id', 'contenteditable'], 'b' => [], 'strong' => [], 'i' => [], 'em' => [], 'u' => [],
         's' => [], 'strike' => [], 'del' => [], 'mark' => ['style', 'class'], 'sub' => [], 'sup' => [],
         'h1' => ['style'], 'h2' => ['style'], 'h3' => ['style'], 'h4' => ['style'],
         'ul' => ['class', 'style'], 'ol' => ['class', 'style', 'start'], 'li' => ['class', 'style', 'data-checked'],
         'blockquote' => ['style'], 'pre' => ['class', 'spellcheck'], 'code' => ['class'],
-        'a' => ['href', 'title', 'target', 'rel'],
+        'a' => ['href', 'title', 'target', 'rel', 'class'],
         'table' => ['class', 'style'], 'thead' => [], 'tbody' => [], 'tr' => [], 'th' => ['style', 'colspan', 'rowspan'], 'td' => ['style', 'colspan', 'rowspan'],
         'img' => ['src', 'alt', 'class', 'data-file-id', 'data-drawing-id', 'width', 'style'],
         'figure' => ['class', 'data-file-id', 'data-audio-id', 'data-drawing-id', 'data-view', 'data-pages', 'contenteditable'], 'figcaption' => [],
@@ -130,6 +130,7 @@ final class Sanitizer
                 case 'data-view': // handwriting shown full size or minimized like an attachment (v1.10)
                     $el->setAttribute('data-view', $value === 'card' ? 'card' : 'full');
                     break;
+                case 'data-user-id': // @mention (v1.16)
                 case 'data-file-id':
                 case 'data-audio-id':
                 case 'data-drawing-id':

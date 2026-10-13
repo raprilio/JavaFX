@@ -1,7 +1,9 @@
 // Lightweight rich-text editor on top of contenteditable.
 // Output HTML is always re-sanitized on the server (whitelist) before it is stored.
 import { html, icon, h, $$, loadScript, esc } from '../core/dom.js';
-import { menu, popover, prompt, toast } from '../core/ui.js';
+import { menu, popover, toast } from '../core/ui.js';
+import { tableTools, tablePicker, tableHtml } from './rteTable.js';
+import { attachInline, linkDialog, linkHtml, focusPerson, mentionsIn, linksIn } from './rteInline.js';
 
 const TEXT_COLORS = ['', '#e5484d', '#f97316', '#eab308', '#22c55e', '#14b8a6', '#0ea5e9', '#6366f1', '#a855f7', '#ec4899', '#64748b', '#111827'];
 const HL_COLORS = ['', '#fef08a', '#bbf7d0', '#bae6fd', '#fbcfe8', '#fed7aa', '#ddd6fe', '#e5e7eb'];
@@ -21,7 +23,7 @@ function toolbarHtml(opts) {
     ${opts.media ? html`<span class="sep"></span>${b('image', 'image-plus', 'Insert image')}${b('audio', 'mic', 'Record / attach audio')}${b('file', 'paperclip', 'Attach file')}` : ''}`;
 }
 
-export function createRTE({ content = '', placeholder = 'Start writing…', media = true, onChange, onImages, onAudio, onFiles, onImageOpen, onDraw, onDrawingOpen } = {}) {
+export function createRTE({ content = '', placeholder = 'Start writing…', media = true, onChange, onImages, onAudio, onFiles, onImageOpen, onDraw, onDrawingOpen, noteId, onMention, onFocusPerson } = {}) {
   const toolbar = h('<div class="fmt-bar" role="toolbar" aria-label="Formatting"></div>');
   toolbar.innerHTML = String(toolbarHtml({ media, draw: !!onDraw }));
   // Handwriting figures open the pen editor (or the image viewer when there is no editor callback).
@@ -33,15 +35,101 @@ export function createRTE({ content = '', placeholder = 'Start writing…', medi
   const editor = h(`<div class="rte" contenteditable="true" spellcheck="true" data-placeholder="${esc(placeholder)}"></div>`);
   editor.innerHTML = content || '';
   let savedRange = null;
+  // eslint-disable-next-line prefer-const
+  let tools;
 
   const changed = () => onChange?.();
   const exec = (cmd, val = null) => {
     editor.focus({ preventScroll: true });
     restore();
+    flush();
     document.execCommand(cmd, false, val);
+    record();
     changed();
     updateState();
   };
+
+  // ---------------------------------------------------------- history (own undo / redo)
+  // The browser's undo only knows its own execCommand edits. Tables, checklists, column widths, mentions, links
+  // and handwriting are changed through the DOM, and after such a change the native stack breaks (deleting a table
+  // could not be undone). So every state of the note is kept as a snapshot here: one history for every kind of edit.
+  const hist = { stack: [], i: -1, timer: 0 };
+  const TRANSIENT = ['selected', 'mf-hit', 'mf-me', 'me', 'tbl-hl', 'tbl-del'];
+  function cleanHTML() {
+    const clone = editor.cloneNode(true);
+    TRANSIENT.forEach((c) => clone.querySelectorAll('.' + c).forEach((x) => x.classList.remove(c)));
+    clone.querySelectorAll('[class=""]').forEach((x) => x.removeAttribute('class'));
+    return clone.innerHTML.trim() === '<br>' ? '' : clone.innerHTML;
+  }
+  function selPath() {
+    const s = window.getSelection();
+    if (!s.rangeCount || !editor.contains(s.anchorNode)) return null;
+    const path = [];
+    for (let n = s.anchorNode; n && n !== editor; n = n.parentNode) path.unshift(Array.prototype.indexOf.call(n.parentNode.childNodes, n));
+    return { path, off: s.anchorOffset };
+  }
+  function restoreSel(p) {
+    let n = editor;
+    for (const i of p?.path || []) { n = n?.childNodes[i]; }
+    if (!p || !n) return placeCaret(editor, true);
+    try {
+      const r = document.createRange();
+      r.setStart(n, Math.min(p.off, n.nodeType === 3 ? n.length : n.childNodes.length));
+      r.collapse(true);
+      const s = window.getSelection();
+      s.removeAllRanges();
+      s.addRange(r);
+      (n.nodeType === 1 ? n : n.parentElement)?.scrollIntoView?.({ block: 'nearest' });
+    } catch { placeCaret(editor, true); }
+  }
+  function record() {
+    clearTimeout(hist.timer);
+    hist.timer = 0;
+    mo.takeRecords();
+    const cur = hist.stack[hist.i];
+    const htmlNow = cleanHTML();
+    const sel = selPath();
+    if (cur && cur.html === htmlNow) { if (sel) cur.sel = sel; return; }
+    hist.stack.splice(hist.i + 1);
+    hist.stack.push({ html: htmlNow, sel });
+    if (hist.stack.length > 300) hist.stack.shift();
+    hist.i = hist.stack.length - 1;
+    paintHist();
+  }
+  /** Commit typing that is still waiting for its pause. */
+  function flush() { if (mo.takeRecords().length || hist.timer) record(); }
+  function applyHist() {
+    const s = hist.stack[hist.i];
+    editor.innerHTML = s.html;
+    mo.takeRecords();
+    clearTimeout(hist.timer);
+    hist.timer = 0;
+    editor.focus({ preventScroll: true });
+    restoreSel(s.sel);
+    paintHist();
+    changed();
+    updateState();
+    tools.refresh();
+  }
+  function undo() { if (!isEditable()) return; flush(); if (hist.i > 0) { hist.i--; applyHist(); } }
+  function redo() { if (!isEditable()) return; flush(); if (hist.i < hist.stack.length - 1) { hist.i++; applyHist(); } }
+  function paintHist() {
+    const u = toolbar.querySelector('[data-cmd="undo"]'), r = toolbar.querySelector('[data-cmd="redo"]');
+    if (u) u.disabled = hist.i <= 0 && !hist.timer;
+    if (r) r.disabled = hist.i >= hist.stack.length - 1;
+  }
+  /** A DOM change as one undo step: what was typed before it stays its own step. */
+  function mutate(fn) {
+    flush();
+    fn();
+    record();
+    changed();
+    tools.refresh();
+  }
+  const isEditable = () => editor.getAttribute('contenteditable') !== 'false';
+  // Any change (typing, paste, drag, code in the note view) is picked up; typing is grouped per pause.
+  const mo = new MutationObserver(() => { clearTimeout(hist.timer); hist.timer = setTimeout(record, 450); paintHist(); });
+  mo.observe(editor, { childList: true, subtree: true, characterData: true, attributes: true });
   const save = () => {
     const sel = window.getSelection();
     if (sel.rangeCount && editor.contains(sel.anchorNode)) savedRange = sel.getRangeAt(0).cloneRange();
@@ -66,6 +154,13 @@ export function createRTE({ content = '', placeholder = 'Start writing…', medi
 
   editor.addEventListener('focus', () => {
     try { document.execCommand('styleWithCSS', false, true); document.execCommand('defaultParagraphSeparator', false, 'p'); } catch { /* old browser */ }
+    // An empty note starts with a paragraph: a first line typed as bare text broke "# " headings and mentions focus.
+    if (isEditable() && /^(<br>)?$/.test(editor.innerHTML.trim())) {
+      editor.innerHTML = '<p><br></p>';
+      placeCaret(editor.firstChild);
+      mo.takeRecords();
+      if (hist.i === 0) hist.stack[0] = { html: cleanHTML(), sel: selPath() };
+    }
   });
   document.addEventListener('selectionchange', onSel);
   function onSel() { if (document.activeElement === editor) { save(); updateState(); } }
@@ -86,6 +181,7 @@ export function createRTE({ content = '', placeholder = 'Start writing…', medi
   function toggleChecklist() {
     editor.focus();
     restore();
+    flush();
     let n = caretNode();
     let el = n && (n.nodeType === 1 ? n : n.parentElement);
     let ul = el?.closest('ul');
@@ -102,6 +198,7 @@ export function createRTE({ content = '', placeholder = 'Start writing…', medi
         ul.querySelectorAll(':scope > li').forEach((li) => li.dataset.checked = li.dataset.checked === 'true' ? 'true' : 'false');
       }
     }
+    record();
     changed();
     updateState();
   }
@@ -111,8 +208,7 @@ export function createRTE({ content = '', placeholder = 'Start writing…', medi
       e.preventDefault();
       // Read-only (view-only share, trash, pinned for everyone): ticking a box is a change too.
       if (editor.getAttribute('contenteditable') === 'false') return;
-      li.dataset.checked = li.dataset.checked === 'true' ? 'false' : 'true';
-      changed();
+      mutate(() => { li.dataset.checked = li.dataset.checked === 'true' ? 'false' : 'true'; });
       return;
     }
     // Handwriting (full size or minimized card): any click on it opens the preview.
@@ -128,9 +224,16 @@ export function createRTE({ content = '', placeholder = 'Start writing…', medi
   editor.addEventListener('dblclick', (e) => { const img = e.target.closest('img'); if (img && !img.closest('figure.sn-drawing')) openImg(img); });
 
   // ---------------------------------------------------------- keyboard
+  editor.addEventListener('beforeinput', (e) => {
+    if (e.inputType === 'historyUndo') { e.preventDefault(); undo(); }
+    if (e.inputType === 'historyRedo') { e.preventDefault(); redo(); }
+  });
   editor.addEventListener('keydown', (e) => {
     const n = caretNode();
     const el = n && (n.nodeType === 1 ? n : n.parentElement);
+    const mod = (e.ctrlKey || e.metaKey) && !e.altKey;
+    if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); return e.shiftKey ? redo() : undo(); }
+    if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); return redo(); }
     if (e.key === 'Enter' && !e.shiftKey) {
       const li = el?.closest('ul.checklist > li');
       if (li) setTimeout(() => {
@@ -146,15 +249,17 @@ export function createRTE({ content = '', placeholder = 'Start writing…', medi
       if (inList) { e.preventDefault(); document.execCommand(e.shiftKey ? 'outdent' : 'indent'); changed(); }
       else if (el?.closest('td,th')) {
         e.preventDefault();
-        const cells = $$('td,th', el.closest('table'));
-        const i = cells.indexOf(el.closest('td,th'));
+        const cell = el.closest('td,th');
+        const cells = $$('td,th', cell.closest('table'));
+        const i = cells.indexOf(cell);
         const next = cells[i + (e.shiftKey ? -1 : 1)];
         if (next) placeCaret(next);
+        else if (!e.shiftKey) tools.tabFromLast(cell);
       }
     }
     if ((e.key === 'Backspace' || e.key === 'Delete')) {
       const img = editor.querySelector('img.selected');
-      if (img) { e.preventDefault(); img.remove(); changed(); }
+      if (img) { e.preventDefault(); mutate(() => img.remove()); }
     }
   });
 
@@ -170,6 +275,8 @@ export function createRTE({ content = '', placeholder = 'Start writing…', medi
     if (n !== firstText(block) || !/^(#{1,3}|-|\*|1\.|\[\]|>)\s$/.test(text.replace(/ /g, ' '))) return;
     const token = text.trim();
     n.textContent = n.textContent.slice(text.length);
+    // An empty line needs a <br>: otherwise Chrome's formatBlock merges it into the line above.
+    if (!n.textContent && !block.textContent) n.replaceWith(document.createElement('br'));
     placeCaret(block);
     if (token.startsWith('#')) document.execCommand('formatBlock', false, 'h' + token.length);
     else if (token === '-' || token === '*') document.execCommand('insertUnorderedList');
@@ -215,7 +322,9 @@ export function createRTE({ content = '', placeholder = 'Start writing…', medi
       } catch {
         clean = esc(cd.getData('text/plain')).replace(/\n/g, '<br>');
       }
+      flush();
       document.execCommand('insertHTML', false, clean);
+      record();
       changed();
     }
   });
@@ -259,6 +368,7 @@ export function createRTE({ content = '', placeholder = 'Start writing…', medi
     const cell = edgeCell(e);
     if (!cell || e.button > 0) return;
     e.preventDefault();
+    flush();
     const table = cell.closest('table');
     freeze(table);
     const cells = table.rows[0].cells;
@@ -271,6 +381,7 @@ export function createRTE({ content = '', placeholder = 'Start writing…', medi
     if (!rz) return;
     rz = null;
     editor.classList.remove('col-resize');
+    record();
     changed();
   };
   editor.addEventListener('pointerup', endResize);
@@ -300,7 +411,9 @@ export function createRTE({ content = '', placeholder = 'Start writing…', medi
     if (!btn) return;
     const cmd = btn.dataset.cmd;
     switch (cmd) {
-      case 'undo': case 'redo': case 'bold': case 'italic': case 'underline': case 'strikeThrough':
+      case 'undo': undo(); break;
+      case 'redo': redo(); break;
+      case 'bold': case 'italic': case 'underline': case 'strikeThrough':
       case 'insertUnorderedList': case 'insertOrderedList': case 'removeFormat':
         exec(cmd); break;
       case 'hr': exec('insertHorizontalRule'); break;
@@ -335,19 +448,18 @@ export function createRTE({ content = '', placeholder = 'Start writing…', medi
       }
       case 'link': {
         save();
-        const sel = window.getSelection();
-        const text = sel.toString();
-        const url = await prompt({ title: 'Insert link', label: 'URL', placeholder: 'https://example.com', confirmText: 'Insert', type: 'url' });
-        if (!url) return;
-        const href = /^(https?:|mailto:|tel:)/i.test(url) ? url : 'https://' + url;
+        const text = window.getSelection().toString();
+        const v = await linkDialog({ text });
+        if (!v) return;
         editor.focus();
         restore();
-        if (text) exec('createLink', href);
-        else exec('insertHTML', `<a href="${esc(href)}">${esc(url)}</a>&nbsp;`);
+        if (text && v.text === text) exec('createLink', v.url);
+        else exec('insertHTML', linkHtml(v.url, v.text) + '&nbsp;');
         break;
       }
       case 'table':
-        tableMenu(btn);
+        if (currentCell()) tools.run('more', btn);
+        else { save(); tablePicker(btn, (c, r, head) => exec('insertHTML', tableHtml(c, r, head))); }
         break;
       case 'image': save(); pick('image/jpeg,image/png,image/webp', true).then((f) => f.length && onImages?.(f)); break;
       case 'audio': save(); onAudio?.(null); break;
@@ -359,6 +471,7 @@ export function createRTE({ content = '', placeholder = 'Start writing…', medi
   function setSize(px) {
     editor.focus();
     restore();
+    flush();
     document.execCommand('styleWithCSS', false, false);
     document.execCommand('fontSize', false, '7');
     document.execCommand('styleWithCSS', false, true);
@@ -369,6 +482,7 @@ export function createRTE({ content = '', placeholder = 'Start writing…', medi
       f.replaceWith(span);
     });
     editor.querySelectorAll('span[style*="xxx-large"]').forEach((s) => { s.style.fontSize = px || ''; if (!s.getAttribute('style')) s.removeAttribute('style'); });
+    record();
     changed();
   }
 
@@ -376,34 +490,6 @@ export function createRTE({ content = '', placeholder = 'Start writing…', medi
     const n = caretNode();
     return n && (n.nodeType === 1 ? n : n.parentElement)?.closest('td,th');
   }
-  function tableMenu(btn) {
-    const cell = currentCell();
-    const items = [{ label: 'Insert 3 × 3 table', icon: 'table', onClick: () => insertTable(3, 3) }, { label: 'Insert 2 × 4 table', icon: 'table', onClick: () => insertTable(4, 2) }];
-    if (cell) {
-      const row = cell.parentElement;
-      const table = cell.closest('table');
-      const idx = Array.from(row.children).indexOf(cell);
-      items.push({ divider: true },
-        { label: 'Add row below', icon: 'between-horizontal-start', onClick: () => { const r = row.cloneNode(true); r.querySelectorAll('td,th').forEach((c) => { const td = document.createElement('td'); td.innerHTML = '<br>'; c.replaceWith(td); }); row.after(r); changed(); } },
-        { label: 'Add column right', icon: 'between-vertical-start', onClick: () => { table.querySelectorAll('tr').forEach((tr) => { const c = tr.children[idx]; const n = document.createElement(c?.tagName === 'TH' ? 'th' : 'td'); n.innerHTML = '<br>'; c ? c.after(n) : tr.appendChild(n); }); changed(); } },
-        { label: 'Delete row', icon: 'minus', onClick: () => { if (table.querySelectorAll('tr').length > 1) row.remove(); else table.remove(); changed(); } },
-        { label: 'Delete column', icon: 'minus', onClick: () => { table.querySelectorAll('tr').forEach((tr) => tr.children[idx]?.remove()); if (!table.querySelector('td,th')) table.remove(); changed(); } },
-        { divider: true },
-        { label: 'Equal column widths', icon: 'columns-3', onClick: () => { const first = Array.from(table.rows[0].cells); first.forEach((c) => (c.style.width = (100 / first.length).toFixed(2) + '%')); table.classList.add('sn-table-fixed'); table.style.width = '100%'; changed(); } },
-        { label: 'Fit to page width', icon: 'move-horizontal', onClick: () => { Array.from(table.rows[0].cells).forEach((c) => c.style.removeProperty('width')); table.classList.remove('sn-table-fixed'); table.style.removeProperty('width'); changed(); } },
-        { label: 'Fit to content', icon: 'shrink', onClick: () => { Array.from(table.rows[0].cells).forEach((c) => c.style.removeProperty('width')); table.classList.remove('sn-table-fixed'); table.style.width = 'auto'; changed(); } },
-        { title: 'Tip: drag a column border to resize it' },
-        { divider: true },
-        { label: 'Delete table', icon: 'trash-2', danger: true, onClick: () => { table.remove(); changed(); } });
-    }
-    menu(btn, items);
-  }
-  function insertTable(cols, rows) {
-    let t = '<table><thead><tr>' + Array.from({ length: cols }, (_, i) => `<th>Header ${i + 1}</th>`).join('') + '</tr></thead><tbody>';
-    for (let r = 0; r < rows; r++) t += '<tr>' + Array.from({ length: cols }, () => '<td><br></td>').join('') + '</tr>';
-    exec('insertHTML', t + '</tbody></table><p><br></p>');
-  }
-
   function pick(accept, multiple) {
     return new Promise((resolve) => {
       const inp = document.createElement('input');
@@ -415,17 +501,21 @@ export function createRTE({ content = '', placeholder = 'Start writing…', medi
     });
   }
 
+  tools = tableTools({ editor, toolbar, mutate, placeCaret });
+  const inline = attachInline({ editor, mutate, placeCaret, noteId, onMention, onFocusPerson, editable: () => isEditable() && editor.isConnected });
+  record();
+
   return {
     toolbar,
     editor,
-    getHTML() {
-      const clone = editor.cloneNode(true);
-      clone.querySelectorAll('img.selected').forEach((i) => i.classList.remove('selected'));
-      clone.querySelectorAll('[class=""]').forEach((x) => x.removeAttribute('class'));
-      return clone.innerHTML.trim() === '<br>' ? '' : clone.innerHTML;
-    },
+    getHTML: cleanHTML,
     getText: () => editor.innerText,
-    setHTML(v) { editor.innerHTML = v || ''; },
+    setHTML(v) { editor.innerHTML = v || ''; hist.stack = []; hist.i = -1; record(); },
+    undo, redo, mutate,
+    /** Highlight the parts of the note that mention this user (null = show all). */
+    focusPerson: (uid) => focusPerson(editor, uid),
+    mentions: () => mentionsIn(editor),
+    links: () => linksIn(editor),
     /** Insert HTML at the last known caret position (or the end). */
     insertHTML(htmlStr) {
       editor.focus({ preventScroll: true });
@@ -434,12 +524,14 @@ export function createRTE({ content = '', placeholder = 'Start writing…', medi
         savedRange.collapse(false);
         restore();
       } else placeCaret(editor, true);
+      flush();
       document.execCommand('insertHTML', false, htmlStr);
+      record();
       save();
       changed();
     },
     focus: () => editor.focus(),
-    destroy() { document.removeEventListener('selectionchange', onSel); },
+    destroy() { document.removeEventListener('selectionchange', onSel); mo.disconnect(); clearTimeout(hist.timer); tools.destroy(); inline.destroy(); },
     toast,
   };
 }
