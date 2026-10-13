@@ -1,1 +1,0 @@
-import{a as m}from"./chunk-TFVQR6VR.js";import"./chunk-HBP4DWGW.js";import"./chunk-AZ3E67JH.js";import"./chunk-CDZVSKFK.js";import"./chunk-UXGBN37F.js";import"./chunk-ORRATTRZ.js";var r=m("mindmap");export{r as default};

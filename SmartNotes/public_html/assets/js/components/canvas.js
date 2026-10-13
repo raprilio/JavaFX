@@ -21,8 +21,8 @@ export function themeColors() {
 const measureCtx = document.createElement('canvas').getContext('2d');
 export const FONT_STACK = "InterVariable, Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
 /** Wrap text into lines that fit maxWidth; returns {lines, width, lineHeight}. */
-export function wrapText(text, { size = 14, weight = 500, maxWidth = 220 } = {}) {
-  measureCtx.font = `${weight} ${size}px ${FONT_STACK}`;
+export function wrapText(text, { size = 14, weight = 500, maxWidth = 220, family = FONT_STACK } = {}) {
+  measureCtx.font = `${weight} ${size}px ${family}`;
   const lines = [];
   const paragraphs = String(text || '').split('\n');
   let width = 0;
@@ -53,8 +53,8 @@ export function wrapText(text, { size = 14, weight = 500, maxWidth = 220 } = {})
 }
 
 /** Append centered multi-line text to a group. */
-export function textBlock(g, lines, { cx, cy, size, weight, color, lineHeight, anchor = 'middle' }) {
-  const t = svgEl('text', { x: cx, 'text-anchor': anchor, fill: color, 'font-size': size, 'font-weight': weight, 'font-family': FONT_STACK });
+export function textBlock(g, lines, { cx, cy, size, weight, color, lineHeight, anchor = 'middle', family = FONT_STACK }) {
+  const t = svgEl('text', { x: cx, 'text-anchor': anchor, fill: color, 'font-size': size, 'font-weight': weight, 'font-family': family });
   const total = lines.length * lineHeight;
   lines.forEach((ln, i) => {
     const ts = svgEl('tspan', { x: cx, y: cy - total / 2 + lineHeight * (i + 0.5), 'dominant-baseline': 'central' });
@@ -221,7 +221,8 @@ function buildExportSvg(stage, bbox, background, pad = 40) {
   clone.removeAttribute('tabindex');
   const bg = svgEl('rect', { x: bbox.x - pad, y: bbox.y - pad, width: w, height: hgt, fill: background });
   clone.insertBefore(bg, clone.firstChild.nextSibling);
-  clone.querySelectorAll('text').forEach((t) => t.setAttribute('font-family', "Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"));
+  // The app font is not available inside an exported file; other font choices (mind map themes) stay as they are.
+  clone.querySelectorAll('text').forEach((t) => { if ((t.getAttribute('font-family') || '').includes('InterVariable')) t.setAttribute('font-family', "Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"); });
   return { svgText: new XMLSerializer().serializeToString(clone), w, h: hgt };
 }
 

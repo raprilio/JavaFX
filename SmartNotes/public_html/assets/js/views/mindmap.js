@@ -6,9 +6,28 @@ import { navigate } from '../core/router.js';
 import { shell } from '../core/shell.js';
 import { toast, toastError, menu, confirm, prompt } from '../core/ui.js';
 import { openItemShare } from '../components/itemShare.js';
-import { createStage, svgEl, wrapText, textBlock, themeColors, exportPng, exportSvg, exportPdf, safeName } from '../components/canvas.js';
+import { createStage, svgEl, wrapText, textBlock, themeColors, exportPng, exportSvg, exportPdf, safeName, FONT_STACK } from '../components/canvas.js';
 
 const COLORS = ['#6366f1', '#0ea5e9', '#14b8a6', '#22c55e', '#eab308', '#f97316', '#ef4444', '#ec4899', '#a855f7', '#64748b'];
+const NEON = ['#22d3ee', '#a78bfa', '#f472b6', '#34d399', '#facc15', '#fb923c', '#60a5fa', '#f87171'];
+// Looks for the whole map (v1.16). root / l1 / ln: how the central topic, main branches and sub-topics are filled.
+const PRESETS = {
+  classic: { label: 'Classic', edge: 'curve', bg: 'plain', font: 'sans', rainbow: true, root: 'solid', l1: 'soft', ln: 'outline', shape: 'rounded', rootShape: 'pill', edgeW: [3, 2], taper: [10, 5] },
+  vivid: { label: 'Vivid', edge: 'taper', bg: 'dots', font: 'rounded', rainbow: true, root: 'gradient', l1: 'solid', ln: 'soft', shape: 'pill', rootShape: 'pill', edgeW: [3.5, 2.5], taper: [13, 6] },
+  pastel: { label: 'Pastel', edge: 'curve', bg: 'gradient', font: 'rounded', rainbow: true, pastel: true, root: 'soft', l1: 'soft', ln: 'soft', shape: 'pill', rootShape: 'ellipse', edgeW: [4.5, 3], taper: [12, 6] },
+  organic: { label: 'Organic', edge: 'taper', bg: 'plain', font: 'sans', rainbow: true, root: 'solid', l1: 'outline', ln: 'outline', shape: 'underline', rootShape: 'pill', edgeW: [3, 2], taper: [11, 4.5] },
+  neon: { label: 'Neon', edge: 'curve', bg: 'gradient', font: 'sans', rainbow: true, dark: true, root: 'glow', l1: 'glow', ln: 'glow', shape: 'rounded', rootShape: 'pill', edgeW: [2.6, 2], taper: [9, 4] },
+  mono: { label: 'Minimal', edge: 'elbow', bg: 'dots', font: 'sans', rainbow: false, mono: true, root: 'solid', l1: 'outline', ln: 'bare', shape: 'rect', rootShape: 'rect', edgeW: [2, 1.5], taper: [7, 3] },
+};
+const FONTS = {
+  sans: FONT_STACK,
+  rounded: "ui-rounded, 'Nunito', 'Quicksand', 'Varela Round', 'SF Pro Rounded', " + FONT_STACK,
+  serif: "Georgia, 'Iowan Old Style', 'Palatino Linotype', 'Times New Roman', serif",
+  hand: "'Comic Neue', 'Segoe Print', 'Bradley Hand', 'Chalkboard SE', 'Comic Sans MS', cursive",
+};
+const SIZE_K = { s: 0.85, m: 1, l: 1.22, xl: 1.5 };
+const SHAPES = [['', 'Auto'], ['rounded', 'Rounded'], ['pill', 'Pill'], ['rect', 'Box'], ['ellipse', 'Oval'], ['hexagon', 'Hexagon'], ['cloud', 'Cloud'], ['underline', 'Underline'], ['plain', 'Text only']];
+const EMOJIS = ['💡', '⭐', '🎯', '🚀', '✅', '❗', '❓', '🔥', '💰', '📅', '👥', '📌', '🧠', '🛠️', '📈', '⚠️', '❤️', '🎉', '📝', '🔍', '⏰', '🏆', '🌱', '💬'];
 const NODE_ICONS = ['lightbulb', 'star', 'flag', 'heart', 'check', 'circle-alert', 'target', 'rocket', 'book-open', 'briefcase', 'calendar', 'users', 'dollar-sign', 'code', 'zap', 'bookmark', 'message-circle', 'clock', 'trophy', 'circle-help'];
 const GAP_X = 56, GAP_Y = 14;
 
@@ -55,6 +74,7 @@ export default {
         <button class="btn ghost icon sm" data-a="parent" data-edit data-tip="Add parent">${icon('arrow-up-from-dot', 'sm')}</button>
         <button class="btn ghost icon sm" data-a="connect" data-edit data-tip="Connect two nodes">${icon('spline', 'sm')}</button>
         <button class="btn ghost icon sm" data-a="layout" data-edit data-tip="Auto layout">${icon('wand-sparkles', 'sm')}</button>
+        <button class="btn ghost sm" data-a="style" data-edit data-tip="Look: theme, branches, layout">${icon('palette', 'sm')}<span class="hide-sm">Style</span></button>
         <button class="btn ghost icon sm" data-a="export" data-tip="Export">${icon('download', 'sm')}</button>
         <button class="btn ghost icon sm" data-a="panel" data-tip="Inspector">${icon('panel-right', 'sm')}</button>
       </div>
@@ -91,31 +111,71 @@ export default {
     const depth = (n) => { let d = 0, c = n; while (c.parent && nodes.has(c.parent) && d < 100) { c = nodes.get(c.parent); d++; } return d; };
     const descendants = (k, acc = new Set()) => { children(k).forEach((c) => { acc.add(c.key); descendants(c.key, acc); }); return acc; };
     const isHidden = (n) => { let c = n; let i = 0; while (c.parent && nodes.has(c.parent) && i++ < 100) { c = nodes.get(c.parent); if (c.collapsed) return true; } return false; };
+
+    // ------------------------------------------------------------ look (v1.16): a theme per map, a style per topic
+    let theme = { ...(data.theme || {}) };
+    const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    /** Effective look: the preset, with the map's own choices on top. */
+    const T = () => {
+      const t = { ...(PRESETS[theme.preset] || PRESETS.classic) };
+      ['edge', 'layout', 'bg', 'font'].forEach((k) => { if (theme[k]) t[k] = theme[k]; });
+      if (typeof theme.rainbow === 'boolean') t.rainbow = theme.rainbow;
+      t.layout = t.layout || 'balanced';
+      t.motion = theme.motion !== false && !reduceMotion;
+      t.family = FONTS[t.font] || FONT_STACK;
+      return t;
+    };
+    function look() {
+      const th = themeColors();
+      return T().dark ? { ...th, bg: '#0b1020', elev: '#121a33', soft: '#1a2340', border: '#2a3558', text: '#e8ecff', text2: '#9aa6cf', dark: true } : th;
+    }
+    function applyBackdrop() {
+      const t = T(), lk = look();
+      stageEl.dataset.mmBg = t.bg;
+      stageEl.classList.toggle('mm-dark', !!t.dark);
+      stageEl.style.background = t.bg === 'gradient'
+        ? `radial-gradient(ellipse at 50% 38%, ${mix(t.dark ? '#4f46e5' : lk.accent, lk.bg, t.dark ? 0.32 : 0.12)}, ${lk.bg} 72%)`
+        : lk.bg;
+      stage.setGrid(t.bg === 'dots');
+    }
     const branchColor = (n) => {
       if (n.color) return n.color;
+      const t = T();
+      if (!t.rainbow) return t.mono ? (look().dark ? '#cbd5e1' : '#334155') : themeColors().accent;
+      const pal = t.dark ? NEON : COLORS;
       let c = n;
       for (let guard = 0; guard < 100; guard++) {
         const p = c.parent && nodes.get(c.parent);
         if (!p) return themeColors().accent;
-        if (!p.parent || !nodes.has(p.parent)) return c.color || COLORS[Math.max(0, children(p.key).indexOf(c)) % COLORS.length];
+        if (!p.parent || !nodes.has(p.parent)) return c.color || pal[Math.max(0, children(p.key).indexOf(c)) % pal.length];
         c = p;
         if (c.color) return c.color;
       }
       return themeColors().accent;
     };
-    const snapshot = () => JSON.stringify({ nodes: [...nodes.values()], links });
+    const snapshot = () => JSON.stringify({ nodes: [...nodes.values()], links, theme });
     const pushHistory = () => { undoStack.push(snapshot()); if (undoStack.length > 100) undoStack.shift(); redoStack.length = 0; };
-    const restoreSnap = (s) => { const d = JSON.parse(s); nodes.clear(); d.nodes.forEach((n) => nodes.set(n.key, n)); links = d.links; };
+    const restoreSnap = (s) => { const d = JSON.parse(s); nodes.clear(); d.nodes.forEach((n) => nodes.set(n.key, n)); links = d.links; if (d.theme) theme = d.theme; };
 
+    const shapeOf = (n, d) => n.style?.shape || (d === 0 ? T().rootShape : d === 1 ? T().l1Shape || T().shape : T().shape);
     function measure(n) {
       const d = depth(n);
+      const t = T();
+      const st = n.style || {};
       const isRoot = d === 0;
-      const size = isRoot ? 18 : d === 1 ? 15 : 14;
-      const weight = isRoot ? 700 : d === 1 ? 620 : 520;
-      const t = wrapText(n.label || ' ', { size, weight, maxWidth: isRoot ? 260 : 220 });
-      const padX = isRoot ? 22 : 14, padY = isRoot ? 14 : 9;
+      const size = Math.round((isRoot ? 18 : d === 1 ? 15 : 14) * (SIZE_K[st.size] || 1));
+      const weight = st.bold ? 760 : isRoot ? 700 : d === 1 ? 620 : 520;
+      const shape = shapeOf(n, d);
+      const tx = wrapText(n.label || ' ', { size, weight, maxWidth: isRoot ? 260 : 220, family: t.family });
+      let padX = isRoot ? 22 : 14, padY = isRoot ? 14 : 9;
+      if (shape === 'underline' || shape === 'plain') { padX = 6; padY = 6; }
       const iconW = n.icon ? 22 : 0;
-      const s = { w: Math.ceil(t.width + padX * 2 + iconW), h: Math.ceil(t.lines.length * t.lineHeight + padY * 2), t, size, weight, padX, iconW, depth: d };
+      const emojiW = st.emoji ? Math.round(size * 1.3) + 5 : 0;
+      let w = tx.width + padX * 2 + iconW + emojiW, hh = tx.lines.length * tx.lineHeight + padY * 2;
+      if (shape === 'ellipse') { w *= 1.2; hh *= 1.32; }
+      if (shape === 'hexagon') w += hh * 0.55;
+      if (shape === 'cloud') { w *= 1.22; hh *= 1.45; }
+      const s = { w: Math.ceil(w), h: Math.ceil(hh), t: tx, size, weight, padX, iconW, emojiW, depth: d, shape };
       sizes.set(n.key, s);
       return s;
     }
@@ -123,6 +183,8 @@ export default {
     // ------------------------------------------------------------ layout
     function autoLayout() {
       [...nodes.values()].forEach(measure);
+      const t = T();
+      if (t.layout === 'down') return layoutDown();
       const subH = new Map();
       const calcH = (k) => {
         const n = nodes.get(k);
@@ -150,10 +212,10 @@ export default {
       roots().forEach((r, ri) => {
         const kids = r.collapsed ? [] : children(r.key);
         kids.forEach((c) => calcH(c.key));
-        if (ri > 0) { kids.forEach((c) => calcH(c.key)); }
         const rx = r.x ?? 0, ry = r.y ?? 0;
-        const right = ri === 0 ? kids.slice(0, Math.ceil(kids.length / 2)) : kids;
-        const left = ri === 0 ? kids.slice(Math.ceil(kids.length / 2)) : [];
+        const oneSide = ri > 0 || t.layout === 'right';
+        const right = oneSide ? kids : kids.slice(0, Math.ceil(kids.length / 2));
+        const left = oneSide ? [] : kids.slice(Math.ceil(kids.length / 2));
         const w = sizes.get(r.key).w;
         [[right, 1], [left, -1]].forEach(([list, side]) => {
           const total = list.reduce((s, c) => s + subH.get(c.key), 0) + GAP_Y * Math.max(0, list.length - 1);
@@ -166,90 +228,277 @@ export default {
         });
       });
     }
+    /** Top-down (org chart): children in a row under their parent. */
+    function layoutDown() {
+      const GX = 24, GY = 62;
+      const subW = new Map();
+      const calcW = (k) => {
+        const n = nodes.get(k);
+        const kids = n.collapsed ? [] : children(k);
+        const sum = kids.reduce((a, c) => a + calcW(c.key), 0) + GX * Math.max(0, kids.length - 1);
+        const v = Math.max(sizes.get(k).w, sum);
+        subW.set(k, v);
+        return v;
+      };
+      const place = (k, x, y) => {
+        const n = nodes.get(k);
+        n.x = x; n.y = y;
+        const kids = n.collapsed ? [] : children(k);
+        const total = kids.reduce((a, c) => a + subW.get(c.key), 0) + GX * Math.max(0, kids.length - 1);
+        let cx = x - total / 2;
+        const h = sizes.get(k).h;
+        kids.forEach((c) => {
+          const cw = subW.get(c.key);
+          place(c.key, cx + cw / 2, y + h / 2 + GY + sizes.get(c.key).h / 2);
+          cx += cw + GX;
+        });
+      };
+      roots().forEach((r) => { calcW(r.key); place(r.key, r.x ?? 0, r.y ?? 0); });
+    }
 
     // ------------------------------------------------------------ render
-    function edgePath(p, c, ps, cs) {
-      const right = c.x >= p.x;
-      const x1 = p.x + (right ? ps.w / 2 : -ps.w / 2), y1 = p.y;
-      const x2 = c.x + (right ? -cs.w / 2 : cs.w / 2), y2 = c.y;
-      const mx = (x1 + x2) / 2;
-      return `M${x1} ${y1} C${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`;
+    /** Where a branch leaves the parent and reaches the child (underlined topics connect at the line's end). */
+    function anchors(pa, ps, a, s, vert) {
+      if (vert) return [{ x: pa.x, y: pa.y + (ps.h * pa.s) / 2 }, { x: a.x, y: a.y - (s.h * a.s) / 2 }];
+      const sd = a.x >= pa.x ? 1 : -1;
+      return [
+        { x: pa.x + (sd * ps.w * pa.s) / 2, y: ps.shape === 'underline' ? pa.y + (ps.h * pa.s) / 2 : pa.y },
+        { x: a.x - (sd * s.w * a.s) / 2, y: s.shape === 'underline' ? a.y + (s.h * a.s) / 2 : a.y },
+      ];
     }
+    const ctrl = (p, c, vert) => (vert ? [{ x: p.x, y: (p.y + c.y) / 2 }, { x: c.x, y: (p.y + c.y) / 2 }] : [{ x: (p.x + c.x) / 2, y: p.y }, { x: (p.x + c.x) / 2, y: c.y }]);
+    function curvePath(p, c, vert) { const [c1, c2] = ctrl(p, c, vert); return `M${p.x} ${p.y} C${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${c.x} ${c.y}`; }
+    function roundPoly(pts, r) {
+      let d = `M${pts[0].x} ${pts[0].y}`;
+      for (let i = 1; i < pts.length - 1; i++) {
+        const a = pts[i - 1], b = pts[i], c = pts[i + 1];
+        const l1 = Math.hypot(b.x - a.x, b.y - a.y), l2 = Math.hypot(c.x - b.x, c.y - b.y);
+        const rr = Math.min(r, l1 / 2, l2 / 2);
+        if (rr < 0.5) { d += ` L${b.x} ${b.y}`; continue; }
+        d += ` L${b.x + ((a.x - b.x) * rr) / l1} ${b.y + ((a.y - b.y) * rr) / l1} Q${b.x} ${b.y} ${b.x + ((c.x - b.x) * rr) / l2} ${b.y + ((c.y - b.y) * rr) / l2}`;
+      }
+      const z = pts[pts.length - 1];
+      return d + ` L${z.x} ${z.y}`;
+    }
+    function elbowPath(p, c, vert) {
+      if (vert) { const my = (p.y + c.y) / 2; return roundPoly([p, { x: p.x, y: my }, { x: c.x, y: my }, c], 10); }
+      const mx = (p.x + c.x) / 2;
+      return roundPoly([p, { x: mx, y: p.y }, { x: mx, y: c.y }, c], 10);
+    }
+    /** A branch that is thick at the parent and thin at the child (organic look). */
+    function taperPath(p, c, w0, w1, vert) {
+      const [c1, c2] = ctrl(p, c, vert);
+      const L = [], R = [];
+      for (let i = 0; i <= 22; i++) {
+        const t = i / 22, u = 1 - t;
+        const x = u * u * u * p.x + 3 * u * u * t * c1.x + 3 * u * t * t * c2.x + t * t * t * c.x;
+        const y = u * u * u * p.y + 3 * u * u * t * c1.y + 3 * u * t * t * c2.y + t * t * t * c.y;
+        const dx = 3 * u * u * (c1.x - p.x) + 6 * u * t * (c2.x - c1.x) + 3 * t * t * (c.x - c2.x);
+        const dy = 3 * u * u * (c1.y - p.y) + 6 * u * t * (c2.y - c1.y) + 3 * t * t * (c.y - c2.y);
+        const len = Math.hypot(dx, dy) || 1;
+        const hw = (w0 + (w1 - w0) * t) / 2;
+        L.push(`${(x - (dy / len) * hw).toFixed(1)} ${(y + (dx / len) * hw).toFixed(1)}`);
+        R.push(`${(x + (dy / len) * hw).toFixed(1)} ${(y - (dx / len) * hw).toFixed(1)}`);
+      }
+      return `M${L.join(' L')} L${R.reverse().join(' L')} Z`;
+    }
+    function edgeEl(t, pa, ps, a, s, color, vert) {
+      const [p, c] = anchors(pa, ps, a, s, vert);
+      const d = s.depth;
+      const glow = t.dark ? 'url(#mm-glow)' : null;
+      const col = t.pastel ? mix(color, look().elev, 0.62) : color;
+      if (t.edge === 'taper') {
+        const w0 = (d === 1 ? t.taper[0] : t.taper[1]) * Math.max(0.3, a.s);
+        return svgEl('path', { d: taperPath(p, c, w0, Math.max(1.4, w0 * 0.28), vert), fill: col, opacity: 0.92, filter: glow });
+      }
+      const path = t.edge === 'straight' ? `M${p.x} ${p.y} L${c.x} ${c.y}` : t.edge === 'elbow' ? elbowPath(p, c, vert) : curvePath(p, c, vert);
+      return svgEl('path', { d: path, fill: 'none', stroke: col, 'stroke-width': d === 1 ? t.edgeW[0] : t.edgeW[1], 'stroke-linecap': 'round', 'stroke-linejoin': 'round', opacity: 0.88, filter: glow });
+    }
+    function shapeEl(shape, w, hgt, attrs) {
+      if (shape === 'ellipse') return svgEl('ellipse', { cx: w / 2, cy: hgt / 2, rx: w / 2, ry: hgt / 2, ...attrs });
+      if (shape === 'hexagon') { const k = hgt * 0.3; return svgEl('polygon', { points: `${k},0 ${w - k},0 ${w},${hgt / 2} ${w - k},${hgt} ${k},${hgt} 0,${hgt / 2}`, ...attrs }); }
+      if (shape === 'cloud') {
+        const X = (v) => ((v * w) / 100).toFixed(1), Y = (v) => ((v * hgt) / 60).toFixed(1);
+        const pts = [[20, 50], [8, 50, 1, 40, 8, 31], [1, 22, 12, 11, 24, 15], [28, 3, 47, 1, 54, 11], [62, 2, 80, 4, 82, 16], [97, 16, 101, 33, 91, 40], [99, 51, 87, 61, 74, 54], [66, 62, 47, 62, 40, 54], [31, 60, 17, 59, 20, 50]];
+        const d = `M${X(pts[0][0])} ${Y(pts[0][1])} ` + pts.slice(1).map((q) => `C${X(q[0])} ${Y(q[1])}, ${X(q[2])} ${Y(q[3])}, ${X(q[4])} ${Y(q[5])}`).join(' ') + ' Z';
+        return svgEl('path', { d, ...attrs });
+      }
+      const rx = shape === 'pill' ? hgt / 2 : shape === 'rect' ? 4 : shape === 'underline' || shape === 'plain' ? 6 : 11;
+      return svgEl('rect', { width: w, height: hgt, rx, ...attrs });
+    }
+    const gradIds = new Set();
+    function gradient(color) {
+      const id = 'mmg-' + color.replace(/[^0-9a-z]/gi, '');
+      if (!gradIds.has(id)) {
+        const g = svgEl('linearGradient', { id, x1: 0, y1: 0, x2: 1, y2: 1 });
+        g.append(svgEl('stop', { offset: '0%', 'stop-color': mix('#ffffff', color, 0.28) }), svgEl('stop', { offset: '100%', 'stop-color': mix('#000000', color, 0.12) }));
+        stage.defs.appendChild(g);
+        gradIds.add(id);
+      }
+      return `url(#${id})`;
+    }
+    const readable = (hex) => {
+      if (!/^#[0-9a-f]{6}$/i.test(hex)) return '#ffffff';
+      const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.62 ? '#111827' : '#ffffff';
+    };
+    {
+      const f = svgEl('filter', { id: 'mm-glow', x: '-40%', y: '-40%', width: '180%', height: '180%' });
+      f.append(svgEl('feGaussianBlur', { in: 'SourceGraphic', stdDeviation: 3, result: 'b' }));
+      const m = svgEl('feMerge');
+      m.append(svgEl('feMergeNode', { in: 'b' }), svgEl('feMergeNode', { in: 'SourceGraphic' }));
+      f.append(m);
+      stage.defs.appendChild(f);
+    }
+
+    function drawNode(n, a, t, th) {
+      const s = sizes.get(n.key);
+      const color = branchColor(n);
+      const st = n.style || {};
+      const d = s.depth;
+      const shape = s.shape;
+      let mode = st.fill === 'none' ? 'outline' : st.fill || (d === 0 ? t.root : d === 1 ? t.l1 : t.ln);
+      if (shape === 'underline' || shape === 'plain') mode = 'bare';
+      const g = svgEl('g', { class: 'mm-node', 'data-key': n.key, transform: `translate(${a.x - (s.w * a.s) / 2} ${a.y - (s.h * a.s) / 2})${a.s !== 1 ? ` scale(${a.s})` : ''}`, opacity: a.o < 1 ? a.o.toFixed(3) : null });
+      let fill = th.elev, stroke = 'none', sw = 0, text = th.text, filter = null, iconCol = color;
+      switch (mode) {
+        case 'solid': fill = color; text = iconCol = readable(color); break;
+        case 'gradient': fill = gradient(color); text = iconCol = '#ffffff'; break;
+        case 'soft':
+          fill = mix(color, th.elev, th.dark ? 0.3 : t.pastel ? 0.28 : 0.16);
+          if (!t.pastel) { stroke = color; sw = d === 1 ? 2 : 1.5; } else text = mix(color, th.text, 0.38);
+          break;
+        case 'glow': fill = mix(color, th.elev, 0.16); stroke = color; sw = 2; text = mix(color, '#ffffff', 0.45); filter = 'url(#mm-glow)'; break;
+        case 'bare': fill = 'transparent'; text = d === 0 ? color : th.text; break;
+        default: stroke = color; sw = d === 1 ? 2 : 1.5; // outline
+      }
+      g.appendChild(shapeEl(shape, s.w, s.h, { class: 'body', fill, stroke, 'stroke-width': sw, filter }));
+      if (shape === 'underline') g.appendChild(svgEl('path', { d: `M0 ${s.h} L${s.w} ${s.h}`, stroke: color, 'stroke-width': d <= 1 ? 3.5 : 2.5, 'stroke-linecap': 'round', filter }));
+      let x0 = (s.w - (s.emojiW + s.iconW + s.t.width)) / 2;
+      if (st.emoji) {
+        const e = svgEl('text', { x: x0 + (s.emojiW - 5) / 2, y: s.h / 2, 'text-anchor': 'middle', 'dominant-baseline': 'central', 'font-size': Math.round(s.size * 1.18) });
+        e.textContent = st.emoji;
+        g.appendChild(e);
+        x0 += s.emojiW;
+      }
+      if (n.icon && ICONS[n.icon]) {
+        const ig = svgEl('g', { transform: `translate(${x0} ${s.h / 2 - 9}) scale(0.75)`, fill: 'none', stroke: iconCol, 'stroke-width': 2.2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' });
+        ig.innerHTML = ICONS[n.icon];
+        g.appendChild(ig);
+        x0 += s.iconW;
+      }
+      textBlock(g, s.t.lines, { cx: x0 + s.t.width / 2, cy: s.h / 2, size: s.size, weight: s.weight, color: text, lineHeight: s.t.lineHeight, family: t.family });
+      if (n.notes) {
+        const nd = svgEl('circle', { cx: s.w - 6, cy: 6, r: 4.5, fill: '#f59e0b', stroke: th.elev, 'stroke-width': 1.5 });
+        const tt = svgEl('title'); tt.textContent = n.notes; nd.appendChild(tt);
+        g.appendChild(nd);
+      }
+      const kids = children(n.key);
+      if (kids.length) {
+        const vert = t.layout === 'down';
+        const right = !n.parent || !nodes.has(n.parent) ? true : n.x >= nodes.get(n.parent).x;
+        const pos = vert ? `${s.w / 2} ${s.h + 11}` : `${right ? s.w + 10 : -10} ${shape === 'underline' ? s.h : s.h / 2}`;
+        const tg = svgEl('g', { class: 'mm-toggle mm-toggle-ui', 'data-toggle': n.key, transform: `translate(${pos})`, style: 'cursor:pointer' });
+        tg.appendChild(svgEl('circle', { r: 9, fill: th.elev, stroke: color, 'stroke-width': 1.5 }));
+        const tx2 = svgEl('text', { 'text-anchor': 'middle', 'dominant-baseline': 'central', 'font-size': n.collapsed ? 10 : 13, 'font-weight': 700, fill: color, 'font-family': 'sans-serif' });
+        tx2.textContent = n.collapsed ? String(descendants(n.key).size) : '−';
+        tg.appendChild(tx2);
+        g.appendChild(tg);
+      }
+      const round = shape === 'pill' || shape === 'ellipse' || shape === 'cloud';
+      if (sel === n.key) g.appendChild(svgEl('rect', { class: 'sel-ring', x: -5, y: -5, width: s.w + 10, height: s.h + 10, rx: round ? (s.h + 10) / 2 : 14 }));
+      if (connectFrom === n.key) g.appendChild(svgEl('rect', { class: 'sel-ring', x: -8, y: -8, width: s.w + 16, height: s.h + 16, rx: 16, style: 'stroke:#f59e0b' }));
+      gNodes.appendChild(g);
+    }
+
+    let anim = null, animRaf = 0;
     function render({ panel = true } = {}) {
       kidsCache = buildKids();
       try { renderInner(panel); } finally { kidsCache = null; }
     }
     function renderInner(panel = true) {
-      const th = themeColors();
+      const t = T(), th = look();
+      applyBackdrop();
       markerPath.setAttribute('fill', th.text2);
       [...nodes.values()].forEach(measure);
       gEdges.innerHTML = '';
       gLinks.innerHTML = '';
       gNodes.innerHTML = '';
-      const visible = [...nodes.values()].filter((n) => !isHidden(n));
-      // tree edges
+      const P = (n) => anim?.get(n.key) || { x: n.x, y: n.y, s: 1, o: 1 };
+      let visible = [...nodes.values()].filter((n) => !isHidden(n));
+      if (anim) visible = visible.concat([...nodes.values()].filter((n) => isHidden(n) && anim.has(n.key))); // topics folding away
+      const vert = t.layout === 'down';
+      // tree branches
       visible.forEach((n) => {
         if (!n.parent || !nodes.has(n.parent)) return;
         const p = nodes.get(n.parent);
-        const d = sizes.get(n.key).depth;
-        gEdges.appendChild(svgEl('path', { d: edgePath(p, n, sizes.get(p.key), sizes.get(n.key)), fill: 'none', stroke: branchColor(n), 'stroke-width': d === 1 ? 3 : 2, 'stroke-linecap': 'round', opacity: 0.85 }));
+        const a = P(n);
+        const e = edgeEl(t, P(p), sizes.get(p.key), a, sizes.get(n.key), branchColor(n), vert);
+        if (a.o < 1) e.setAttribute('opacity', (0.9 * a.o).toFixed(3));
+        gEdges.appendChild(e);
       });
       // free links
       links.forEach((l, i) => {
-        const a = nodes.get(l.source), b = nodes.get(l.target);
-        if (!a || !b || isHidden(a) || isHidden(b)) return;
+        const na = nodes.get(l.source), nb = nodes.get(l.target);
+        if (!na || !nb || isHidden(na) || isHidden(nb)) return;
+        const a = P(na), b = P(nb);
         const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2 - Math.min(120, Math.abs(a.x - b.x) * 0.25 + 40);
         const d = `M${a.x} ${a.y} Q${mx} ${my} ${b.x} ${b.y}`;
         const g = svgEl('g', { 'data-link': i });
         g.appendChild(svgEl('path', { d, class: 'edge-path' + (selLink === i ? ' selected' : ''), fill: 'none', stroke: th.text2, 'stroke-width': 1.8, 'stroke-dasharray': '6 5', 'marker-end': 'url(#mm-arrow)' }));
         g.appendChild(svgEl('path', { d, class: 'edge-hit' }));
         if (l.label) {
-          const t = wrapText(l.label, { size: 12, weight: 500, maxWidth: 160 });
+          const tw = wrapText(l.label, { size: 12, weight: 500, maxWidth: 160, family: t.family });
           const lx = (a.x + 2 * mx + b.x) / 4, ly = (a.y + 2 * my + b.y) / 4;
-          g.appendChild(svgEl('rect', { x: lx - t.width / 2 - 6, y: ly - (t.lines.length * t.lineHeight) / 2 - 3, width: t.width + 12, height: t.lines.length * t.lineHeight + 6, rx: 6, fill: th.elev, stroke: th.border }));
-          textBlock(g, t.lines, { cx: lx, cy: ly, size: 12, weight: 500, color: th.text2, lineHeight: t.lineHeight });
+          g.appendChild(svgEl('rect', { x: lx - tw.width / 2 - 6, y: ly - (tw.lines.length * tw.lineHeight) / 2 - 3, width: tw.width + 12, height: tw.lines.length * tw.lineHeight + 6, rx: 6, fill: th.elev, stroke: th.border }));
+          textBlock(g, tw.lines, { cx: lx, cy: ly, size: 12, weight: 500, color: th.text2, lineHeight: tw.lineHeight, family: t.family });
         }
         gLinks.appendChild(g);
       });
-      // nodes
-      visible.forEach((n) => {
-        const s = sizes.get(n.key);
-        const color = branchColor(n);
-        const isRoot = s.depth === 0;
-        const g = svgEl('g', { class: 'mm-node', 'data-key': n.key, transform: `translate(${n.x - s.w / 2} ${n.y - s.h / 2})` });
-        const fill = isRoot ? color : s.depth === 1 ? mix(color, th.elev, th.dark ? 0.28 : 0.16) : th.elev;
-        g.appendChild(svgEl('rect', { class: 'body', width: s.w, height: s.h, rx: isRoot ? s.h / 2 : 11, fill, stroke: isRoot ? 'none' : color, 'stroke-width': s.depth === 1 ? 2 : 1.5 }));
-        const textColor = isRoot ? '#ffffff' : th.text;
-        if (n.icon && ICONS[n.icon]) {
-          const ig = svgEl('g', { transform: `translate(${s.padX - 2} ${s.h / 2 - 9}) scale(0.75)`, fill: 'none', stroke: isRoot ? '#fff' : color, 'stroke-width': 2.2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' });
-          ig.innerHTML = ICONS[n.icon];
-          g.appendChild(ig);
-        }
-        textBlock(g, s.t.lines, { cx: (s.w + s.iconW) / 2, cy: s.h / 2, size: s.size, weight: s.weight, color: textColor, lineHeight: s.t.lineHeight });
-        if (n.notes) {
-          const nd = svgEl('circle', { cx: s.w - 6, cy: 6, r: 4.5, fill: '#f59e0b', stroke: th.elev, 'stroke-width': 1.5 });
-          const tt = svgEl('title'); tt.textContent = n.notes; nd.appendChild(tt);
-          g.appendChild(nd);
-        }
-        const kids = children(n.key);
-        if (kids.length) {
-          const right = !n.parent || !nodes.has(n.parent) ? true : n.x >= nodes.get(n.parent).x;
-          const tx = right ? s.w + 10 : -10;
-          const tg = svgEl('g', { class: 'mm-toggle mm-toggle-ui', 'data-toggle': n.key, transform: `translate(${tx} ${s.h / 2})`, style: 'cursor:pointer' });
-          tg.appendChild(svgEl('circle', { r: 9, fill: th.elev, stroke: color, 'stroke-width': 1.5 }));
-          const tx2 = svgEl('text', { 'text-anchor': 'middle', 'dominant-baseline': 'central', 'font-size': n.collapsed ? 10 : 13, 'font-weight': 700, fill: color, 'font-family': 'sans-serif' });
-          tx2.textContent = n.collapsed ? String(descendants(n.key).size) : '−';
-          tg.appendChild(tx2);
-          g.appendChild(tg);
-        }
-        if (sel === n.key) g.appendChild(svgEl('rect', { class: 'sel-ring', x: -5, y: -5, width: s.w + 10, height: s.h + 10, rx: isRoot ? (s.h + 10) / 2 : 14 }));
-        if (connectFrom === n.key) g.appendChild(svgEl('rect', { class: 'sel-ring', x: -8, y: -8, width: s.w + 16, height: s.h + 16, rx: 16, style: 'stroke:#f59e0b' }));
-        gNodes.appendChild(g);
-      });
+      visible.forEach((n) => drawNode(n, P(n), t, th));
       if (panel) renderPanel(); // not while the user types in it
       $('[data-a="undo"]').disabled = !undoStack.length;
       $('[data-a="redo"]').disabled = !redoStack.length;
     }
+
+    // ------------------------------------------------------------ motion: topics glide to their new place, new ones grow out of their parent
+    const positions = () => { const m = new Map(); nodes.forEach((n) => m.set(n.key, { x: n.x, y: n.y, vis: !isHidden(n) })); return m; };
+    function animateFrom(prev) {
+      if (!prev || !T().motion || nodes.size > 220) return;
+      cancelAnimationFrame(animRaf);
+      anim = null;
+      const start = new Map(), end = new Map();
+      const seenBefore = (n) => { let p = n.parent && nodes.get(n.parent); while (p) { const w = prev.get(p.key); if (w?.vis) return w; p = p.parent && nodes.get(p.parent); } return null; };
+      nodes.forEach((n) => {
+        const was = prev.get(n.key), vis = !isHidden(n);
+        if (vis) {
+          end.set(n.key, { x: n.x, y: n.y, s: 1, o: 1 });
+          if (was?.vis) start.set(n.key, { x: was.x, y: was.y, s: 1, o: 1 });
+          else { const o = seenBefore(n) || { x: n.x, y: n.y }; start.set(n.key, { x: o.x, y: o.y, s: 0.3, o: 0 }); }
+        } else if (was?.vis) {
+          let p = n.parent && nodes.get(n.parent);
+          while (p && isHidden(p)) p = p.parent && nodes.get(p.parent);
+          start.set(n.key, { x: was.x, y: was.y, s: 1, o: 1 });
+          end.set(n.key, { x: p ? p.x : was.x, y: p ? p.y : was.y, s: 0.3, o: 0 });
+        }
+      });
+      let moving = false;
+      start.forEach((a, k) => { const b = end.get(k); if (Math.abs(a.x - b.x) > 0.5 || Math.abs(a.y - b.y) > 0.5 || a.s !== b.s || a.o !== b.o) moving = true; });
+      if (!moving) return;
+      const t0 = performance.now(), D = 340;
+      const step = (now) => {
+        const k = Math.min(1, (now - t0) / D);
+        if (k >= 1) { anim = null; render({ panel: false }); return; }
+        const e = 1 - Math.pow(1 - k, 3);
+        anim = new Map();
+        start.forEach((a, key) => { const b = end.get(key); anim.set(key, { x: a.x + (b.x - a.x) * e, y: a.y + (b.y - a.y) * e, s: a.s + (b.s - a.s) * e, o: a.o + (b.o - a.o) * e }); });
+        render({ panel: false });
+        animRaf = requestAnimationFrame(step);
+      };
+      animRaf = requestAnimationFrame(step);
+    }
+    const stopAnim = () => { if (anim || animRaf) { cancelAnimationFrame(animRaf); animRaf = 0; anim = null; } };
+
     function mix(hex, base, amt) {
       const p = (c) => [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
       if (!/^#[0-9a-f]{6}$/i.test(hex) || !/^#[0-9a-f]{6}$/i.test(base)) return base;
@@ -280,10 +529,25 @@ export default {
         return;
       }
       if (!n) {
+        const t = T();
+        const cur = PRESETS[theme.preset] ? theme.preset : 'classic';
+        const seg = (k, opts) => html`<div class="seg mm-seg">${opts.map(([v, l, ic]) => html`<button type="button" class="btn xs ${t[k] === v ? 'active' : ''}" data-theme-k="${k}" data-theme-v="${v}">${ic ? icon(ic, 'sm') : ''}${l}</button>`)}</div>`;
         panel.innerHTML = String(html`<div class="row between mb-2"><b>Mind map</b><button class="btn ghost icon xs" data-a="panel">${icon('x', 'sm')}</button></div>
-          <div class="field"><label>Description</label><textarea class="textarea" rows="4" data-desc placeholder="What is this map about?">${data.description || ''}</textarea></div>
+          ${canEdit ? html`<div class="mm-look" data-look>
+          <label class="mm-h">${icon('palette', 'sm')} Theme</label>
+          <div class="mm-presets">${Object.entries(PRESETS).map(([k, p]) => html`<button type="button" class="mm-preset ${cur === k ? 'active' : ''}" data-theme-preset="${k}" style="--pbg:${p.dark ? '#0b1020' : p.bg === 'gradient' ? 'linear-gradient(135deg,#eef2ff,#fdf2f8)' : 'var(--bg)'}">
+            <span class="mm-pv">${(p.dark ? NEON : p.rainbow ? COLORS : ['#334155', '#334155', '#334155']).slice(0, 3).map((c, i) => html`<i style="--c:${p.pastel ? mix(c, '#ffffff', 0.45) : c};--r:${p.shape === 'pill' || i === 0 ? '9px' : p.shape === 'underline' ? '0' : '3px'}" class="${p.shape === 'underline' && i ? 'ul' : ''} ${p.root === 'glow' ? 'glow' : ''}"></i>`)}</span>
+            <span class="mm-pl">${p.label}</span></button>`)}</div>
+          <div class="field"><label>Branches</label>${seg('edge', [['curve', 'Curved'], ['taper', 'Tapered'], ['elbow', 'Elbow'], ['straight', 'Straight']])}</div>
+          <div class="field"><label>Layout</label>${seg('layout', [['balanced', 'Both sides'], ['right', 'Right'], ['down', 'Top-down']])}</div>
+          <div class="field"><label>Background</label>${seg('bg', [['plain', 'Plain'], ['dots', 'Dots'], ['gradient', 'Glow']])}</div>
+          <div class="field"><label>Font</label>${seg('font', [['sans', 'Sans'], ['rounded', 'Rounded'], ['serif', 'Serif'], ['hand', 'Hand']])}</div>
+          <label class="switch mm-sw"><input type="checkbox" data-theme-toggle="rainbow" ${t.rainbow ? 'checked' : ''}><span class="track"></span><span>Rainbow branches</span></label>
+          <label class="switch mm-sw"><input type="checkbox" data-theme-toggle="motion" ${theme.motion !== false ? 'checked' : ''}><span class="track"></span><span>Animations</span></label>
+          </div>` : ''}
+          <div class="field mt-3"><label>Description</label><textarea class="textarea" rows="4" data-desc placeholder="What is this map about?">${data.description || ''}</textarea></div>
           <dl class="kv small"><dt>Nodes</dt><dd>${nodes.size}</dd><dt>Connections</dt><dd>${links.length}</dd></dl>
-          <p class="small subtle mt-3">Select a node to edit its text, colour, icon and notes.</p>`);
+          <p class="small subtle mt-3">Select a topic to change its text, colour, shape, sticker, icon and notes.</p>`);
         return;
       }
       const isRoot = !n.parent || !nodes.has(n.parent);
@@ -291,6 +555,14 @@ export default {
         <div class="field"><label>Text</label><textarea class="textarea" rows="2" data-label>${n.label}</textarea></div>
         <div class="field"><label>Color</label><div class="swatches" style="padding:0;grid-template-columns:repeat(6,28px)">${COLORS.map((c) => html`<button class="swatch ${n.color === c ? 'active' : ''}" data-color="${c}" style="--sw:${c}"></button>`)}
           <button class="swatch ${!n.color ? 'active' : ''}" data-color="" style="--sw:var(--bg-soft)" data-tip="Auto">${icon('slash', 'sm')}</button></div></div>
+        <div class="field"><label>Shape</label><div class="seg mm-seg">${SHAPES.map(([k, l]) => html`<button type="button" class="btn xs ${(n.style?.shape || '') === k ? 'active' : ''}" data-shape="${k}">${l}</button>`)}</div></div>
+        <div class="field"><label>Sticker</label><div class="mm-emojis">
+          <button type="button" class="mm-emo ${!n.style?.emoji ? 'active' : ''}" data-emoji="" aria-label="No sticker">${icon('slash', 'sm')}</button>
+          ${EMOJIS.map((e) => html`<button type="button" class="mm-emo ${n.style?.emoji === e ? 'active' : ''}" data-emoji="${e}">${e}</button>`)}</div>
+          <input class="input sm mt-1" data-emoji-custom maxlength="8" placeholder="…or type / paste any emoji" value="${n.style?.emoji && !EMOJIS.includes(n.style.emoji) ? n.style.emoji : ''}"></div>
+        <div class="field"><label>Text</label><div class="seg mm-seg">${[['s', 'S'], ['m', 'M'], ['l', 'L'], ['xl', 'XL']].map(([k, l]) => html`<button type="button" class="btn xs ${(n.style?.size || 'm') === k ? 'active' : ''}" data-tsize="${k}">${l}</button>`)}
+          <button type="button" class="btn xs ${n.style?.bold ? 'active' : ''}" data-bold>${icon('bold', 'sm')}</button></div></div>
+        <div class="field"><label>Fill</label><div class="seg mm-seg">${[['', 'Auto'], ['solid', 'Solid'], ['soft', 'Soft'], ['none', 'Outline']].map(([k, l]) => html`<button type="button" class="btn xs ${(n.style?.fill || '') === k ? 'active' : ''}" data-fill="${k}">${l}</button>`)}</div></div>
         <div class="field"><label>Icon</label><div class="swatches" style="padding:0;grid-template-columns:repeat(6,28px)">
           <button class="swatch ${!n.icon ? 'active' : ''}" data-icon="" style="--sw:var(--bg-soft)">${icon('slash', 'sm')}</button>
           ${NODE_ICONS.map((i) => html`<button class="swatch ${n.icon === i ? 'active' : ''}" data-icon="${i}" style="--sw:var(--bg-elev)">${icon(i, 'sm')}</button>`)}</div></div>
@@ -309,11 +581,30 @@ export default {
     // ------------------------------------------------------------ mutations
     function change(fn, { layout = false, panel = true } = {}) {
       if (!canEdit) return;
+      const prev = positions();
+      stopAnim();
       pushHistory();
       fn();
       if (layout) autoLayout();
       render({ panel });
       markDirty();
+      animateFrom(prev);
+    }
+    /** Topic look: shape, sticker, size, bold, fill (empty values fall back to the theme). */
+    function setStyle(k, patch) {
+      change(() => {
+        const n = nodes.get(k);
+        const st = { ...(n.style || {}), ...patch };
+        Object.keys(st).forEach((x) => { if (st[x] === '' || st[x] == null || st[x] === false || (x === 'size' && st[x] === 'm')) delete st[x]; });
+        n.style = Object.keys(st).length ? st : null;
+      }, { layout: true });
+    }
+    function setTheme(patch) {
+      change(() => {
+        theme = patch.preset ? { preset: patch.preset, layout: theme.layout, motion: theme.motion } : { ...theme, ...patch };
+        Object.keys(theme).forEach((x) => theme[x] === undefined && delete theme[x]);
+      }, { layout: true });
+      if ('layout' in patch) requestAnimationFrame(() => stage.fit(bbox(), 80, 1));
     }
     function addChild(parentKey) {
       const p = nodes.get(parentKey);
@@ -415,7 +706,7 @@ export default {
       const s = sizes.get(k);
       Object.assign(ta.style, {
         left: r.left - sr.left - 4 + 'px', top: r.top - sr.top - 4 + 'px', width: Math.max(140, r.width + 8) + 'px', minHeight: r.height + 8 + 'px',
-        fontSize: s.size * stage.vp.zoom + 'px', fontWeight: s.weight,
+        fontSize: s.size * stage.vp.zoom + 'px', fontWeight: s.weight, fontFamily: T().family,
       });
       stageEl.appendChild(ta);
       ta.focus();
@@ -486,7 +777,7 @@ export default {
       const w = stage.toWorld(e.clientX, e.clientY);
       const dx = w.x - drag.sx, dy = w.y - drag.sy;
       if (!drag.moved && Math.hypot(dx, dy) * stage.vp.zoom < 4) return;
-      if (!drag.moved) { pushHistory(); drag.moved = true; }
+      if (!drag.moved) { stopAnim(); pushHistory(); drag.moved = true; }
       drag.orig.forEach((p, k) => { const n = nodes.get(k); n.x = p.x + dx; n.y = p.y + dy; });
       // drop target detection
       drag.target = null;
@@ -564,8 +855,8 @@ export default {
     document.addEventListener('keydown', onKey);
     document.addEventListener('keyup', onKeyUp);
 
-    function undo() { if (!undoStack.length) return; redoStack.push(snapshot()); restoreSnap(undoStack.pop()); if (sel && !nodes.has(sel)) sel = null; render(); markDirty(); }
-    function redo() { if (!redoStack.length) return; undoStack.push(snapshot()); restoreSnap(redoStack.pop()); render(); markDirty(); }
+    function undo() { if (!undoStack.length) return; const prev = positions(); stopAnim(); redoStack.push(snapshot()); restoreSnap(undoStack.pop()); if (sel && !nodes.has(sel)) sel = null; render(); markDirty(); animateFrom(prev); }
+    function redo() { if (!redoStack.length) return; const prev = positions(); stopAnim(); undoStack.push(snapshot()); restoreSnap(redoStack.pop()); if (sel && !nodes.has(sel)) sel = null; render(); markDirty(); animateFrom(prev); }
     function setHint() {
       $('[data-hint]').textContent = connectFrom ? 'Click another topic to connect it — Esc to cancel' : 'Tab: child · Enter: sibling · F2/double-click: edit · Space: collapse · Del: delete · Drag a node onto another to re-parent';
       $('[data-a="connect"]').classList.toggle('active', !!connectFrom);
@@ -577,6 +868,19 @@ export default {
       const colorBtn = e.target.closest('[data-color]');
       const iconBtn = e.target.closest('[data-icon]');
       if (colorBtn && sel) return change(() => (nodes.get(sel).color = colorBtn.dataset.color || null));
+      const st = e.target.closest('[data-shape],[data-emoji],[data-tsize],[data-bold],[data-fill]');
+      if (st && sel) {
+        const n = nodes.get(sel);
+        if ('shape' in st.dataset) return setStyle(sel, { shape: st.dataset.shape });
+        if ('emoji' in st.dataset) return setStyle(sel, { emoji: st.dataset.emoji });
+        if ('tsize' in st.dataset) return setStyle(sel, { size: st.dataset.tsize });
+        if ('bold' in st.dataset) return setStyle(sel, { bold: !n.style?.bold });
+        if ('fill' in st.dataset) return setStyle(sel, { fill: st.dataset.fill });
+      }
+      const pre = e.target.closest('[data-theme-preset]');
+      if (pre) return setTheme({ preset: pre.dataset.themePreset });
+      const tk = e.target.closest('[data-theme-k]');
+      if (tk) return setTheme({ [tk.dataset.themeK]: tk.dataset.themeV });
       if (iconBtn && sel) return change(() => (nodes.get(sel).icon = iconBtn.dataset.icon || null), { layout: true });
       if (!a) return;
       const target = sel || roots()[0]?.key;
@@ -604,9 +908,17 @@ export default {
         case 'zoom-out': stage.zoomAt(1 / 1.2); break;
         case 'fit': stage.fit(bbox()); break;
         case 'panel': $('[data-panel]').classList.toggle('hidden'); renderPanel(); break;
+        case 'style': {
+          sel = null; selLink = -1;
+          const p = $('[data-panel]');
+          p.classList.remove('hidden');
+          render();
+          p.querySelector('[data-look]')?.scrollIntoView({ block: 'start' });
+          break;
+        }
         case 'export': {
           const name = safeName($('[data-title]').value);
-          const bg = themeColors().bg;
+          const bg = look().bg;
           menu(e.target.closest('[data-a]'), [
             { label: 'Export as PNG', icon: 'image', onClick: () => exportPng(stage, bbox(), bg, name).catch(toastError) },
             { label: 'Export as SVG', icon: 'file-code', onClick: () => exportSvg(stage, bbox(), bg, name) },
@@ -625,6 +937,10 @@ export default {
       if (e.target.matches('[data-desc]')) { data.description = e.target.value; markDirty(); }
       if (e.target.matches('[data-link-label]') && selLink >= 0) { links[selLink].label = e.target.value.slice(0, 255); render({ panel: false }); markDirty(); }
       if (e.target.matches('[data-title]')) { ctx.setTitle(e.target.value); markDirty(); }
+    });
+    el.addEventListener('change', (e) => {
+      if (e.target.matches('[data-theme-toggle]')) setTheme({ [e.target.dataset.themeToggle]: e.target.checked });
+      if (e.target.matches('[data-emoji-custom]') && sel) setStyle(sel, { emoji: [...e.target.value.trim()].slice(0, 4).join('') });
     });
     el.addEventListener('focusin', (e) => { if (e.target.matches('[data-label],[data-notes],[data-link-label]')) pushHistory(); });
 
@@ -652,7 +968,8 @@ export default {
           title: $('[data-title]').value.trim() || 'Untitled mind map',
           description: data.description || '',
           viewport: { ...stage.vp },
-          nodes: ordered.map((n) => ({ key: n.key, parent: n.parent && nodes.has(n.parent) ? n.parent : null, label: n.label, x: Math.round(n.x * 100) / 100, y: Math.round(n.y * 100) / 100, w: sizes.get(n.key)?.w, h: sizes.get(n.key)?.h, color: n.color, icon: n.icon, notes: n.notes, collapsed: !!n.collapsed, order: n.order })),
+          theme,
+          nodes: ordered.map((n) => ({ key: n.key, parent: n.parent && nodes.has(n.parent) ? n.parent : null, label: n.label, x: Math.round(n.x * 100) / 100, y: Math.round(n.y * 100) / 100, w: sizes.get(n.key)?.w, h: sizes.get(n.key)?.h, color: n.color, icon: n.icon, style: n.style || null, notes: n.notes, collapsed: !!n.collapsed, order: n.order })),
           edges: links.map((l) => ({ source: l.source, target: l.target, type: 'link', label: l.label })),
         });
         revision = r.revision ?? revision;
@@ -679,6 +996,8 @@ export default {
     [...nodes.values()].forEach(measure);
     if (needsLayout) autoLayout();
     render();
+    // Opening a map: the branches grow out of the central topic.
+    if (nodes.size > 1 && nodes.size <= 120) { const intro = new Map(); roots().forEach((r) => intro.set(r.key, { x: r.x, y: r.y, vis: true })); animateFrom(intro); }
     requestAnimationFrame(() => {
       if (data.viewport && data.viewport.zoom) stage.setViewport(data.viewport);
       else stage.fit(bbox(), 80, 1);
@@ -691,6 +1010,7 @@ export default {
     return () => {
       document.removeEventListener('keydown', onKey);
       document.removeEventListener('keyup', onKeyUp);
+      cancelAnimationFrame(animRaf);
       autosave.cancel();
       stage.destroy();
       shell.saveHandler = null;

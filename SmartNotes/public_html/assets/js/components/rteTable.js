@@ -328,7 +328,7 @@ export function tableTools({ editor, toolbar, mutate, placeCaret }) {
     }
     const right = Math.min(r.right, er.right + 2);
     addCol.hidden = false;
-    addCol.style.left = right + 3 + 'px';
+    addCol.style.left = Math.min(right + 3, innerWidth - (addCol.offsetWidth || 26) - 2) + 'px';
     addCol.style.top = Math.max(r.top, minTop) + 'px';
     addCol.style.height = Math.max(24, r.bottom - Math.max(r.top, minTop)) + 'px';
     addRow.hidden = false;

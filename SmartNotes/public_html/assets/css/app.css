@@ -1407,6 +1407,7 @@ body:has(> .draw-root) > .modal-root { z-index: 420; }
 .tbl-add:hover, .tbl-add:focus-visible { opacity: 1; background: var(--accent-soft); }
 .tbl-add-col { width: 18px; }
 .tbl-add-row { height: 18px; }
+@media (max-width: 560px) { .tbl-bar { flex-wrap: wrap; row-gap: 2px; overflow-x: visible; } }
 @media (pointer: coarse) { .tbl-add { opacity: .9; } .tbl-add-col { width: 26px; } .tbl-add-row { height: 26px; } .tbl-bar .btn.xs { width: 34px; height: 34px; } }
 .rte td.tbl-hl, .rte th.tbl-hl { background: var(--accent-soft) !important; }
 .rte td.tbl-del, .rte th.tbl-del { background: var(--danger-soft) !important; }
@@ -1466,3 +1467,28 @@ body:has(> .draw-root) > .modal-root { z-index: 420; }
 .ref-row .ref-main { min-width: 0; flex: 1; }
 .ref-row .ref-main b { display: block; font-weight: 580; font-size: 13.5px; }
 .nc-people { display: inline-flex; align-items: center; gap: 3px; color: color-mix(in srgb, var(--info) 80%, var(--text)); font-weight: 560; }
+
+/* ===================================================================== v1.16 mind map looks */
+.canvas-stage.mm-dark { color-scheme: dark; }
+.canvas-stage.mm-dark .canvas-hint, .canvas-stage.mm-dark .canvas-zoom { background: rgba(18, 26, 51, .78); border-color: #2a3558; color: #c7d0f5; }
+.canvas-stage.mm-dark .canvas-zoom .btn { color: #c7d0f5; }
+.mm-h { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 650; color: var(--text-2); margin: 2px 0 8px; }
+.mm-presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-bottom: 12px; }
+.mm-preset { display: flex; flex-direction: column; align-items: stretch; gap: 5px; padding: 6px; border-radius: 11px; border: 1.5px solid var(--border); background: var(--bg-elev); cursor: pointer; color: var(--text); transition: border-color .15s, transform .15s; }
+.mm-preset:hover { transform: translateY(-1px); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.mm-preset.active { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.mm-pv { display: flex; align-items: center; justify-content: center; gap: 4px; height: 30px; border-radius: 7px; background: var(--pbg); }
+.mm-pv i { width: 16px; height: 10px; border-radius: var(--r); background: var(--c); }
+.mm-pv i:first-child { width: 20px; height: 13px; }
+.mm-pv i.ul { background: none; height: 6px; border-bottom: 3px solid var(--c); }
+.mm-pv i.glow { box-shadow: 0 0 8px var(--c); background: color-mix(in srgb, var(--c) 25%, #121a33); border: 1.5px solid var(--c); }
+.mm-pl { font-size: 11.5px; font-weight: 600; text-align: center; }
+.mm-seg { gap: 4px; }
+.mm-seg .btn.xs { padding: 0 8px; gap: 4px; }
+.mm-sw { margin: 4px 0; font-size: 13px; }
+.mm-emojis { display: grid; grid-template-columns: repeat(8, 1fr); gap: 3px; }
+.mm-emo { height: 30px; border-radius: 8px; border: 1px solid transparent; background: var(--bg-soft); font-size: 16px; cursor: pointer; display: grid; place-items: center; padding: 0; color: var(--text-3); }
+.mm-emo:hover { background: var(--bg-hover); }
+.mm-emo.active { border-color: var(--accent); background: var(--accent-soft); }
+svg .mm-node { transition: opacity .12s; }
+.rte[contenteditable="true"] table { margin-bottom: 30px; } /* room for the "+ row" strip */
