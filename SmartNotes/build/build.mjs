@@ -19,6 +19,7 @@ const ctx = await esbuild.context({
   target: ['es2020', 'chrome100', 'firefox100', 'safari15'],
   chunkNames: 'chunks/[name]-[hash]',
   external: ['../fonts/*'],
+  nodePaths: [join(dirname(fileURLToPath(import.meta.url)), 'node_modules')], // mp4-muxer (v1.18), loaded on demand
   legalComments: 'none',
   logLevel: 'info',
 });

@@ -7,6 +7,7 @@ import { shell } from '../core/shell.js';
 import { toast, toastError, menu, confirm, prompt } from '../core/ui.js';
 import { openItemShare } from '../components/itemShare.js';
 import { createStage, svgEl, wrapText, textBlock, themeColors, exportPng, exportSvg, exportPdf, safeName, FONT_STACK } from '../components/canvas.js';
+import { createFlowPlayer, exportFlowVideo, schedule } from '../components/flowPlayer.js';
 
 const COLORS = ['#6366f1', '#0ea5e9', '#14b8a6', '#22c55e', '#eab308', '#f97316', '#ef4444', '#ec4899', '#a855f7', '#64748b'];
 const NEON = ['#22d3ee', '#a78bfa', '#f472b6', '#34d399', '#facc15', '#fb923c', '#60a5fa', '#f87171'];
@@ -75,6 +76,7 @@ export default {
         <button class="btn ghost icon sm" data-a="connect" data-edit data-tip="Connect two nodes">${icon('spline', 'sm')}</button>
         <button class="btn ghost icon sm" data-a="layout" data-edit data-tip="Auto layout">${icon('wand-sparkles', 'sm')}</button>
         <button class="btn ghost sm" data-a="style" data-edit data-tip="Look: theme, branches, layout">${icon('palette', 'sm')}<span class="hide-sm">Style</span></button>
+        <button class="btn ghost sm fc-play" data-a="play" data-tip="Play: ideas flow out from the centre">${icon('play', 'sm')}<span class="hide-sm">Play</span></button>
         <button class="btn ghost icon sm" data-a="export" data-tip="Export">${icon('download', 'sm')}</button>
         <button class="btn ghost icon sm" data-a="panel" data-tip="Inspector">${icon('panel-right', 'sm')}</button>
       </div>
@@ -412,6 +414,7 @@ export default {
     }
 
     let anim = null, animRaf = 0;
+    let player = null; // flowing data (v1.18)
     function render({ panel = true } = {}) {
       kidsCache = buildKids();
       try { renderInner(panel); } finally { kidsCache = null; }
@@ -459,6 +462,26 @@ export default {
       if (panel) renderPanel(); // not while the user types in it
       $('[data-a="undo"]').disabled = !undoStack.length;
       $('[data-a="redo"]').disabled = !redoStack.length;
+      if (!anim) player?.refresh();
+    }
+    /** Branches for the flowing-data animation: from the central topic outwards, level by level. */
+    function flowList() {
+      const t = T(), vert = t.layout === 'down';
+      const one = (n) => ({ x: n.x, y: n.y, s: 1, o: 1 });
+      kidsCache = buildKids();
+      try {
+        [...nodes.values()].forEach(measure);
+        const items = [...nodes.values()].filter((n) => n.parent && nodes.has(n.parent) && !isHidden(n)).map((n) => {
+          const p = nodes.get(n.parent), s = sizes.get(n.key), ps = sizes.get(p.key);
+          const [a, c] = anchors(one(p), ps, one(n), s, vert);
+          const d = t.edge === 'straight' ? `M${a.x} ${a.y} L${c.x} ${c.y}` : t.edge === 'elbow' ? elbowPath(a, c, vert) : curvePath(a, c, vert);
+          const round = s.shape === 'pill' || s.shape === 'ellipse' || s.shape === 'cloud';
+          return { from: p.key, to: n.key, d, color: branchColor(n), dur: 0.8, r: s.depth === 1 ? 6.5 : 4.5,
+            target: { x: n.x - s.w / 2, y: n.y - s.h / 2, w: s.w, h: s.h, rx: round ? s.h / 2 : 11 } };
+        });
+        const when = schedule(items);
+        return items.map((f) => ({ ...f, delay: when.get(f) }));
+      } finally { kidsCache = null; }
     }
 
     // ------------------------------------------------------------ motion: topics glide to their new place, new ones grow out of their parent
@@ -908,6 +931,10 @@ export default {
         case 'zoom-out': stage.zoomAt(1 / 1.2); break;
         case 'fit': stage.fit(bbox()); break;
         case 'panel': $('[data-panel]').classList.toggle('hidden'); renderPanel(); break;
+        case 'play':
+          if (nodes.size < 2) { toast('Add a few topics first — ideas flow along the branches.', 'info'); break; }
+          player.toggle();
+          break;
         case 'style': {
           sel = null; selLink = -1;
           const p = $('[data-panel]');
@@ -923,6 +950,11 @@ export default {
             { label: 'Export as PNG', icon: 'image', onClick: () => exportPng(stage, bbox(), bg, name).catch(toastError) },
             { label: 'Export as SVG', icon: 'file-code', onClick: () => exportSvg(stage, bbox(), bg, name) },
             { label: 'Export as PDF', icon: 'file-text', onClick: () => exportPdf(stage, bbox(), bg, name).then(() => toast('PDF exported', 'success')).catch(toastError) },
+            { label: 'Export animated video (MP4)', icon: 'film', onClick: async () => {
+              const keep = sel; sel = null; selLink = -1; render();
+              try { const r = await exportFlowVideo({ stage, bbox: bbox(), background: bg, getFlows: flowList, name }); if (r) toast(r.ext === 'mp4' ? `Video saved (${Math.round(r.seconds)} s, ${r.width}×${r.height})` : 'This browser can only record WebM — saved as .webm', r.ext === 'mp4' ? 'success' : 'warning'); } catch (err) { toastError(err); }
+              sel = keep; render();
+            } },
             { divider: true },
             { label: isOwner ? 'Duplicate mind map' : 'Make a copy', icon: 'copy', onClick: async () => { await save(); const r = await api.post(`mindmaps/${id}/duplicate`).catch(toastError); if (r) navigate(`/mindmaps/${r.id}`); } },
             isOwner && { label: 'Move to trash', icon: 'trash-2', danger: true, onClick: async () => { if (await confirm({ title: 'Delete mind map?', message: 'It will be moved to the trash.', confirmText: 'Delete' })) { await api.post(`items/mindmap/${id}/trash`).catch(toastError); ctx.beforeLeave = null; navigate('/mindmaps'); } } },
@@ -995,6 +1027,11 @@ export default {
     const needsLayout = [...nodes.values()].filter((n) => n.parent).every((n) => !n.x && !n.y);
     [...nodes.values()].forEach(measure);
     if (needsLayout) autoLayout();
+    player = createFlowPlayer({ stage, getFlows: flowList, onState: (on) => {
+      const b = $('[data-a="play"]');
+      b.classList.toggle('active', on);
+      b.innerHTML = String(html`${icon(on ? 'pause' : 'play', 'sm')}<span class="hide-sm">${on ? 'Stop' : 'Play'}</span>`);
+    } });
     render();
     // Opening a map: the branches grow out of the central topic.
     if (nodes.size > 1 && nodes.size <= 120) { const intro = new Map(); roots().forEach((r) => intro.set(r.key, { x: r.x, y: r.y, vis: true })); animateFrom(intro); }
@@ -1011,6 +1048,7 @@ export default {
       document.removeEventListener('keydown', onKey);
       document.removeEventListener('keyup', onKeyUp);
       cancelAnimationFrame(animRaf);
+      player.destroy();
       autosave.cancel();
       stage.destroy();
       shell.saveHandler = null;

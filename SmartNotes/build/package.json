@@ -11,6 +11,7 @@
   },
   "devDependencies": {
     "esbuild": "^0.25.0",
-    "lucide": "^1.52.0"
+    "lucide": "^1.52.0",
+    "mp4-muxer": "^5.2.2"
   }
 }

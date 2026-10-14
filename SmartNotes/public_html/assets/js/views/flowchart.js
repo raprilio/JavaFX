@@ -7,6 +7,7 @@ import { shell } from '../core/shell.js';
 import { toast, toastError, menu, confirm, prompt } from '../core/ui.js';
 import { openItemShare } from '../components/itemShare.js';
 import { createStage, svgEl, wrapText, textBlock, themeColors, exportPng, exportSvg, exportPdf, safeName } from '../components/canvas.js';
+import { createFlowPlayer, exportFlowVideo, schedule } from '../components/flowPlayer.js';
 
 const SHAPES = {
   start: { label: 'Start', w: 140, h: 56, fill: '#22c55e' },
@@ -249,6 +250,7 @@ export default {
         <button class="btn ghost sm" data-a="style" data-edit data-tip="Look: theme, lines, background">${icon('palette', 'sm')}<span class="hide-sm">Style</span></button>
         <button class="btn ghost icon sm" data-a="duplicate" data-edit data-tip="Duplicate (Ctrl+D)">${icon('copy', 'sm')}</button>
         <button class="btn ghost icon sm" data-a="delete" data-edit data-tip="Delete (Del)">${icon('trash-2', 'sm')}</button>
+        <button class="btn ghost sm fc-play" data-a="play" data-tip="Play: data flows through the chart">${icon('play', 'sm')}<span class="hide-sm" data-play-label>Play</span></button>
         <button class="btn ghost icon sm" data-a="export" data-tip="Export">${icon('download', 'sm')}</button>
         <button class="btn ghost icon sm" data-a="panel" data-tip="Inspector">${icon('panel-right', 'sm')}</button>
       </div>
@@ -334,6 +336,7 @@ export default {
       return m;
     });
 
+    let player = null; // flowing data (v1.18), created below
     const snapshot = () => JSON.stringify({ nodes, edges, theme });
     const pushHistory = () => { undoStack.push(snapshot()); if (undoStack.length > 100) undoStack.shift(); redoStack.length = 0; };
     const restoreSnap = (s) => { const d = JSON.parse(s); nodes = d.nodes; edges = d.edges; if (d.theme) theme = d.theme; };
@@ -570,6 +573,25 @@ export default {
       if (panel) renderPanel();
       $('[data-a="undo"]').disabled = !undoStack.length;
       $('[data-a="redo"]').disabled = !redoStack.length;
+      player?.refresh();
+    }
+    /** Lines for the flowing-data animation, in the order the process runs. */
+    function flowList() {
+      const t = T();
+      const items = edges.map((e) => {
+        const geo = edgeGeom(e, t);
+        if (!geo) return null;
+        const a = byKey(e.source), b = byKey(e.target);
+        const lineW = t.line === 'ribbon' && !e.style.route ? 14 : t.lineW || 2;
+        return {
+          from: e.source, to: e.target, d: geo.d, color: e.style.stroke && e.style.stroke !== '#ffffff' ? e.style.stroke : colorOf(a, t),
+          dur: Math.max(0.6, Math.min(1.7, Math.hypot(geo.p2[0] - geo.p1[0], geo.p2[1] - geo.p1[1]) / 240)),
+          r: Math.max(4.5, Math.min(8, lineW * 0.6)),
+          target: { x: b.x, y: b.y, w: b.w, h: b.h, rx: Math.min(t.round ?? 9, b.h / 2) },
+        };
+      }).filter(Boolean);
+      const when = schedule(items);
+      return items.map((f) => ({ ...f, delay: when.get(f) }));
     }
     function bbox() {
       if (!nodes.length) return { x: -100, y: -60, w: 200, h: 120 };
@@ -935,6 +957,10 @@ export default {
         case 'zoom-out': stage.zoomAt(1 / 1.2); break;
         case 'fit': stage.fit(bbox()); break;
         case 'panel': $('[data-panel]').classList.toggle('hidden'); renderPanel(); break;
+        case 'play':
+          if (!edges.length) { toast('Connect a few shapes first — the data flows along the lines.', 'info'); break; }
+          player.toggle();
+          break;
         case 'style': {
           selected.clear(); selEdge = null;
           const p = $('[data-panel]');
@@ -952,6 +978,7 @@ export default {
             { label: 'Export as PNG', icon: 'image', onClick: clean(() => exportPng(stage, bbox(), bg, name)) },
             { label: 'Export as SVG', icon: 'file-code', onClick: clean(() => exportSvg(stage, bbox(), bg, name)) },
             { label: 'Export as PDF', icon: 'file-text', onClick: clean(() => exportPdf(stage, bbox(), bg, name)) },
+            { label: 'Export animated video (MP4)', icon: 'film', onClick: clean(async () => { const r = await exportFlowVideo({ stage, bbox: bbox(), background: bg, getFlows: flowList, name }); if (r) toast(r.ext === 'mp4' ? `Video saved (${Math.round(r.seconds)} s, ${r.width}×${r.height})` : 'This browser can only record WebM — saved as .webm', r.ext === 'mp4' ? 'success' : 'warning'); }) },
             { divider: true },
             { label: isOwner ? 'Duplicate flowchart' : 'Make a copy', icon: 'copy', onClick: async () => { await save(); const r = await api.post(`flowcharts/${id}/duplicate`).catch(toastError); if (r) navigate(`/flowcharts/${r.id}`); } },
             isOwner && { label: 'Move to trash', icon: 'trash-2', danger: true, onClick: async () => { if (await confirm({ title: 'Delete flowchart?', message: 'It will be moved to the trash.', confirmText: 'Delete' })) { await api.post(`items/flowchart/${id}/trash`).catch(toastError); ctx.beforeLeave = null; navigate('/flowcharts'); } } },
@@ -1026,6 +1053,11 @@ export default {
     shell.saveHandler = async () => { dirty = true; await save(); toast('Flowchart saved', 'success', { timeout: 1500 }); };
     ctx.beforeLeave = async () => { if (dirty || vpDirty) await save(); return true; };
 
+    player = createFlowPlayer({ stage, getFlows: flowList, onState: (on) => {
+      const b = $('[data-a="play"]');
+      b.classList.toggle('active', on);
+      b.innerHTML = String(html`${icon(on ? 'pause' : 'play', 'sm')}<span class="hide-sm" data-play-label>${on ? 'Stop' : 'Play'}</span>`);
+    } });
     render();
     requestAnimationFrame(() => {
       if (data.viewport && data.viewport.zoom) stage.setViewport(data.viewport);
@@ -1033,6 +1065,7 @@ export default {
       vpDirty = false;
     });
     return () => {
+      player.destroy();
       document.removeEventListener('keydown', onKey);
       document.removeEventListener('keyup', onKeyUp);
       autosave.cancel();
