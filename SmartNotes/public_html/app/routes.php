@@ -111,6 +111,14 @@ return [
     ['POST', 'audio/{id}', 'AudioController::update', 'auth'],
 
     // Tasks
+    // Team progress (v1.19): everyone sees it; chosen people post updates
+    ['GET', 'progress', 'ProgressController::index', 'auth'],
+    ['POST', 'progress', 'ProgressController::store', 'auth'],
+    ['GET', 'progress/{id}', 'ProgressController::show', 'auth'],
+    ['POST', 'progress/{id}', 'ProgressController::update', 'auth'],
+    ['POST', 'progress/{id}/updates', 'ProgressController::addUpdate', 'auth'],
+    ['POST', 'progress/{id}/delete', 'ProgressController::destroy', 'auth'],
+    ['POST', 'progress/{id}/restore', 'ProgressController::restore', 'auth'],
     ['GET', 'tasks', 'TasksController::index', 'auth'],
     ['POST', 'tasks', 'TasksController::store', 'auth'],
     ['POST', 'tasks/reorder', 'TasksController::reorder', 'auth'],

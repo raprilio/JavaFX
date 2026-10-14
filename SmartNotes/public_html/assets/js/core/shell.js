@@ -12,6 +12,7 @@ const NAV = [
   { path: '/', label: 'Dashboard', icon: 'layout-dashboard' },
   { path: '/notes', label: 'Notes', icon: 'notebook-pen' },
   { path: '/tasks', label: 'Tasks', icon: 'square-check-big' },
+  { path: '/progress', label: 'Team progress', icon: 'chart-no-axes-gantt' },
   { path: '/calendar', label: 'Calendar', icon: 'calendar-days' },
   { path: '/meetings', label: 'Meetings', icon: 'users' },
   { path: '/mindmaps', label: 'Mind Maps', icon: 'network' },
@@ -261,7 +262,7 @@ async function openNotifications(anchor) {
   const list = $('.notif-list', wrap);
   const items = r?.items || [];
   list.innerHTML = items.length ? items.map((n) => String(html`<div class="notif ${n.is_read ? '' : 'unread'}" data-id="${n.id}" data-link="${n.link || ''}">
-      <span class="n-icon">${icon(n.type === 'reminder' ? 'alarm-clock' : n.type === 'mention' ? 'at-sign' : 'bell', 'sm')}</span>
+      <span class="n-icon">${icon(n.type === 'reminder' ? 'alarm-clock' : n.type === 'mention' ? 'at-sign' : n.type === 'progress' ? 'chart-no-axes-gantt' : 'bell', 'sm')}</span>
       <div class="grow" style="min-width:0"><b>${n.title}</b>${n.message ? html`<div class="small muted" style="margin:2px 0">${n.message}</div>` : ''}<span>${timeAgo(n.created_at)}</span></div></div>`)).join('')
     : String(html`<div class="empty" style="padding:34px 16px"><div class="empty-art">${icon('bell-off', 'xl')}</div><h3>All caught up</h3><p>Reminders for tasks, meetings and schedules appear here.</p></div>`);
   wrap.addEventListener('click', async (e) => {

@@ -9,7 +9,7 @@ defined('SN_APP') || exit;
  */
 final class Migrator
 {
-    public const VERSION = 12;
+    public const VERSION = 13;
 
     public static function run(): void
     {
@@ -54,6 +54,9 @@ final class Migrator
             }
             if ($current < 12) {
                 self::v12();
+            }
+            if ($current < 13) {
+                self::v13();
             }
             Settings::set('schema_version', (string) self::VERSION);
         } finally {
@@ -270,6 +273,68 @@ final class Migrator
             DB::pdo()->exec(self::MAILBOX_ASSIGNMENTS_SQL);
         }
     }
+
+    /** v1.19: team progress tracker (visible to everyone, updated by chosen people). */
+    private static function v13(): void
+    {
+        foreach (['progress_items' => self::PROGRESS_ITEMS_SQL, 'progress_updaters' => self::PROGRESS_UPDATERS_SQL, 'progress_updates' => self::PROGRESS_UPDATES_SQL] as $t => $sql) {
+            if (!self::hasTable($t)) {
+                DB::pdo()->exec($sql);
+            }
+        }
+    }
+
+    public const PROGRESS_ITEMS_SQL = "CREATE TABLE `progress_items` (
+  `id`              INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `user_id`         INT UNSIGNED NULL COMMENT 'Creator: manages title, stages, fields and who may update',
+  `title`           VARCHAR(255) NOT NULL,
+  `description`     TEXT NULL,
+  `stages`          TEXT NULL COMMENT 'JSON [{name, percent}] from start to publish',
+  `fields`          TEXT NULL COMMENT 'JSON [{label, value}] custom fields',
+  `percent`         TINYINT UNSIGNED NOT NULL DEFAULT 0,
+  `stage`           VARCHAR(80) NULL,
+  `status`          ENUM('on_track','at_risk','blocked','done') NOT NULL DEFAULT 'on_track',
+  `priority`        ENUM('low','medium','high','urgent') NOT NULL DEFAULT 'medium',
+  `color`           VARCHAR(9) NULL,
+  `start_date`      DATE NULL,
+  `due_date`        DATE NULL,
+  `published_at`    DATETIME NULL COMMENT 'When it reached 100%',
+  `last_update_at`  DATETIME NULL,
+  `created_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `deleted_at`      DATETIME NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_progress_list` (`deleted_at`, `updated_at`),
+  KEY `fk_progress_user` (`user_id`),
+  CONSTRAINT `fk_progress_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+
+    public const PROGRESS_UPDATERS_SQL = "CREATE TABLE `progress_updaters` (
+  `item_id`     INT UNSIGNED NOT NULL,
+  `user_id`     INT UNSIGNED NOT NULL COMMENT 'Allowed to post progress updates',
+  `created_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`item_id`, `user_id`),
+  KEY `idx_progress_updaters_user` (`user_id`),
+  CONSTRAINT `fk_progress_updaters_item` FOREIGN KEY (`item_id`) REFERENCES `progress_items` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_progress_updaters_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+
+    public const PROGRESS_UPDATES_SQL = "CREATE TABLE `progress_updates` (
+  `id`            INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `item_id`       INT UNSIGNED NOT NULL,
+  `user_id`       INT UNSIGNED NULL,
+  `percent_from`  TINYINT UNSIGNED NOT NULL DEFAULT 0,
+  `percent`       TINYINT UNSIGNED NOT NULL,
+  `stage`         VARCHAR(80) NULL,
+  `status`        ENUM('on_track','at_risk','blocked','done') NOT NULL DEFAULT 'on_track',
+  `reason`        TEXT NOT NULL,
+  `created_at`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_progress_updates_item` (`item_id`, `created_at`),
+  KEY `fk_progress_updates_user` (`user_id`),
+  CONSTRAINT `fk_progress_updates_item` FOREIGN KEY (`item_id`) REFERENCES `progress_items` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_progress_updates_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
 
     /** v1.16: @mentions in notes; mind map look (theme per map, style per topic). */
     private static function v12(): void

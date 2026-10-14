@@ -288,6 +288,59 @@ CREATE TABLE IF NOT EXISTS `tasks` (
   CONSTRAINT `fk_tasks_meeting` FOREIGN KEY (`meeting_id`) REFERENCES `meetings` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- v1.19 team progress tracker
+CREATE TABLE IF NOT EXISTS `progress_items` (
+  `id`              INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `user_id`         INT UNSIGNED NULL COMMENT 'Creator: manages title, stages, fields and who may update',
+  `title`           VARCHAR(255) NOT NULL,
+  `description`     TEXT NULL,
+  `stages`          TEXT NULL COMMENT 'JSON [{name, percent}] from start to publish',
+  `fields`          TEXT NULL COMMENT 'JSON [{label, value}] custom fields',
+  `percent`         TINYINT UNSIGNED NOT NULL DEFAULT 0,
+  `stage`           VARCHAR(80) NULL,
+  `status`          ENUM('on_track','at_risk','blocked','done') NOT NULL DEFAULT 'on_track',
+  `priority`        ENUM('low','medium','high','urgent') NOT NULL DEFAULT 'medium',
+  `color`           VARCHAR(9) NULL,
+  `start_date`      DATE NULL,
+  `due_date`        DATE NULL,
+  `published_at`    DATETIME NULL COMMENT 'When it reached 100%',
+  `last_update_at`  DATETIME NULL,
+  `created_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `deleted_at`      DATETIME NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_progress_list` (`deleted_at`, `updated_at`),
+  KEY `fk_progress_user` (`user_id`),
+  CONSTRAINT `fk_progress_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `progress_updaters` (
+  `item_id`     INT UNSIGNED NOT NULL,
+  `user_id`     INT UNSIGNED NOT NULL COMMENT 'Allowed to post progress updates',
+  `created_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`item_id`, `user_id`),
+  KEY `idx_progress_updaters_user` (`user_id`),
+  CONSTRAINT `fk_progress_updaters_item` FOREIGN KEY (`item_id`) REFERENCES `progress_items` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_progress_updaters_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `progress_updates` (
+  `id`            INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `item_id`       INT UNSIGNED NOT NULL,
+  `user_id`       INT UNSIGNED NULL,
+  `percent_from`  TINYINT UNSIGNED NOT NULL DEFAULT 0,
+  `percent`       TINYINT UNSIGNED NOT NULL,
+  `stage`         VARCHAR(80) NULL,
+  `status`        ENUM('on_track','at_risk','blocked','done') NOT NULL DEFAULT 'on_track',
+  `reason`        TEXT NOT NULL,
+  `created_at`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_progress_updates_item` (`item_id`, `created_at`),
+  KEY `fk_progress_updates_user` (`user_id`),
+  CONSTRAINT `fk_progress_updates_item` FOREIGN KEY (`item_id`) REFERENCES `progress_items` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_progress_updates_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Personal IMAP/SMTP mailboxes (Gmail with an App Password, etc.), one user each (v1.8)
 CREATE TABLE IF NOT EXISTS `mail_accounts` (
   `id`            INT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -856,7 +909,7 @@ INSERT IGNORE INTO `settings` (`setting_key`, `setting_value`) VALUES
 ('smtp_encryption', 'tls'),
 ('smtp_from_name', 'SmartNotes'),
 ('smtp_from_email', ''),
-('schema_version', '12'),
+('schema_version', '13'),
 ('allow_note_sharing', '1'),
 ('logo_display', 'logo'),
 ('logo_height', '34'),
