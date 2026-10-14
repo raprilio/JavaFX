@@ -209,7 +209,7 @@ export function createStage(container, { grid = false, onChange } = {}) {
 // ------------------------------------------------------------------ export
 function buildExportSvg(stage, bbox, background, pad = 40) {
   const clone = stage.svg.cloneNode(true);
-  clone.querySelectorAll('.ui-only, .sel-ring, .fc-port, .fc-handle, .mm-toggle-ui').forEach((n) => n.remove());
+  clone.querySelectorAll('.ui-only, .sel-ring, .fc-port, .fc-handle, .mm-toggle-ui, .edge-hit').forEach((n) => n.remove()); // hit areas are styled by app CSS only: in a file they would paint black
   const vpG = clone.querySelector('.viewport');
   vpG.removeAttribute('transform');
   const w = Math.ceil(bbox.w + pad * 2), hgt = Math.ceil(bbox.h + pad * 2);

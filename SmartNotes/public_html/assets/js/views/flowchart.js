@@ -250,7 +250,7 @@ export default {
         <button class="btn ghost sm" data-a="style" data-edit data-tip="Look: theme, lines, background">${icon('palette', 'sm')}<span class="hide-sm">Style</span></button>
         <button class="btn ghost icon sm" data-a="duplicate" data-edit data-tip="Duplicate (Ctrl+D)">${icon('copy', 'sm')}</button>
         <button class="btn ghost icon sm" data-a="delete" data-edit data-tip="Delete (Del)">${icon('trash-2', 'sm')}</button>
-        <button class="btn ghost sm fc-play" data-a="play" data-tip="Play: data flows through the chart">${icon('play', 'sm')}<span class="hide-sm" data-play-label>Play</span></button>
+        <button class="btn ghost sm flow-play" data-a="play" data-tip="Play: data flows through the chart">${icon('play', 'sm')}<span class="hide-sm" data-play-label>Play</span></button>
         <button class="btn ghost icon sm" data-a="export" data-tip="Export">${icon('download', 'sm')}</button>
         <button class="btn ghost icon sm" data-a="panel" data-tip="Inspector">${icon('panel-right', 'sm')}</button>
       </div>

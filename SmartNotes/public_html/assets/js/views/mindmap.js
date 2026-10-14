@@ -76,7 +76,7 @@ export default {
         <button class="btn ghost icon sm" data-a="connect" data-edit data-tip="Connect two nodes">${icon('spline', 'sm')}</button>
         <button class="btn ghost icon sm" data-a="layout" data-edit data-tip="Auto layout">${icon('wand-sparkles', 'sm')}</button>
         <button class="btn ghost sm" data-a="style" data-edit data-tip="Look: theme, branches, layout">${icon('palette', 'sm')}<span class="hide-sm">Style</span></button>
-        <button class="btn ghost sm fc-play" data-a="play" data-tip="Play: ideas flow out from the centre">${icon('play', 'sm')}<span class="hide-sm">Play</span></button>
+        <button class="btn ghost sm flow-play" data-a="play" data-tip="Play: ideas flow out from the centre">${icon('play', 'sm')}<span class="hide-sm">Play</span></button>
         <button class="btn ghost icon sm" data-a="export" data-tip="Export">${icon('download', 'sm')}</button>
         <button class="btn ghost icon sm" data-a="panel" data-tip="Inspector">${icon('panel-right', 'sm')}</button>
       </div>
