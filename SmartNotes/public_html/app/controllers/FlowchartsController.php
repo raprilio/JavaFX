@@ -15,7 +15,17 @@ final class FlowchartsController
         'rect', 'rounded', 'ellipse', 'triangle', 'hexagon', 'star', 'arrow', 'callout', 'zone', 'text',
         // electronics (v1.11)
         'tablet', 'kiosk', 'pos', 'edc', 'atm', 'barcode', 'fingerprint', 'queue', 'tv', 'signage', 'projector', 'camera', 'speaker',
-        'headset', 'smartwatch', 'iot', 'tower', 'satellite', 'ups', 'ac', 'lamp'];
+        'headset', 'smartwatch', 'iot', 'tower', 'satellite', 'ups', 'ac', 'lamp',
+        // swimlanes and cards (v1.17)
+        'lane', 'laneh', 'card'];
+    /** Look of the whole chart (v1.17), kept in settings_json.theme: only known values survive. */
+    private const THEME = [
+        'preset' => ['classic', 'gradient', 'infographic', 'corporate', 'midnight', 'airy'],
+        'line' => ['curve', 'elbow', 'straight', 'ribbon'],
+        'end' => ['arrow', 'chevron', 'dot', 'none'],
+        'bg' => ['plain', 'gradient', 'dark'],
+        'labels' => ['box', 'pill', 'plain'],
+    ];
     private const PORTS = ['top', 'right', 'bottom', 'left'];
     private const MAX_NODES = 2000;
 
@@ -178,7 +188,7 @@ final class FlowchartsController
                 ]);
             }
             if (isset($in['settings']) && is_array($in['settings'])) {
-                $meta['settings_json'] = json_encode(['grid' => (bool) ($in['settings']['grid'] ?? true), 'snap' => (bool) ($in['settings']['snap'] ?? true)]);
+                $meta['settings_json'] = json_encode(self::settings($in['settings']));
             }
             DB::update('flowcharts', $meta, 'id = ?', [$id]);
             if (isset($in['nodes']) && is_array($in['nodes'])) {
@@ -186,6 +196,28 @@ final class FlowchartsController
             }
         });
         Http::ok(['id' => $id, 'updated_at' => $ts, 'revision' => (int) DB::val('SELECT revision FROM flowcharts WHERE id = ?', [$id])]);
+    }
+
+    public static function settings(array $in): array
+    {
+        $out = ['grid' => (bool) ($in['grid'] ?? true), 'snap' => (bool) ($in['snap'] ?? true)];
+        if (isset($in['theme']) && is_array($in['theme'])) {
+            $t = [];
+            foreach (self::THEME as $k => $allowed) {
+                if (isset($in['theme'][$k]) && in_array($in['theme'][$k], $allowed, true)) {
+                    $t[$k] = $in['theme'][$k];
+                }
+            }
+            foreach (['shadow', 'flow', 'title'] as $k) {
+                if (array_key_exists($k, $in['theme'])) {
+                    $t[$k] = (bool) $in['theme'][$k];
+                }
+            }
+            if ($t) {
+                $out['theme'] = $t;
+            }
+        }
+        return $out;
     }
 
     private static function style(mixed $s): ?string
@@ -207,6 +239,22 @@ final class FlowchartsController
         }
         if (in_array($s['arrow'] ?? null, ['both', 'none'], true)) {
             $out['arrow'] = $s['arrow']; // default (absent) = arrow at the end
+        }
+        // v1.17: second text line, icon, gradient fill (shapes); route and thickness (lines)
+        if (isset($s['sub']) && is_string($s['sub']) && ($sub = trim(strip_tags($s['sub']))) !== '') {
+            $out['sub'] = mb_substr($sub, 0, 200);
+        }
+        if (isset($s['icon']) && is_string($s['icon']) && preg_match('/^[a-z0-9-]{1,40}$/', $s['icon'])) {
+            $out['icon'] = $s['icon'];
+        }
+        if (!empty($s['grad'])) {
+            $out['grad'] = true;
+        }
+        if (in_array($s['route'] ?? null, ['curve', 'elbow', 'straight'], true)) {
+            $out['route'] = $s['route'];
+        }
+        if (in_array($s['width'] ?? null, ['s', 'l'], true)) {
+            $out['width'] = $s['width'];
         }
         return $out ? json_encode($out) : null;
     }
@@ -287,7 +335,7 @@ final class FlowchartsController
                 'title' => mb_substr($src['title'] . ' (copy)', 0, 255),
                 'description' => $src['description'],
                 'viewport' => $src['viewport'] ? json_encode($src['viewport']) : null,
-                'settings_json' => json_encode($src['settings']),
+                'settings_json' => json_encode(self::settings((array) $src['settings'])),
             ]);
             self::saveGraph($newId, $src['nodes'], $src['edges']);
             return $newId;

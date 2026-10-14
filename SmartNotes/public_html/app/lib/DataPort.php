@@ -219,7 +219,7 @@ final class DataPort
                 if (!is_array($f)) {
                     continue;
                 }
-                $id = DB::insert('flowcharts', ['user_id' => $userId, 'title' => V::str($f['title'] ?? 'Flowchart', 255) ?? 'Flowchart', 'description' => V::str($f['description'] ?? null, 2000), 'settings_json' => json_encode(['grid' => true, 'snap' => true])]);
+                $id = DB::insert('flowcharts', ['user_id' => $userId, 'title' => V::str($f['title'] ?? 'Flowchart', 255) ?? 'Flowchart', 'description' => V::str($f['description'] ?? null, 2000), 'settings_json' => json_encode(FlowchartsController::settings(is_array($f['settings'] ?? null) ? $f['settings'] : []))]);
                 FlowchartsController::saveGraph($id, (array) ($f['nodes'] ?? []), (array) ($f['edges'] ?? []));
                 $counts['flowcharts']++;
             }

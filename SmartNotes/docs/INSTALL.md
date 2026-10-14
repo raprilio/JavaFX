@@ -196,6 +196,8 @@ File backup disimpan di `storage/backups/` (tidak bisa diakses publik). Simpan s
 2. Upload ulang semua file **kecuali** `app/config.php`, `uploads/`, dan `storage/`.
 3. Buka aplikasi. Perubahan skema dijalankan **otomatis** oleh migrator saat request pertama (tidak perlu phpMyAdmin). Versi skema tersimpan di tabel `settings` (`schema_version`).
 
+**Upgrade ke v1.17** (tampilan flowchart, swimlane, card): timpa file seperti biasa. Tidak ada perubahan database (tampilan disimpan di kolom `settings_json` / `configuration_json` yang sudah ada).
+
 **Upgrade ke v1.16** (tabel & undo, link "#", @mention, mind map tema): timpa file seperti biasa. Database diperbarui **otomatis** ke skema 12 (tabel baru `note_mentions`, kolom `mindmaps.theme` dan `mindmap_nodes.style`) pada request pertama — tanpa phpMyAdmin.
 
 **Upgrade ke v1.15** (full screen Android / PWA, keyboard HP, Assign to): timpa file — termasuk file baru di root `public_html/`: `manifest.php`, `icon.php`, `sw.js`. Tidak ada perubahan database. Agar bisa di-*install*, situs harus memakai **HTTPS**. Di HP yang sudah punya shortcut lama: hapus shortcut, buka situs di Chrome, lalu **⋮ → Add to Home screen** lagi.

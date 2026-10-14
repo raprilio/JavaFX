@@ -1492,3 +1492,46 @@ body:has(> .draw-root) > .modal-root { z-index: 420; }
 .mm-emo.active { border-color: var(--accent); background: var(--accent-soft); }
 svg .mm-node { transition: opacity .12s; }
 .rte[contenteditable="true"] table { margin-bottom: 30px; } /* room for the "+ row" strip */
+
+/* ===================================================================== v1.17 flowchart looks */
+.canvas-stage.fc-dark { color-scheme: dark; }
+.canvas-stage.fc-dark .canvas-hint, .canvas-stage.fc-dark .canvas-zoom { background: rgba(40, 45, 66, .82); border-color: #4b5274; color: #d3d9f3; }
+.canvas-stage.fc-dark .canvas-zoom .btn { color: #d3d9f3; }
+svg .fc-flow { stroke-dasharray: 3 15; animation: fcFlow 1.1s linear infinite; pointer-events: none; }
+@keyframes fcFlow { to { stroke-dashoffset: -18; } }
+@media (prefers-reduced-motion: reduce) { svg .fc-flow { animation: none; } }
+svg .fc-lane .body { pointer-events: none; }
+svg .fc-node .frame { pointer-events: none; }
+.fc-h { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 650; color: var(--text-2); margin: 2px 0 8px; }
+.fc-presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-bottom: 12px; }
+.fc-preset { display: flex; flex-direction: column; gap: 5px; padding: 6px; border-radius: 11px; border: 1.5px solid var(--border); background: var(--bg-elev); color: var(--text); cursor: pointer; transition: border-color .15s, transform .15s; }
+.fc-preset:hover { transform: translateY(-1px); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.fc-preset.active { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.fc-pv { display: flex; align-items: center; justify-content: center; gap: 0; height: 32px; border-radius: 7px; background: var(--bg-soft); padding: 0 6px; }
+.fc-pv i { width: 15px; height: 11px; border-radius: 3px; background: var(--c); flex: none; }
+.fc-pv b { width: 9px; height: 2px; background: #94a3b8; flex: none; }
+.fc-preset[data-p="gradient"] .fc-pv { background: linear-gradient(160deg, #f5f3ff, #fdf2f8, #eff6ff); }
+.fc-preset[data-p="gradient"] .fc-pv i { border-radius: 4px; background: linear-gradient(180deg, color-mix(in srgb, var(--c) 70%, #fff), var(--c)); box-shadow: 0 3px 6px color-mix(in srgb, var(--c) 45%, transparent); }
+.fc-preset[data-p="gradient"] .fc-pv b { height: 5px; background: linear-gradient(90deg, #f9a8d4, #c4b5fd); border-radius: 3px; }
+.fc-preset[data-p="infographic"] .fc-pv { background: #e5e9ee; }
+.fc-preset[data-p="infographic"] .fc-pv i { outline: 2.5px solid #fff; border-radius: 3px; }
+.fc-preset[data-p="infographic"] .fc-pv b { height: 3px; background: #fff; }
+.fc-preset[data-p="corporate"] .fc-pv { background: #fff; border: 1px solid #e2e8f0; }
+.fc-preset[data-p="corporate"] .fc-pv i { border-radius: 1px; }
+.fc-preset[data-p="corporate"] .fc-pv b { height: 1.5px; background: #7ea6e0; }
+.fc-preset[data-p="midnight"] .fc-pv { background: #2b3045; }
+.fc-preset[data-p="midnight"] .fc-pv i { background: color-mix(in srgb, var(--c) 25%, #2b3045); border: 1.5px solid var(--c); }
+.fc-preset[data-p="midnight"] .fc-pv b { background: #e2e8f0; height: 1.5px; }
+.fc-preset[data-p="airy"] .fc-pv { background: linear-gradient(135deg, #fff, #e2e8f0); }
+.fc-preset[data-p="airy"] .fc-pv i { box-shadow: 0 5px 8px rgba(15, 23, 42, .25); }
+.fc-pl { font-size: 11.5px; font-weight: 600; text-align: center; }
+.fc-seg { gap: 4px; }
+.fc-seg .btn.xs { padding: 0 8px; }
+.fc-sw { margin: 4px 0; font-size: 13px; }
+.fc-icons { display: grid; grid-template-columns: repeat(8, 1fr); gap: 3px; }
+.fc-ic { height: 28px; border-radius: 7px; border: 1px solid transparent; background: var(--bg-soft); color: var(--text-2); display: grid; place-items: center; cursor: pointer; padding: 0; }
+.fc-ic:hover { background: var(--bg-hover); }
+.fc-ic.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.fc-presets, .mm-presets { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.fc-preset, .mm-preset { min-width: 0; }
+.fc-pl, .mm-pl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
