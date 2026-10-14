@@ -31,7 +31,7 @@ header('X-Frame-Options: SAMEORIGIN');
 header('Referrer-Policy: strict-origin-when-cross-origin');
 header('Permissions-Policy: camera=(), geolocation=(), microphone=(self)');
 header("Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'");
-header('Cache-Control: no-cache');
+header('Cache-Control: no-store'); // v1.18: never keep the shell in the HTTP cache, so offline phones get the "You are offline" page
 if (is_https()) {
     header('Strict-Transport-Security: max-age=31536000');
 }
