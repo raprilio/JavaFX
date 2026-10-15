@@ -283,6 +283,7 @@ export default {
         return;
       }
       const act = e.target.closest('[data-act]')?.dataset.act;
+      if (act === 'customize') return customize(paint);
       if (act === 'layout') { el.classList.toggle('dash-editing'); return paint(); }
       if (act === 'layout-reset') {
         if (!(await confirm({ title: 'Reset the layout?', message: 'Widgets go back to their original place and size. Hidden widgets stay hidden.', confirmText: 'Reset', danger: false, icon: 'rotate-ccw' }))) return;
