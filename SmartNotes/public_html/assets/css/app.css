@@ -1616,3 +1616,21 @@ svg .fc-node .frame { pointer-events: none; }
   .pg-chart .pg-gl { font-size: 20px; }
   .pg-big { font-size: 40px; }
 }
+
+/* v1.19 dashboard: Team progress lines */
+.tp-sum { margin: -4px 0 10px; }
+.tp-sum b { color: var(--text); }
+.tp-list { display: flex; flex-direction: column; gap: 12px; }
+.tp-row { display: block; color: inherit; text-decoration: none; border-radius: 10px; padding: 4px 6px; margin: 0 -6px; }
+.tp-row:hover { background: var(--bg-soft); text-decoration: none; }
+.tp-row:hover * { text-decoration: none; }
+.tp-top { display: flex; align-items: baseline; gap: 6px; margin-bottom: 5px; min-width: 0; }
+.tp-title { font-weight: 600; font-size: 13.5px; min-width: 0; }
+.tp-you { flex: none; font-size: 10.5px; font-weight: 650; padding: 0 6px; border-radius: 8px; color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.tp-stage { margin-left: auto; flex: 0 1 auto; max-width: 45%; font-size: 11.5px; color: var(--text-3); display: inline-flex; align-items: center; gap: 3px; }
+.tp-line { display: flex; align-items: center; gap: 10px; }
+.tp-track { flex: 1; height: 16px; padding: 3px; border-radius: 10px; background: color-mix(in srgb, var(--text-3) 22%, var(--bg-soft)); box-shadow: inset 0 1px 2px rgb(0 0 0 / .12); }
+.tp-track > span { display: block; height: 100%; width: var(--w); min-width: 0; border-radius: 7px; background: linear-gradient(180deg, color-mix(in srgb, var(--c) 82%, #fff), var(--c)); animation: tp-grow .9s var(--ease) both; }
+.tp-pct { flex: none; width: 40px; text-align: right; font-size: 13px; font-weight: 700; color: var(--c); font-variant-numeric: tabular-nums; }
+@keyframes tp-grow { from { width: 0; } }
+@media (prefers-reduced-motion: reduce) { .tp-track > span { animation: none; } }

@@ -196,6 +196,8 @@ File backup disimpan di `storage/backups/` (tidak bisa diakses publik). Simpan s
 2. Upload ulang semua file **kecuali** `app/config.php`, `uploads/`, dan `storage/`.
 3. Buka aplikasi. Perubahan skema dijalankan **otomatis** oleh migrator saat request pertama (tidak perlu phpMyAdmin). Versi skema tersimpan di tabel `settings` (`schema_version`).
 
+**Upgrade ke v1.19.1** (widget Team progress di Dashboard): timpa file. Tidak ada perubahan database.
+
 **Upgrade ke v1.19** (Team progress): timpa file seperti biasa. Database diperbarui **otomatis** ke skema 13 (tabel baru `progress_items`, `progress_updaters`, `progress_updates`) pada request pertama — tanpa phpMyAdmin. Data lama tidak disentuh.
 
 **Upgrade ke v1.18** (Play + video MP4 flowchart & mind map): timpa file. Tidak ada perubahan database. Pembuat MP4 (`mp4-muxer`) sudah dibundel ke `assets/dist` dan hanya dimuat saat ekspor video.

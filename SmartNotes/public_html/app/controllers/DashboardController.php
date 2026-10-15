@@ -43,6 +43,30 @@ final class DashboardController
             'in_progress' => (int) $tasks['in_progress'],
             'percent' => $totalTasks ? (int) round(((int) $tasks['completed'] / $totalTasks) * 100) : 0,
         ];
+        // Team progress (v1.19): visible to everyone; work in progress first, then the latest published.
+        $team = DB::all(
+            "SELECT p.id, p.title, p.percent, p.stage, p.status, p.color, p.published_at,
+                    EXISTS(SELECT 1 FROM progress_updaters u WHERE u.item_id = p.id AND u.user_id = ?) AS mine
+             FROM progress_items p WHERE p.deleted_at IS NULL
+             ORDER BY p.published_at IS NOT NULL, COALESCE(p.published_at, p.last_update_at, p.updated_at) DESC, p.id DESC LIMIT 6",
+            [$uid]
+        );
+        foreach ($team as &$tp) {
+            $tp['id'] = (int) $tp['id'];
+            $tp['percent'] = (int) $tp['percent'];
+            $tp['mine'] = (bool) $tp['mine'];
+        }
+        unset($tp);
+        $teamSum = DB::one(
+            "SELECT COUNT(*) total, SUM(published_at IS NULL) active, ROUND(AVG(CASE WHEN published_at IS NULL THEN percent END)) avg_active
+             FROM progress_items WHERE deleted_at IS NULL"
+        );
+        $teamProgress = [
+            'items' => $team,
+            'total' => (int) $teamSum['total'],
+            'active' => (int) $teamSum['active'],
+            'avg_active' => (int) $teamSum['avg_active'],
+        ];
         $today = Agenda::range($uid, today() . ' 00:00:00', today() . ' 23:59:59');
         $upcoming = array_values(array_filter(
             Agenda::range($uid, date('Y-m-d 00:00:00', strtotime('+1 day')), date('Y-m-d 23:59:59', strtotime('+14 days')), ['event', 'meeting']),
@@ -92,6 +116,7 @@ final class DashboardController
             'shared_notes' => $shared,
             'counts' => $counts,
             'progress' => $progress,
+            'team_progress' => $teamProgress,
             'today' => $today,
             'today_tasks' => $todayTasks,
             'upcoming' => array_slice($upcoming, 0, 8),

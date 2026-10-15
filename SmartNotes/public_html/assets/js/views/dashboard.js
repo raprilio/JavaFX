@@ -9,6 +9,13 @@ import { CREATE_ITEMS } from '../core/actions.js';
 
 const TYPE_COLOR = { event: '#8b5cf6', meeting: '#0ea5e9', task: '#10b981' };
 const TYPE_ICON = { event: 'calendar-days', meeting: 'users', task: 'square-check-big' };
+/** Team progress line colours by status (yellow = at risk, red = blocked). */
+const TP_COLOR = { on_track: '#22c55e', at_risk: '#eab308', blocked: '#ef4444', done: '#10b981' };
+const TP_LABEL = { on_track: 'On track', at_risk: 'At risk', blocked: 'Blocked', done: 'Published' };
+
+const teamRow = (it) => html`<a class="tp-row" href="#/progress/${it.id}" style="--c:${TP_COLOR[it.status] || TP_COLOR.on_track}" data-tip="${TP_LABEL[it.status] || ''}${it.stage ? ` · ${it.stage}` : ''}">
+  <div class="tp-top"><span class="tp-title truncate">${it.title}</span>${it.mine ? html`<span class="tp-you">you</span>` : ''}<span class="tp-stage truncate">${it.status === 'done' ? html`${icon('rocket', 'xs')} Published` : it.stage || ''}</span></div>
+  <div class="tp-line"><div class="tp-track" role="progressbar" aria-valuenow="${it.percent}" aria-valuemin="0" aria-valuemax="100"><span style="--w:${it.percent}%"></span></div><b class="tp-pct">${it.percent}%</b></div></a>`;
 
 /** [key, label, value(counts), icon, color, foot(counts), link] */
 const STATS = [
@@ -27,6 +34,7 @@ const STATS = [
 const SECTIONS = [
   ['quick_create', 'Quick create', 'plus'], ['stats', 'Statistic cards', 'chart-column'], ['today', 'Today', 'sun'],
   ['shared_notes', 'Shared with me', 'users'], ['recent_notes', 'Recent notes', 'history'], ['task_progress', 'Task progress', 'chart-pie'],
+  ['team_progress', 'Team progress', 'chart-no-axes-gantt'],
   ['upcoming', 'Upcoming', 'calendar-clock'], ['notes_week', 'Notes this week', 'activity'],
 ];
 
@@ -60,6 +68,7 @@ function render(el, d) {
   const show = (k) => !hidden.has(k);
   const c = d.counts;
   const p = d.progress;
+  const tp = d.team_progress || { items: [], active: 0, avg_active: 0 };
   const first = (state.user.name || '').split(' ')[0];
   const maxSeries = Math.max(1, ...d.notes_series.map((s) => s.count));
   const todayItems = [...d.today];
@@ -93,6 +102,9 @@ function render(el, d) {
           ${c.tasks_overdue ? html`<div class="badge danger">${icon('alert-triangle', 'sm')} ${c.tasks_overdue} overdue</div>` : ''}
         </div></div>
         <div class="progress mt-3"><span style="width:${p.percent}%"></span></div></div></div>`,
+    show('team_progress') && html`<div class="card" data-widget="team_progress"><div class="card-head"><h3>${icon('chart-no-axes-gantt', 'sm')} Team progress</h3><div class="row" style="gap:2px"><a class="btn ghost sm" href="#/progress">View all ${icon('chevron-right', 'sm')}</a>${hideBtn('team_progress')}</div></div>
+      <div class="card-body">${tp.items.length ? html`${tp.active ? html`<div class="tp-sum small muted">${tp.active} in progress · average <b>${tp.avg_active}%</b></div>` : ''}<div class="tp-list">${tp.items.map(teamRow)}</div>`
+        : html`<p class="small subtle" style="margin:0">No team progress yet. <a href="#/progress">Start tracking</a></p>`}</div></div>`,
     show('upcoming') && html`<div class="card" data-widget="upcoming"><div class="card-head"><h3>${icon('calendar-clock', 'sm')} Upcoming</h3><div class="row" style="gap:2px"><a class="btn ghost sm" href="#/calendar">Calendar</a>${hideBtn('upcoming')}</div></div>
       <div class="card-body">${d.upcoming.length ? d.upcoming.map((it) => {
         const dt = parseDate(it.start);
