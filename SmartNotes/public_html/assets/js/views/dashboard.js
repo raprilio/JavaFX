@@ -14,7 +14,7 @@ const TP_COLOR = { on_track: '#22c55e', at_risk: '#eab308', blocked: '#ef4444', 
 const TP_LABEL = { on_track: 'On track', at_risk: 'At risk', blocked: 'Blocked', done: 'Published' };
 
 const teamRow = (it) => html`<a class="tp-row" href="#/progress/${it.id}" style="--c:${TP_COLOR[it.status] || TP_COLOR.on_track}" data-tip="${TP_LABEL[it.status] || ''}${it.stage ? ` · ${it.stage}` : ''}">
-  <div class="tp-top"><span class="tp-title truncate">${it.title}</span>${it.mine ? html`<span class="tp-you">you</span>` : ''}<span class="tp-stage truncate">${it.status === 'done' ? html`${icon('rocket', 'xs')} Published` : it.stage || ''}</span></div>
+  <div class="tp-top">${it.pinned ? html`<span class="tp-pin" data-tip="Pinned">${icon('pin', 'xs')}</span>` : ''}<span class="tp-title truncate">${it.title}</span>${it.mine ? html`<span class="tp-you">you</span>` : ''}<span class="tp-stage truncate">${it.status === 'done' ? html`${icon('rocket', 'xs')} Published` : it.stage || ''}</span></div>
   <div class="tp-line"><div class="tp-track" role="progressbar" aria-valuenow="${it.percent}" aria-valuemin="0" aria-valuemax="100"><span style="--w:${it.percent}%"></span></div><b class="tp-pct">${it.percent}%</b></div></a>`;
 
 /** [key, label, value(counts), icon, color, foot(counts), link] */

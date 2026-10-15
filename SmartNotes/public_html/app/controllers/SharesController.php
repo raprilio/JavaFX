@@ -130,6 +130,7 @@ final class SharesController
         if (!$n && !DB::val('SELECT id FROM note_shares WHERE note_id = ? AND user_id = ?', [$noteId, $u['id']])) {
             throw new HttpException('Note not found.', 404);
         }
+        NotesController::forgetPinOrder((int) $u['id'], [$noteId]);
         Http::ok(['pinned' => (bool) V::bool(Http::input('pinned'))]);
     }
 

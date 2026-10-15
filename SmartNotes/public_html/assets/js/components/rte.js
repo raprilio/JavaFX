@@ -54,7 +54,7 @@ export function createRTE({ content = '', placeholder = 'Start writing…', medi
   // and handwriting are changed through the DOM, and after such a change the native stack breaks (deleting a table
   // could not be undone). So every state of the note is kept as a snapshot here: one history for every kind of edit.
   const hist = { stack: [], i: -1, timer: 0 };
-  const TRANSIENT = ['selected', 'mf-hit', 'mf-me', 'me', 'tbl-hl', 'tbl-del'];
+  const TRANSIENT = ['selected', 'mf-hit', 'mf-me', 'me', 'tbl-hl', 'tbl-del', 'tbl-sel'];
   function cleanHTML() {
     const clone = editor.cloneNode(true);
     TRANSIENT.forEach((c) => clone.querySelectorAll('.' + c).forEach((x) => x.classList.remove(c)));

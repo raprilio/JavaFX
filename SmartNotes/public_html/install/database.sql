@@ -169,6 +169,7 @@ CREATE TABLE IF NOT EXISTS `notes` (
   `is_pinned`       TINYINT(1) NOT NULL DEFAULT 0,
   `pinned_global`   TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Pinned by an admin for every user (v1.9)',
   `pinned_global_at` DATETIME NULL,
+  `pinned_global_pos` INT NULL COMMENT 'Order of the notes pinned for everyone (v1.20)',
   `is_favorite`     TINYINT(1) NOT NULL DEFAULT 0,
   `is_archived`     TINYINT(1) NOT NULL DEFAULT 0,
   `is_locked`       TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Requires the owner''s notes PIN to open',
@@ -308,10 +309,28 @@ CREATE TABLE IF NOT EXISTS `progress_items` (
   `created_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `deleted_at`      DATETIME NULL,
+  `pinned_global`   TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Pinned by an admin for everyone (v1.20)',
+  `pinned_global_at` DATETIME NULL,
+  `pinned_global_by` INT UNSIGNED NULL,
+  `pinned_global_pos` INT NULL,
   PRIMARY KEY (`id`),
   KEY `idx_progress_list` (`deleted_at`, `updated_at`),
   KEY `fk_progress_user` (`user_id`),
-  CONSTRAINT `fk_progress_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
+  KEY `fk_progress_pinned_by` (`pinned_global_by`),
+  CONSTRAINT `fk_progress_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_progress_pinned_by` FOREIGN KEY (`pinned_global_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- v1.20 pins & own order: my pinned notes' order, Team progress I pinned, my order of Team progress
+CREATE TABLE IF NOT EXISTS `user_pins` (
+  `user_id`     INT UNSIGNED NOT NULL,
+  `kind`        VARCHAR(20) NOT NULL COMMENT 'note = order of my pinned notes, progress = Team progress I pinned, progress_order = my own order of Team progress',
+  `item_id`     INT UNSIGNED NOT NULL,
+  `position`    INT NOT NULL DEFAULT 0,
+  `created_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`user_id`, `kind`, `item_id`),
+  KEY `idx_user_pins_item` (`kind`, `item_id`),
+  CONSTRAINT `fk_user_pins_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `progress_updaters` (
@@ -909,7 +928,7 @@ INSERT IGNORE INTO `settings` (`setting_key`, `setting_value`) VALUES
 ('smtp_encryption', 'tls'),
 ('smtp_from_name', 'SmartNotes'),
 ('smtp_from_email', ''),
-('schema_version', '13'),
+('schema_version', '14'),
 ('allow_note_sharing', '1'),
 ('logo_display', 'logo'),
 ('logo_height', '34'),

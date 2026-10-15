@@ -45,16 +45,20 @@ final class DashboardController
         ];
         // Team progress (v1.19): visible to everyone; work in progress first, then the latest published.
         $team = DB::all(
-            "SELECT p.id, p.title, p.percent, p.stage, p.status, p.color, p.published_at,
+            "SELECT p.id, p.title, p.percent, p.stage, p.status, p.color, p.published_at, p.pinned_global, mp.item_id IS NOT NULL AS pinned,
                     EXISTS(SELECT 1 FROM progress_updaters u WHERE u.item_id = p.id AND u.user_id = ?) AS mine
-             FROM progress_items p WHERE p.deleted_at IS NULL
-             ORDER BY p.published_at IS NOT NULL, COALESCE(p.published_at, p.last_update_at, p.updated_at) DESC, p.id DESC LIMIT 6",
-            [$uid]
+             FROM progress_items p LEFT JOIN user_pins mp ON mp.user_id = ? AND mp.kind = 'progress' AND mp.item_id = p.id
+             WHERE p.deleted_at IS NULL
+             ORDER BY p.pinned_global DESC, COALESCE(p.pinned_global_pos, -1), mp.item_id IS NULL, COALESCE(mp.position, -1),
+                      p.published_at IS NOT NULL, COALESCE(p.published_at, p.last_update_at, p.updated_at) DESC, p.id DESC LIMIT 6",
+            [$uid, $uid]
         );
         foreach ($team as &$tp) {
             $tp['id'] = (int) $tp['id'];
             $tp['percent'] = (int) $tp['percent'];
             $tp['mine'] = (bool) $tp['mine'];
+            $tp['pinned'] = (bool) $tp['pinned'] || (bool) $tp['pinned_global'];
+            unset($tp['pinned_global']);
         }
         unset($tp);
         $teamSum = DB::one(

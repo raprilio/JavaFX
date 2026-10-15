@@ -104,10 +104,12 @@ final class ProgressController
     {
         $u = Auth::require();
         $uid = (int) $u['id'];
-        $scope = V::enum(Http::query('scope'), ['all', 'mine', 'created', 'published', 'deleted'], 'all');
+        $scope = V::enum(Http::query('scope'), ['all', 'pinned', 'mine', 'created', 'published', 'deleted'], 'all');
         $where = [$scope === 'deleted' ? 'p.deleted_at IS NOT NULL' : 'p.deleted_at IS NULL'];
         $params = [];
-        if ($scope === 'mine') {
+        if ($scope === 'pinned') {
+            $where[] = '(p.pinned_global = 1 OR mp.item_id IS NOT NULL)';
+        } elseif ($scope === 'mine') {
             $where[] = 'EXISTS (SELECT 1 FROM progress_updaters x WHERE x.item_id = p.id AND x.user_id = ?)';
             $params[] = $uid;
         } elseif ($scope === 'created') {
@@ -129,7 +131,7 @@ final class ProgressController
             array_push($params, $like, $like, $like);
         }
         $rows = DB::all(
-            'SELECT p.*, c.name AS creator_name FROM progress_items p LEFT JOIN users c ON c.id = p.user_id
+            'SELECT p.*, c.name AS creator_name, ' . self::PIN_COLS . ' FROM progress_items p LEFT JOIN users c ON c.id = p.user_id ' . self::pinJoins($uid) . '
              WHERE ' . implode(' AND ', $where) . '
              ORDER BY (p.percent = 100), FIELD(p.status, \'blocked\', \'at_risk\', \'on_track\', \'done\'), COALESCE(p.last_update_at, p.created_at) DESC LIMIT 500',
             $params
@@ -154,6 +156,87 @@ final class ProgressController
              FROM progress_items WHERE deleted_at IS NULL"
         );
         Http::ok(['items' => $items, 'summary' => array_map(static fn($v) => (int) $v, $summary ?: [])]);
+    }
+
+    // ------------------------------------------------------------------ pins & own order (v1.20)
+    private const PIN_COLS = 'mp.item_id IS NOT NULL AS my_pin, mp.position AS my_pin_pos, mo.position AS my_order, pb.name AS pinned_by_name';
+
+    private static function pinJoins(int $uid): string
+    {
+        return "LEFT JOIN user_pins mp ON mp.user_id = $uid AND mp.kind = 'progress' AND mp.item_id = p.id
+                LEFT JOIN user_pins mo ON mo.user_id = $uid AND mo.kind = 'progress_order' AND mo.item_id = p.id
+                LEFT JOIN users pb ON pb.id = p.pinned_global_by";
+    }
+
+    /** Pin for me (anyone) — it shows under "Pinned by me", newest pin on top. */
+    public static function pin(int $id): void
+    {
+        $u = Auth::require();
+        $uid = (int) $u['id'];
+        self::item($id);
+        if (V::bool(Http::input('pinned'))) {
+            $top = (int) DB::val("SELECT COALESCE(MIN(position), 0) FROM user_pins WHERE user_id = ? AND kind = 'progress'", [$uid]);
+            DB::run("INSERT INTO user_pins (user_id, kind, item_id, position) VALUES (?, 'progress', ?, ?) ON DUPLICATE KEY UPDATE position = position", [$uid, $id, $top - 1]);
+        } else {
+            DB::run("DELETE FROM user_pins WHERE user_id = ? AND kind = 'progress' AND item_id = ?", [$uid, $id]);
+        }
+        Http::ok(self::payload($id, $uid));
+    }
+
+    /** Pin for everyone (administrators): shown on top for every user with "Pinned by <name>". */
+    public static function pinGlobal(int $id): void
+    {
+        $u = Auth::require();
+        if (!Auth::isAdmin()) {
+            throw new HttpException('Only administrators can pin an item for everyone.', 403);
+        }
+        $it = self::item($id);
+        $on = V::bool(Http::input('pinned'));
+        if ($on && !(int) $it['pinned_global']) {
+            $top = (int) DB::val('SELECT COALESCE(MIN(pinned_global_pos), 0) FROM progress_items WHERE pinned_global = 1');
+            DB::run('UPDATE progress_items SET pinned_global = 1, pinned_global_at = NOW(), pinned_global_by = ?, pinned_global_pos = ?, updated_at = updated_at WHERE id = ?', [$u['id'], $top - 1, $id]);
+        } elseif (!$on) {
+            DB::run('UPDATE progress_items SET pinned_global = 0, pinned_global_at = NULL, pinned_global_by = NULL, pinned_global_pos = NULL, updated_at = updated_at WHERE id = ?', [$id]);
+        }
+        Activity::log($on ? 'progress.pin_global' : 'progress.unpin_global', 'progress', $id, $it['title']);
+        Http::ok(self::payload($id, (int) $u['id']));
+    }
+
+    /**
+     * Save an order after dragging: section "mine" (my pins), "global" (pinned for everyone, administrators)
+     * or "all" (my own order of the whole list).
+     */
+    public static function order(): void
+    {
+        $u = Auth::require();
+        $uid = (int) $u['id'];
+        $section = V::enum(Http::input('section'), ['mine', 'global', 'all'], 'mine');
+        $ids = array_slice(array_values(array_unique(array_filter(array_map('intval', (array) Http::input('ids', [])), static fn($v) => $v > 0))), 0, 500);
+        if (!$ids) {
+            Http::ok(['ids' => []]);
+        }
+        $in = DB::in($ids);
+        if ($section === 'global') {
+            if (!Auth::isAdmin()) {
+                throw new HttpException('Only administrators can arrange the items pinned for everyone.', 403);
+            }
+            $valid = array_map('intval', DB::col("SELECT id FROM progress_items WHERE pinned_global = 1 AND id IN ($in)", $ids));
+        } elseif ($section === 'mine') {
+            $valid = array_map('intval', DB::col("SELECT item_id FROM user_pins WHERE user_id = ? AND kind = 'progress' AND item_id IN ($in)", [$uid, ...$ids]));
+        } else {
+            $valid = array_map('intval', DB::col("SELECT id FROM progress_items WHERE deleted_at IS NULL AND id IN ($in)", $ids));
+        }
+        $ordered = array_values(array_filter($ids, static fn($id) => in_array($id, $valid, true)));
+        DB::tx(static function () use ($ordered, $section, $uid) {
+            foreach ($ordered as $pos => $id) {
+                if ($section === 'global') {
+                    DB::run('UPDATE progress_items SET pinned_global_pos = ?, updated_at = updated_at WHERE id = ?', [$pos, $id]);
+                } else {
+                    DB::run('INSERT INTO user_pins (user_id, kind, item_id, position) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE position = VALUES(position)', [$uid, $section === 'mine' ? 'progress' : 'progress_order', $id, $pos]);
+                }
+            }
+        });
+        Http::ok(['ids' => $ordered]);
     }
 
     private static function updatersFor(array $ids): array
@@ -188,6 +271,12 @@ final class ProgressController
             'updaters' => $updaters,
             'can_update' => !$r['deleted_at'] && in_array($uid, array_column($updaters, 'id'), true),
             'can_manage' => (int) $r['user_id'] === $uid || $isAdmin,
+            'pinned' => !empty($r['my_pin']),
+            'pin_pos' => isset($r['my_pin_pos']) ? (int) $r['my_pin_pos'] : null,
+            'order_pos' => isset($r['my_order']) ? (int) $r['my_order'] : null,
+            'pinned_global' => !empty($r['pinned_global']),
+            'pinned_global_pos' => isset($r['pinned_global_pos']) ? (int) $r['pinned_global_pos'] : null,
+            'pinned_by' => !empty($r['pinned_global']) ? ['id' => $r['pinned_global_by'] !== null ? (int) $r['pinned_global_by'] : null, 'name' => $r['pinned_by_name'] ?? null, 'at' => $r['pinned_global_at']] : null,
         ];
     }
 
@@ -203,6 +292,7 @@ final class ProgressController
         if ($it['deleted_at'] && !self::canManage($it, $uid)) {
             throw new HttpException('This progress item does not exist (anymore).', 404);
         }
+        $it += DB::one('SELECT ' . self::PIN_COLS . ' FROM progress_items p ' . self::pinJoins($uid) . ' WHERE p.id = ?', [$id]) ?: [];
         $it['creator_name'] = $it['user_id'] ? DB::val('SELECT name FROM users WHERE id = ?', [$it['user_id']]) : null;
         $out = self::row($it, self::updatersFor([$id])[$id] ?? [], $uid);
         $out['updates'] = array_map(static fn($r) => [

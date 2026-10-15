@@ -180,6 +180,7 @@ final class MindmapsController
         'layout' => ['balanced', 'right', 'down'],
         'bg' => ['plain', 'dots', 'grid', 'gradient'],
         'font' => ['sans', 'rounded', 'serif', 'hand'],
+        'text' => ['s', 'm', 'l', 'xl'], // v1.20 whole-map text size
     ];
     private const SHAPES = ['rounded', 'pill', 'rect', 'ellipse', 'hexagon', 'underline', 'plain', 'cloud'];
 
@@ -225,6 +226,10 @@ final class MindmapsController
         }
         if (!empty($in['bold'])) {
             $out['bold'] = true;
+        }
+        // v1.20: exact text size in px
+        if (isset($in['fs']) && is_numeric($in['fs'])) {
+            $out['fs'] = round(max(6, min(96, (float) $in['fs'])) * 2) / 2;
         }
         if (isset($in['fill']) && in_array($in['fill'], ['solid', 'soft', 'none'], true)) {
             $out['fill'] = $in['fill'];

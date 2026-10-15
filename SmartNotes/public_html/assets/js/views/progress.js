@@ -5,8 +5,9 @@ import { html, icon, h, esc, debounce, timeAgo, fmtDay, fmtDateTime, todayStr } 
 import { api } from '../core/api.js';
 import { state } from '../core/store.js';
 import { navigate, setQuery } from '../core/router.js';
-import { toast, toastError, modal, confirm, avatarHtml, empty } from '../core/ui.js';
+import { toast, toastError, modal, confirm, avatarHtml, empty, menu } from '../core/ui.js';
 import { userPicker } from '../components/userPicker.js';
+import { sortable } from '../components/sortable.js';
 
 const STATUS = {
   on_track: { label: 'On track', icon: 'circle-check', cls: 'success' },
@@ -25,6 +26,13 @@ const TEMPLATES = {
   general: { label: 'General', stages: [['Started', 10], ['In progress', 50], ['Review', 80], ['Done', 100]], fields: [] },
 };
 const isUrl = (v) => /^https?:\/\/\S+$/i.test(v || '');
+/** List order (v1.20); "custom" = my own order, arranged by dragging. */
+const SORTS = [['smart', 'Smart (needs attention first)', 'sparkles'], ['updated', 'Recently updated', 'clock'], ['progress_desc', 'Progress: high → low', 'arrow-down-wide-narrow'],
+  ['progress_asc', 'Progress: low → high', 'arrow-up-narrow-wide'], ['due', 'Target date', 'calendar'], ['priority', 'Priority', 'flag'], ['title', 'Title (A–Z)', 'arrow-down-a-z'],
+  ['created', 'Newest first', 'calendar-plus'], ['custom', 'My order (drag to arrange)', 'grip-vertical']];
+const PRIO_RANK = { urgent: 0, high: 1, medium: 2, low: 3 };
+const isAdmin = () => state.user?.role === 'admin';
+const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* private mode */ } } };
 
 function statusBadge(s) {
   const x = STATUS[s] || STATUS.on_track;
@@ -47,8 +55,11 @@ function dueHtml(it) {
 }
 
 function card(it) {
-  return html`<a class="pg-card ${it.deleted_at ? 'deleted' : ''}" href="#/progress/${it.id}" style="--pc:${it.color || 'var(--accent)'}" data-id="${it.id}">
-    <div class="pg-card-top"><b class="pg-title">${it.title}</b><span class="pg-pct">${it.percent}%</span></div>
+  return html`<a class="pg-card ${it.deleted_at ? 'deleted' : ''} ${it.pinned || it.pinned_global ? 'pinned' : ''}" href="#/progress/${it.id}" style="--pc:${it.color || 'var(--accent)'}" data-id="${it.id}" draggable="false">
+    ${it.pinned_global ? html`<span class="pg-pinned-by">${icon('megaphone', 'xs')} Pinned by ${it.pinned_by?.name || 'admin'} · for everyone</span>` : ''}
+    <div class="pg-card-top"><b class="pg-title">${it.title}</b>
+      ${it.deleted_at ? '' : html`<button type="button" class="btn ghost icon xs pg-pin ${it.pinned ? 'on' : ''}" data-pin="${it.id}" data-tip="${it.pinned ? 'Unpin' : 'Pin to top (only me)'}" aria-label="${it.pinned ? 'Unpin' : 'Pin'}">${icon(it.pinned ? 'pin-off' : 'pin', 'sm')}</button>`}
+      <span class="pg-pct">${it.percent}%</span></div>
     ${stageBar(it)}
     <div class="pg-card-meta"><span class="pg-stage">${icon('milestone', 'sm')} ${it.stage || '—'}</span>${statusBadge(it.status)}
       ${it.priority === 'high' || it.priority === 'urgent' ? html`<span class="badge prio prio-${it.priority}">${icon('flag', 'sm')} ${PRIORITY[it.priority]}</span>` : ''}${dueHtml(it)}</div>
@@ -186,8 +197,10 @@ async function renderDetail(el, ctx, id) {
     const others = it.updaters.map((u) => u.name).join(', ');
     el.innerHTML = String(html`<div class="pg-detail" style="--pc:${it.color || 'var(--accent)'}">
       <div class="page-head"><div class="row" style="gap:10px;align-items:flex-start"><a class="btn ghost icon sm" href="#/progress" aria-label="Back">${icon('arrow-left')}</a>
-        <div><h1 class="pg-h1">${it.title}</h1><p class="row wrap" style="gap:8px">${statusBadge(it.status)}<span class="badge prio prio-${it.priority}">${icon('flag', 'sm')} ${PRIORITY[it.priority]}</span>${dueHtml(it)}<span class="small subtle">by ${it.creator.name || '—'} · ${timeAgo(it.created_at)}</span>${it.deleted_at ? html`<span class="badge danger">Deleted</span>` : ''}</p></div></div>
-        <div class="row">${it.can_manage ? (it.deleted_at ? html`<button class="btn" data-a="restore">${icon('rotate-ccw', 'sm')} Restore</button>`
+        <div><h1 class="pg-h1">${it.title}</h1><p class="row wrap" style="gap:8px">${statusBadge(it.status)}<span class="badge prio prio-${it.priority}">${icon('flag', 'sm')} ${PRIORITY[it.priority]}</span>${dueHtml(it)}<span class="small subtle">by ${it.creator.name || '—'} · ${timeAgo(it.created_at)}</span>${it.pinned_global ? html`<span class="badge warning">${icon('megaphone', 'sm')} Pinned by ${it.pinned_by?.name || 'admin'} · for everyone</span>` : ''}${it.deleted_at ? html`<span class="badge danger">Deleted</span>` : ''}</p></div></div>
+        <div class="row">${it.deleted_at ? '' : html`<button class="btn ${it.pinned ? 'active' : ''}" data-a="pin" data-tip="${it.pinned ? 'Unpin' : 'Pin to the top of my list'}">${icon(it.pinned ? 'pin-off' : 'pin', 'sm')}<span class="hide-sm">${it.pinned ? 'Pinned' : 'Pin'}</span></button>
+          ${isAdmin() ? html`<button class="btn ${it.pinned_global ? 'active' : ''}" data-a="pin-global" data-tip="${it.pinned_global ? 'Unpin for everyone' : 'Pin on top for every user'}">${icon('megaphone', 'sm')}<span class="hide-sm">${it.pinned_global ? 'Pinned for all' : 'Pin for everyone'}</span></button>` : ''}`}
+          ${it.can_manage ? (it.deleted_at ? html`<button class="btn" data-a="restore">${icon('rotate-ccw', 'sm')} Restore</button>`
           : html`<button class="btn" data-a="edit">${icon('settings-2', 'sm')}<span class="hide-sm">Customise</span></button><button class="btn ghost icon" data-a="delete" data-tip="Delete" aria-label="Delete">${icon('trash-2', 'sm')}</button>`) : ''}</div></div>
       <div class="card card-pad pg-hero"><div class="row between"><div><div class="pg-big">${it.percent}<small>%</small></div><div class="small muted">${it.percent === 100 ? html`Published ${it.published_at ? fmtDateTime(it.published_at) : ''}` : html`Stage: <b>${it.stage || '—'}</b>`}</div></div>
         <div class="right small muted">${people(it.updaters, 6)}<div class="mt-1">${it.last_update_at ? `Last update ${timeAgo(it.last_update_at)}` : 'No updates yet'}</div></div></div>
@@ -250,6 +263,14 @@ async function renderDetail(el, ctx, id) {
       if (!(await confirm({ title: `Delete "${it.title}"?`, message: 'It disappears for everyone. You (or an administrator) can restore it from Team progress → Deleted.', confirmText: 'Delete' }))) return;
       try { await api.post(`progress/${id}/delete`); toast('Deleted', 'success', { action: 'Undo', onAction: () => api.post(`progress/${id}/restore`).then(() => navigate(`/progress/${id}`)) }); navigate('/progress'); } catch (err) { toastError(err); }
     }
+    if (a === 'pin' || a === 'pin-global') {
+      const on = a === 'pin' ? !it.pinned : !it.pinned_global;
+      try {
+        it = await api.post(`progress/${id}/${a}`, { pinned: on });
+        paint();
+        toast(on ? (a === 'pin' ? 'Pinned to the top of your list' : 'Pinned for everyone') : 'Unpinned', 'success', { timeout: 1800 });
+      } catch (err) { toastError(err); }
+    }
     if (a === 'restore') { try { it = await api.post(`progress/${id}/restore`); paint(); toast('Restored', 'success'); } catch (err) { toastError(err); } }
   });
   el.addEventListener('submit', async (e) => {
@@ -270,39 +291,141 @@ async function renderDetail(el, ctx, id) {
 }
 
 // ------------------------------------------------------------------ list
+function sortItems(list, sort, smartIdx) {
+  const by = {
+    smart: (a, b) => smartIdx.get(a.id) - smartIdx.get(b.id),
+    updated: (a, b) => (b.last_update_at || b.created_at).localeCompare(a.last_update_at || a.created_at),
+    progress_desc: (a, b) => b.percent - a.percent,
+    progress_asc: (a, b) => a.percent - b.percent,
+    due: (a, b) => (a.due_date || '9999').localeCompare(b.due_date || '9999'),
+    priority: (a, b) => PRIO_RANK[a.priority] - PRIO_RANK[b.priority],
+    title: (a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }),
+    created: (a, b) => b.created_at.localeCompare(a.created_at),
+    custom: (a, b) => (a.order_pos ?? 1e9) - (b.order_pos ?? 1e9),
+  }[sort] || (() => 0);
+  return [...list].sort((a, b) => by(a, b) || smartIdx.get(a.id) - smartIdx.get(b.id));
+}
+
 export default {
   title: 'Team progress',
   async render(el, ctx) {
     if (ctx.params.id) return renderDetail(el, ctx, +ctx.params.id);
-    const f = { scope: ctx.query.scope || 'all', status: ctx.query.status || '', q: ctx.query.q || '' };
+    const f = { scope: ctx.query.scope || 'all', status: ctx.query.status || '', q: ctx.query.q || '', sort: ctx.query.sort || store.get('sn-pg-sort') || 'smart' };
+    if (!SORTS.some(([k]) => k === f.sort)) f.sort = 'smart';
     el.innerHTML = String(html`
       <div class="page-head"><div><h1>Team progress</h1><p data-sub>Everyone can follow the work · only the chosen people post updates</p></div>
         <div class="row"><a class="btn" href="#/tasks">${icon('square-check-big', 'sm')}<span class="hide-sm">My tasks</span></a><button class="btn primary" data-a="new">${icon('plus', 'sm')} New item</button></div></div>
       <div class="pg-summary" data-summary></div>
       <div class="toolbar">
-        <div class="chips" data-scopes>${[['all', 'All', 'layers'], ['mine', 'I update', 'pencil'], ['created', 'Created by me', 'user'], ['published', 'Published', 'rocket'], ['deleted', 'Deleted', 'trash-2']].map(([v, l, i]) => html`<button class="chip ${f.scope === v ? 'active' : ''}" data-scope="${v}">${icon(i, 'sm')} ${l}</button>`)}</div>
+        <div class="chips" data-scopes>${[['all', 'All', 'layers'], ['pinned', 'Pinned', 'pin'], ['mine', 'I update', 'pencil'], ['created', 'Created by me', 'user'], ['published', 'Published', 'rocket'], ['deleted', 'Deleted', 'trash-2']].map(([v, l, i]) => html`<button class="chip ${f.scope === v ? 'active' : ''}" data-scope="${v}">${icon(i, 'sm')} ${l}</button>`)}</div>
         <div class="grow"></div>
         <div class="input-icon" style="width:min(240px,100%)">${icon('search', 'sm')}<input class="input sm" type="search" placeholder="Search…" value="${f.q}" data-search></div>
+        <button class="btn sm" data-a="sort">${icon('arrow-up-down', 'sm')} <span data-sort-label></span></button>
       </div>
-      <div class="pg-grid" data-grid></div>`);
-    const grid = el.querySelector('[data-grid]');
+      <div class="pg-list" data-list></div>`);
+    const list = el.querySelector('[data-list]');
+    let items = [];
+    let smartIdx = new Map();
+    const sortLabel = () => { el.querySelector('[data-sort-label]').textContent = SORTS.find(([k]) => k === f.sort)[1].replace(/ \(.*\)$/, ''); };
+    sortLabel();
+
+    function paint() {
+      const touch = matchMedia('(pointer: coarse)').matches;
+      const hint = touch ? 'hold & drag to move' : 'drag to move';
+      const deleted = f.scope === 'deleted';
+      const global = deleted ? [] : items.filter((it) => it.pinned_global).sort((a, b) => (a.pinned_global_pos ?? -1) - (b.pinned_global_pos ?? -1));
+      const mine = deleted ? [] : items.filter((it) => !it.pinned_global && it.pinned).sort((a, b) => (a.pin_pos ?? -1) - (b.pin_pos ?? -1));
+      const rest = sortItems(items.filter((it) => deleted || (!it.pinned_global && !it.pinned)), f.sort, smartIdx);
+      if (!items.length) {
+        list.innerHTML = String(empty({ icon: f.scope === 'pinned' ? 'pin' : 'chart-no-axes-gantt', title: f.scope === 'pinned' ? 'Nothing pinned yet' : f.scope === 'mine' ? 'Nothing assigned to you' : 'No progress items yet',
+          text: f.scope === 'pinned' ? 'Use the pin on a card to keep it on top of your list.' : 'Create an item, choose who updates it, and follow it from planning to published.', action: '<button class="btn primary" data-a="new">New item</button>' }));
+        return;
+      }
+      const head = (k, ic, label, n, can) => html`<div class="pg-sec-head ${k}">${icon(ic, 'sm')} ${label} <span class="subtle">${n}</span>${can ? html`<span class="pg-sec-hint">· ${hint}</span>` : ''}</div>`;
+      const sections = [
+        global.length && ['global', 'megaphone', 'Pinned for everyone', global, isAdmin()],
+        mine.length && ['mine', 'pin', 'Pinned by me', mine, true],
+        rest.length && ['rest', 'layers', global.length || mine.length ? 'Other items' : '', rest, f.sort === 'custom' && !deleted],
+      ].filter(Boolean);
+      list.innerHTML = sections.map(([k, ic, label, arr, can]) => (label ? String(head(k, ic, label, arr.length, can)) : '')
+        + `<div class="pg-grid ${can ? 'can-drag' : ''}" data-sec="${k}">${arr.map((it) => String(card(it))).join('')}</div>`).join('');
+    }
+
     async function load() {
-      setQuery({ scope: f.scope !== 'all' ? f.scope : '', status: f.status, q: f.q });
+      setQuery({ scope: f.scope !== 'all' ? f.scope : '', status: f.status, q: f.q, sort: f.sort !== 'smart' ? f.sort : '' });
       let r;
-      try { r = await api.get('progress', f); } catch (e) { return toastError(e); }
+      try { r = await api.get('progress', { scope: f.scope, status: f.status, q: f.q }); } catch (e) { return toastError(e); }
       const s = r.summary || {};
       el.querySelector('[data-summary]').innerHTML = String(html`
         ${[['', 'In progress', s.total - s.published, 'layers'], ['on_track', 'On track', s.on_track, 'circle-check'], ['at_risk', 'At risk', s.at_risk, 'triangle-alert'], ['blocked', 'Blocked', s.blocked, 'octagon-x'], ['done', 'Published', s.published, 'rocket']]
           .map(([k, l, n, i]) => html`<button class="pg-stat ${k ? 'pg-' + k : ''} ${f.status === k && k ? 'active' : ''}" data-status-filter="${k}">${icon(i, 'sm')}<b>${n || 0}</b><span>${l}</span></button>`)}
         <div class="pg-stat avg"><b>${s.avg_percent || 0}%</b><span>Average</span></div>`);
-      grid.innerHTML = r.items.length ? r.items.map((it) => String(card(it))).join('')
-        : String(empty({ icon: 'chart-no-axes-gantt', title: f.scope === 'mine' ? 'Nothing assigned to you' : 'No progress items yet', text: 'Create an item, choose who updates it, and follow it from planning to published.', action: '<button class="btn primary" data-a="new">New item</button>' }));
+      items = r.items;
+      smartIdx = new Map(items.map((it, i) => [it.id, i]));
+      paint();
     }
+
+    async function togglePin(id) {
+      const it = items.find((x) => x.id === id);
+      if (!it) return;
+      try {
+        const r = await api.post(`progress/${id}/pin`, { pinned: !it.pinned });
+        Object.assign(it, { pinned: r.pinned, pin_pos: r.pin_pos });
+        if (f.scope === 'pinned' && !r.pinned && !r.pinned_global) items = items.filter((x) => x.id !== id);
+        paint();
+        toast(r.pinned ? 'Pinned to the top of your list' : 'Unpinned', 'success', { timeout: 1600 });
+      } catch (e) { toastError(e); }
+    }
+
+    // Drag to arrange: my pins (anyone), the pins for everyone (administrators), the rest with Sort → My order.
+    // Dropping a card into "Pinned by me" pins it; dragging one out of it unpins it.
+    sortable(list, {
+      item: '.pg-card', list: '.pg-grid', layout: 'grid', delay: 320,
+      canDrag: (card) => card.closest('.pg-grid')?.classList.contains('can-drag') || (card.closest('[data-sec="rest"]') && !!list.querySelector('[data-sec="mine"]')),
+      onDrop: async (card, toList, index, fromList) => {
+        const id = +card.dataset.id;
+        const from = fromList.dataset.sec, to = toList.dataset.sec;
+        const ids = (sec) => Array.from(list.querySelectorAll(`[data-sec="${sec}"] .pg-card`)).map((c) => +c.dataset.id);
+        try {
+          if (from === to) {
+            if (!toList.classList.contains('can-drag')) return paint();
+            const order = ids(to);
+            await api.post('progress/order', { section: to === 'rest' ? 'all' : to, ids: order });
+            const key = to === 'global' ? 'pinned_global_pos' : to === 'mine' ? 'pin_pos' : 'order_pos';
+            order.forEach((x, i) => { const it = items.find((y) => y.id === x); if (it) it[key] = i; });
+            return paint();
+          }
+          if (to === 'mine' && from === 'rest') {
+            const it = items.find((x) => x.id === id);
+            await api.post(`progress/${id}/pin`, { pinned: true });
+            it.pinned = true;
+            const order = ids('mine');
+            await api.post('progress/order', { section: 'mine', ids: order });
+            order.forEach((x, i) => { const y = items.find((z) => z.id === x); if (y) y.pin_pos = i; });
+            toast('Pinned to the top of your list', 'success', { timeout: 1600 });
+            return paint();
+          }
+          if (from === 'mine' && to === 'rest') return togglePin(id);
+          paint();
+        } catch (e) { toastError(e); load(); }
+      },
+    });
+
     el.addEventListener('click', async (e) => {
+      const pin = e.target.closest('[data-pin]');
+      if (pin) { e.preventDefault(); e.stopPropagation(); return togglePin(+pin.dataset.pin); }
       const sc = e.target.closest('[data-scope]');
       if (sc) { f.scope = sc.dataset.scope; el.querySelectorAll('[data-scope]').forEach((b) => b.classList.toggle('active', b === sc)); return load(); }
       const sf = e.target.closest('[data-status-filter]');
       if (sf) { f.status = f.status === sf.dataset.statusFilter ? '' : sf.dataset.statusFilter; if (f.status === 'done') { f.status = ''; f.scope = 'published'; } return load(); }
+      if (e.target.closest('[data-a="sort"]')) {
+        return menu(e.target.closest('[data-a="sort"]'), SORTS.map(([k, l, i]) => ({ label: l, icon: i, checked: f.sort === k, onClick: () => {
+          f.sort = k; store.set('sn-pg-sort', k); sortLabel();
+          setQuery({ scope: f.scope !== 'all' ? f.scope : '', status: f.status, q: f.q, sort: k !== 'smart' ? k : '' });
+          paint();
+          if (k === 'custom') toast(matchMedia('(pointer: coarse)').matches ? 'Hold a card, then drag it to its place' : 'Drag the cards into the order you like', 'info', { timeout: 2600 });
+        } })), { align: 'end' });
+      }
       if (e.target.closest('[data-a="new"]')) { const r = await openEditor(); if (r) navigate(`/progress/${r.id}`); }
     });
     el.querySelector('[data-search]').addEventListener('input', debounce((e) => { f.q = e.target.value.trim(); load(); }, 300));

@@ -8,6 +8,7 @@ import { toast, toastError, menu, confirm, prompt } from '../core/ui.js';
 import { openItemShare } from '../components/itemShare.js';
 import { createStage, svgEl, wrapText, textBlock, themeColors, exportPng, exportSvg, exportPdf, safeName, FONT_STACK } from '../components/canvas.js';
 import { createFlowPlayer, exportFlowVideo, schedule } from '../components/flowPlayer.js';
+import { fsField, stepFs, clampFs } from '../components/fontSize.js';
 
 const COLORS = ['#6366f1', '#0ea5e9', '#14b8a6', '#22c55e', '#eab308', '#f97316', '#ef4444', '#ec4899', '#a855f7', '#64748b'];
 const NEON = ['#22d3ee', '#a78bfa', '#f472b6', '#34d399', '#facc15', '#fb923c', '#60a5fa', '#f87171'];
@@ -27,6 +28,8 @@ const FONTS = {
   hand: "'Comic Neue', 'Segoe Print', 'Bradley Hand', 'Chalkboard SE', 'Comic Sans MS', cursive",
 };
 const SIZE_K = { s: 0.85, m: 1, l: 1.22, xl: 1.5 };
+/** Whole-map text size (Style panel, v1.20); a size chosen on a topic wins. */
+const TEXT_SCALE = { s: 0.85, m: 1, l: 1.2, xl: 1.45 };
 const SHAPES = [['', 'Auto'], ['rounded', 'Rounded'], ['pill', 'Pill'], ['rect', 'Box'], ['ellipse', 'Oval'], ['hexagon', 'Hexagon'], ['cloud', 'Cloud'], ['underline', 'Underline'], ['plain', 'Text only']];
 const EMOJIS = ['💡', '⭐', '🎯', '🚀', '✅', '❗', '❓', '🔥', '💰', '📅', '👥', '📌', '🧠', '🛠️', '📈', '⚠️', '❤️', '🎉', '📝', '🔍', '⏰', '🏆', '🌱', '💬'];
 const NODE_ICONS = ['lightbulb', 'star', 'flag', 'heart', 'check', 'circle-alert', 'target', 'rocket', 'book-open', 'briefcase', 'calendar', 'users', 'dollar-sign', 'code', 'zap', 'bookmark', 'message-circle', 'clock', 'trophy', 'circle-help'];
@@ -120,7 +123,8 @@ export default {
     /** Effective look: the preset, with the map's own choices on top. */
     const T = () => {
       const t = { ...(PRESETS[theme.preset] || PRESETS.classic) };
-      ['edge', 'layout', 'bg', 'font'].forEach((k) => { if (theme[k]) t[k] = theme[k]; });
+      ['edge', 'layout', 'bg', 'font', 'text'].forEach((k) => { if (theme[k]) t[k] = theme[k]; });
+      t.text = t.text || 'm';
       if (typeof theme.rainbow === 'boolean') t.rainbow = theme.rainbow;
       t.layout = t.layout || 'balanced';
       t.motion = theme.motion !== false && !reduceMotion;
@@ -165,7 +169,7 @@ export default {
       const t = T();
       const st = n.style || {};
       const isRoot = d === 0;
-      const size = Math.round((isRoot ? 18 : d === 1 ? 15 : 14) * (SIZE_K[st.size] || 1));
+      const size = st.fs || Math.round((isRoot ? 18 : d === 1 ? 15 : 14) * (SIZE_K[st.size] || 1) * (TEXT_SCALE[t.text] || 1));
       const weight = st.bold ? 760 : isRoot ? 700 : d === 1 ? 620 : 520;
       const shape = shapeOf(n, d);
       const tx = wrapText(n.label || ' ', { size, weight, maxWidth: isRoot ? 260 : 220, family: t.family });
@@ -565,6 +569,7 @@ export default {
           <div class="field"><label>Layout</label>${seg('layout', [['balanced', 'Both sides'], ['right', 'Right'], ['down', 'Top-down']])}</div>
           <div class="field"><label>Background</label>${seg('bg', [['plain', 'Plain'], ['dots', 'Dots'], ['gradient', 'Glow']])}</div>
           <div class="field"><label>Font</label>${seg('font', [['sans', 'Sans'], ['rounded', 'Rounded'], ['serif', 'Serif'], ['hand', 'Hand']])}</div>
+          <div class="field"><label>Text size <span class="subtle">(all topics)</span></label>${seg('text', [['s', 'S'], ['m', 'M'], ['l', 'L'], ['xl', 'XL']])}</div>
           <label class="switch mm-sw"><input type="checkbox" data-theme-toggle="rainbow" ${t.rainbow ? 'checked' : ''}><span class="track"></span><span>Rainbow branches</span></label>
           <label class="switch mm-sw"><input type="checkbox" data-theme-toggle="motion" ${theme.motion !== false ? 'checked' : ''}><span class="track"></span><span>Animations</span></label>
           </div>` : ''}
@@ -585,6 +590,7 @@ export default {
           <input class="input sm mt-1" data-emoji-custom maxlength="8" placeholder="…or type / paste any emoji" value="${n.style?.emoji && !EMOJIS.includes(n.style.emoji) ? n.style.emoji : ''}"></div>
         <div class="field"><label>Text</label><div class="seg mm-seg">${[['s', 'S'], ['m', 'M'], ['l', 'L'], ['xl', 'XL']].map(([k, l]) => html`<button type="button" class="btn xs ${(n.style?.size || 'm') === k ? 'active' : ''}" data-tsize="${k}">${l}</button>`)}
           <button type="button" class="btn xs ${n.style?.bold ? 'active' : ''}" data-bold>${icon('bold', 'sm')}</button></div></div>
+        ${fsField((sizes.get(n.key) || measure(n)).size, !!n.style?.fs, 'Exact text size')}
         <div class="field"><label>Fill</label><div class="seg mm-seg">${[['', 'Auto'], ['solid', 'Solid'], ['soft', 'Soft'], ['none', 'Outline']].map(([k, l]) => html`<button type="button" class="btn xs ${(n.style?.fill || '') === k ? 'active' : ''}" data-fill="${k}">${l}</button>`)}</div></div>
         <div class="field"><label>Icon</label><div class="swatches" style="padding:0;grid-template-columns:repeat(6,28px)">
           <button class="swatch ${!n.icon ? 'active' : ''}" data-icon="" style="--sw:var(--bg-soft)">${icon('slash', 'sm')}</button>
@@ -624,7 +630,7 @@ export default {
     }
     function setTheme(patch) {
       change(() => {
-        theme = patch.preset ? { preset: patch.preset, layout: theme.layout, motion: theme.motion } : { ...theme, ...patch };
+        theme = patch.preset ? { preset: patch.preset, layout: theme.layout, motion: theme.motion, text: theme.text } : { ...theme, ...patch };
         Object.keys(theme).forEach((x) => theme[x] === undefined && delete theme[x]);
       }, { layout: true });
       if ('layout' in patch) requestAnimationFrame(() => stage.fit(bbox(), 80, 1));
@@ -896,9 +902,14 @@ export default {
         const n = nodes.get(sel);
         if ('shape' in st.dataset) return setStyle(sel, { shape: st.dataset.shape });
         if ('emoji' in st.dataset) return setStyle(sel, { emoji: st.dataset.emoji });
-        if ('tsize' in st.dataset) return setStyle(sel, { size: st.dataset.tsize });
+        if ('tsize' in st.dataset) return setStyle(sel, { size: st.dataset.tsize, fs: null });
         if ('bold' in st.dataset) return setStyle(sel, { bold: !n.style?.bold });
         if ('fill' in st.dataset) return setStyle(sel, { fill: st.dataset.fill });
+      }
+      const fst = e.target.closest('[data-fs-step],[data-fs-reset]');
+      if (fst && sel) {
+        if ('fsReset' in fst.dataset) return setStyle(sel, { fs: null });
+        return setStyle(sel, { fs: stepFs(fst.closest('[data-fs-box]').querySelector('[data-fs]').value, +fst.dataset.fsStep) });
       }
       const pre = e.target.closest('[data-theme-preset]');
       if (pre) return setTheme({ preset: pre.dataset.themePreset });
@@ -971,6 +982,7 @@ export default {
       if (e.target.matches('[data-title]')) { ctx.setTitle(e.target.value); markDirty(); }
     });
     el.addEventListener('change', (e) => {
+      if (e.target.matches('[data-fs]') && sel && +e.target.value > 0) return setStyle(sel, { fs: clampFs(e.target.value) });
       if (e.target.matches('[data-theme-toggle]')) setTheme({ [e.target.dataset.themeToggle]: e.target.checked });
       if (e.target.matches('[data-emoji-custom]') && sel) setStyle(sel, { emoji: [...e.target.value.trim()].slice(0, 4).join('') });
     });

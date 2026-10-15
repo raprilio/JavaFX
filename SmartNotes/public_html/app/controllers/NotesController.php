@@ -79,12 +79,15 @@ final class NotesController
         $sort = $sortMap[Http::query('sort', $filter === 'recent' ? 'opened' : 'updated')] ?? 'n.updated_at';
         $dir = Http::query('dir') === 'asc' ? 'ASC' : 'DESC';
         // Admin pins for everyone first, then my own pins (or my pin on a note shared with me), then the rest.
-        $order = ($wide ? 'n.pinned_global DESC, IF(n.user_id = ' . (int) $u['id'] . ', n.is_pinned, COALESCE(s.is_pinned, 0)) DESC, ' : '') . "$sort $dir, n.id DESC";
+        // v1.20: inside both pinned groups the order you arranged by dragging; a fresh pin (no position yet) on top.
+        $mine = 'IF(n.user_id = ' . (int) $u['id'] . ', n.is_pinned, COALESCE(s.is_pinned, 0))';
+        $order = ($wide ? "n.pinned_global DESC, IF(n.pinned_global = 1, COALESCE(n.pinned_global_pos, -1), 0), $mine DESC, IF($mine = 1, COALESCE(up.position, -1), 0), " : '') . "$sort $dir, n.id DESC";
         $perPage = V::int(Http::query('per_page'), 1, 100) ?? 40;
         $page = V::int(Http::query('page'), 1, 100000) ?? 1;
         $whereSql = implode(' AND ', $where);
 
-        $from = 'notes n LEFT JOIN note_shares s ON s.note_id = n.id AND s.user_id = ' . (int) $u['id'] . ' LEFT JOIN users o ON o.id = n.user_id';
+        $from = 'notes n LEFT JOIN note_shares s ON s.note_id = n.id AND s.user_id = ' . (int) $u['id'] . ' LEFT JOIN users o ON o.id = n.user_id'
+            . ' LEFT JOIN user_pins up ON up.user_id = ' . (int) $u['id'] . " AND up.kind = 'note' AND up.item_id = n.id";
         $total = (int) DB::val("SELECT COUNT(*) FROM $from WHERE $whereSql", $params);
         $rows = DB::all(
             "SELECT n.id, n.title, LEFT(n.content_text, 260) AS excerpt, n.note_type, n.color, n.background,
@@ -212,6 +215,53 @@ final class NotesController
     }
 
     /** Admin: pin one of my notes for every user (it appears pinned in everyone's All notes, read-only). */
+    /** A note that is pinned again starts on top of "Pinned by me" (v1.20). */
+    public static function forgetPinOrder(int $uid, array $ids): void
+    {
+        if ($ids) {
+            DB::run("DELETE FROM user_pins WHERE user_id = ? AND kind = 'note' AND item_id IN (" . DB::in($ids) . ')', [$uid, ...$ids]);
+        }
+    }
+
+    /**
+     * Save the order after dragging pinned notes (v1.20): "mine" = my pins (own notes and notes shared with me),
+     * "global" = the notes an administrator pinned for everyone (administrators only).
+     */
+    public static function pinOrder(): void
+    {
+        $u = Auth::require();
+        $uid = (int) $u['id'];
+        $section = V::enum(Http::input('section'), ['mine', 'global'], 'mine');
+        $ids = array_slice(array_values(array_unique(array_filter(array_map('intval', (array) Http::input('ids', [])), static fn($v) => $v > 0))), 0, 500);
+        if (!$ids) {
+            Http::ok(['ids' => []]);
+        }
+        $in = DB::in($ids);
+        if ($section === 'global') {
+            if (!Auth::isAdmin()) {
+                throw new HttpException('Only administrators can arrange the notes pinned for everyone.', 403);
+            }
+            $valid = array_map('intval', DB::col("SELECT id FROM notes WHERE pinned_global = 1 AND deleted_at IS NULL AND id IN ($in)", $ids));
+        } else {
+            $valid = array_map('intval', DB::col(
+                "SELECT n.id FROM notes n LEFT JOIN note_shares s ON s.note_id = n.id AND s.user_id = ?
+                 WHERE n.id IN ($in) AND n.deleted_at IS NULL AND ((n.user_id = ? AND n.is_pinned = 1) OR s.is_pinned = 1)",
+                [$uid, ...$ids, $uid]
+            ));
+        }
+        $ordered = array_values(array_filter($ids, static fn($id) => in_array($id, $valid, true)));
+        DB::tx(static function () use ($ordered, $section, $uid) {
+            foreach ($ordered as $pos => $id) {
+                if ($section === 'global') {
+                    DB::run('UPDATE notes SET pinned_global_pos = ?, updated_at = updated_at WHERE id = ?', [$pos, $id]);
+                } else {
+                    DB::run("INSERT INTO user_pins (user_id, kind, item_id, position) VALUES (?, 'note', ?, ?) ON DUPLICATE KEY UPDATE position = VALUES(position)", [$uid, $id, $pos]);
+                }
+            }
+        });
+        Http::ok(['ids' => $ordered]);
+    }
+
     public static function pinGlobal(int $id): void
     {
         $u = Auth::require();
@@ -223,7 +273,10 @@ final class NotesController
         if ($on && (int) $n['is_locked']) {
             throw new HttpException('A locked note cannot be pinned for everyone. Remove the lock first.', 422);
         }
-        DB::run('UPDATE notes SET pinned_global = ?, pinned_global_at = ?, updated_at = updated_at WHERE id = ?', [$on ? 1 : 0, $on ? now() : null, $id]);
+        if ($on !== (bool) (int) $n['pinned_global']) {
+            // a new pin for everyone goes on top of that group (v1.20)
+            DB::run('UPDATE notes SET pinned_global = ?, pinned_global_at = ?, pinned_global_pos = NULL, updated_at = updated_at WHERE id = ?', [$on ? 1 : 0, $on ? now() : null, $id]);
+        }
         if ($on && !(int) $n['pinned_global']) {
             $title = $n['title'] !== '' ? $n['title'] : 'Tanpa judul';
             foreach (DB::col("SELECT id FROM users WHERE status = 'active' AND deleted_at IS NULL AND id <> ?", [$u['id']]) as $uid) {
@@ -386,6 +439,9 @@ final class NotesController
         if ($data) {
             DB::update('notes', $data, 'id = ? AND user_id = ?', [$id, $userId]);
         }
+        if (array_key_exists('is_pinned', $data)) {
+            self::forgetPinOrder($userId, [$id]);
+        }
         if (array_key_exists('tags', $in)) {
             TagsController::sync('note', $id, $userId, $in['tags']);
             DB::run('UPDATE notes SET updated_at = NOW() WHERE id = ?', [$id]);
@@ -508,6 +564,9 @@ final class NotesController
         };
         if ($set !== null) {
             DB::update('notes', $set, "id IN ($in) AND user_id = ?", $params);
+            if (array_key_exists('is_pinned', $set)) {
+                self::forgetPinOrder((int) $u['id'], $ids);
+            }
         } elseif ($action === 'trash') {
             DB::update('notes', ['deleted_at' => now()], "id IN ($in) AND user_id = ? AND deleted_at IS NULL", $params);
         } elseif ($action === 'restore') {

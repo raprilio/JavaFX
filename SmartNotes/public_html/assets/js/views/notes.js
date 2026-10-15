@@ -7,6 +7,7 @@ import { toast, toastError, menu, contextMenu, colorPicker, confirm, empty, skel
 import { newNote } from '../core/actions.js';
 import { uploadFile } from '../components/attachments.js';
 import { toggleNoteLock, lockNow } from '../components/notePin.js';
+import { sortable } from '../components/sortable.js';
 
 const FILTERS = [['all', 'All notes', 'notebook'], ['pinned', 'Pinned', 'pin'], ['favorite', 'Favorites', 'star'], ['shared', 'Shared with me', 'users'], ['shared_by_me', 'Shared by me', 'share-2'], ['recent', 'Recent', 'history'], ['archived', 'Archived', 'archive']];
 const TYPE_ICON = { checklist: 'list-checks', image: 'image', audio: 'mic', mixed: 'layers', rich: 'type', text: 'file-text' };
@@ -142,8 +143,14 @@ export default {
         ['rest', 'notebook', 'Other notes', items.filter((n) => !n.pinned_global && !n.is_pinned)],
       ].filter((x) => x[3].length) : [];
       const cards = (list) => list.map((n) => String(card(n, selecting, selected.has(n.id)))).join('');
-      grid.innerHTML = sections.length > 1 || sections[0]?.[0] === 'global'
-        ? sections.map(([k, ic, label, list]) => `<div class="note-section-head ${k}">${icon(ic, 'sm')} ${label} <span class="subtle">${list.length}</span></div>` + cards(list)).join('')
+      // v1.20: each pinned group is its own box, so its notes can be dragged into a new order.
+      const hint = matchMedia('(pointer: coarse)').matches ? 'hold & drag to move' : 'drag to move';
+      const canArrange = (k) => !selecting && (k === 'mine' || (k === 'global' && state.user.role === 'admin'));
+      const sectioned = sections.some(([k]) => k !== 'rest');
+      grid.classList.toggle('sectioned', sectioned);
+      grid.innerHTML = sectioned
+        ? sections.map(([k, ic, label, list]) => `<div class="note-section-head ${k}">${icon(ic, 'sm')} ${label} <span class="subtle">${list.length}</span>${canArrange(k) && list.length > 1 ? `<span class="note-sec-hint">· ${hint}</span>` : ''}</div>`
+          + `<div class="note-sec ${canArrange(k) ? 'can-drag' : ''}" data-sec="${k}">${cards(list)}</div>`).join('')
         : cards(items);
       renderBulk();
     }
@@ -312,9 +319,23 @@ export default {
       const c = e.target.closest('.note-card');
       if (c && e.key === 'Enter') navigate(`/notes/${c.dataset.id}`);
     });
+    // Drag pinned notes into the order you want (my pins; the pins for everyone for administrators).
+    sortable(grid, {
+      item: '.note-card', list: '.note-sec', layout: 'grid', delay: 320,
+      canDrag: (c) => !selecting && !!c.closest('.note-sec.can-drag'),
+      onDrop: async (c, toList, index, fromList) => {
+        if (toList !== fromList) { toast('Notes move inside their own pinned group', 'info', { timeout: 2000 }); return paint(); }
+        const ids = Array.from(toList.querySelectorAll('.note-card')).map((x) => +x.dataset.id);
+        const set = new Set(ids);
+        const sorted = ids.map((id) => items.find((x) => x.id === id));
+        let k = 0;
+        items = items.map((x) => (set.has(x.id) ? sorted[k++] : x));
+        try { await api.post('notes/pin-order', { section: toList.dataset.sec, ids }); } catch (err) { toastError(err); load(true); }
+      },
+    });
     el.addEventListener('contextmenu', (e) => {
       const c = e.target.closest('.note-card');
-      if (!c) return;
+      if (!c || document.querySelector('.drag-ghost')) { if (c) e.preventDefault(); return; }
       const n = items.find((x) => x.id === +c.dataset.id);
       if (n && !othersNote(n)) moreMenu(e, n);
     });

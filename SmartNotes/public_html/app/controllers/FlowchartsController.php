@@ -25,6 +25,7 @@ final class FlowchartsController
         'end' => ['arrow', 'chevron', 'dot', 'none'],
         'bg' => ['plain', 'gradient', 'dark'],
         'labels' => ['box', 'pill', 'plain'],
+        'text' => ['s', 'm', 'l', 'xl'], // v1.20 whole-diagram text size
     ];
     private const PORTS = ['top', 'right', 'bottom', 'left'];
     private const MAX_NODES = 2000;
@@ -255,6 +256,10 @@ final class FlowchartsController
         }
         if (in_array($s['width'] ?? null, ['s', 'l'], true)) {
             $out['width'] = $s['width'];
+        }
+        // v1.20: text size in px chosen on a shape or line
+        if (isset($s['fs']) && is_numeric($s['fs'])) {
+            $out['fs'] = round(max(6, min(96, (float) $s['fs'])) * 2) / 2;
         }
         return $out ? json_encode($out) : null;
     }

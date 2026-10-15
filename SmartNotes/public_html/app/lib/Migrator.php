@@ -9,7 +9,7 @@ defined('SN_APP') || exit;
  */
 final class Migrator
 {
-    public const VERSION = 13;
+    public const VERSION = 14;
 
     public static function run(): void
     {
@@ -57,6 +57,9 @@ final class Migrator
             }
             if ($current < 13) {
                 self::v13();
+            }
+            if ($current < 14) {
+                self::v14();
             }
             Settings::set('schema_version', (string) self::VERSION);
         } finally {
@@ -275,6 +278,33 @@ final class Migrator
     }
 
     /** v1.19: team progress tracker (visible to everyone, updated by chosen people). */
+    /** v1.20: pin Team progress (for me / for everyone) and arrange pinned notes and items by dragging. */
+    private static function v14(): void
+    {
+        if (!self::hasTable('user_pins')) {
+            DB::pdo()->exec(self::USER_PINS_SQL);
+        }
+        self::addColumn('notes', 'pinned_global_pos', "INT NULL COMMENT 'Order of the notes pinned for everyone (v1.20)'");
+        self::addColumn('progress_items', 'pinned_global', "TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Pinned by an admin for everyone (v1.20)'");
+        self::addColumn('progress_items', 'pinned_global_at', 'DATETIME NULL');
+        self::addColumn('progress_items', 'pinned_global_by', 'INT UNSIGNED NULL');
+        self::addColumn('progress_items', 'pinned_global_pos', 'INT NULL');
+        if (!self::hasConstraint('progress_items', 'fk_progress_pinned_by')) {
+            DB::pdo()->exec('ALTER TABLE `progress_items` ADD KEY `fk_progress_pinned_by` (`pinned_global_by`), ADD CONSTRAINT `fk_progress_pinned_by` FOREIGN KEY (`pinned_global_by`) REFERENCES `users` (`id`) ON DELETE SET NULL');
+        }
+    }
+
+    public const USER_PINS_SQL = "CREATE TABLE `user_pins` (
+  `user_id`     INT UNSIGNED NOT NULL,
+  `kind`        VARCHAR(20) NOT NULL COMMENT 'note = order of my pinned notes, progress = Team progress I pinned, progress_order = my own order of Team progress',
+  `item_id`     INT UNSIGNED NOT NULL,
+  `position`    INT NOT NULL DEFAULT 0,
+  `created_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`user_id`, `kind`, `item_id`),
+  KEY `idx_user_pins_item` (`kind`, `item_id`),
+  CONSTRAINT `fk_user_pins_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+
     private static function v13(): void
     {
         foreach (['progress_items' => self::PROGRESS_ITEMS_SQL, 'progress_updaters' => self::PROGRESS_UPDATERS_SQL, 'progress_updates' => self::PROGRESS_UPDATES_SQL] as $t => $sql) {

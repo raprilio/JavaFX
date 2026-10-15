@@ -8,6 +8,7 @@ import { toast, toastError, menu, confirm, prompt } from '../core/ui.js';
 import { openItemShare } from '../components/itemShare.js';
 import { createStage, svgEl, wrapText, textBlock, themeColors, exportPng, exportSvg, exportPdf, safeName } from '../components/canvas.js';
 import { createFlowPlayer, exportFlowVideo, schedule } from '../components/flowPlayer.js';
+import { fsField, stepFs, clampFs } from '../components/fontSize.js';
 
 const SHAPES = {
   start: { label: 'Start', w: 140, h: 56, fill: '#22c55e' },
@@ -147,6 +148,8 @@ function alongPoly(pts, dist) {
   }
   return { x: pts[0][0], y: pts[0][1], ang: 0, total };
 }
+/** Whole-diagram text size (Style panel); a size chosen on a shape or line wins. */
+const TEXT_SCALE = { s: 0.85, m: 1, l: 1.2, xl: 1.45 };
 const PALETTE_COLORS = ['#6366f1', '#0ea5e9', '#14b8a6', '#22c55e', '#eab308', '#f59e0b', '#ef4444', '#ec4899', '#a855f7', '#64748b', '#111827', '#ffffff'];
 const PORTS = ['top', 'right', 'bottom', 'left'];
 const DIR = { top: [0, -1], right: [1, 0], bottom: [0, 1], left: [-1, 0] };
@@ -294,13 +297,16 @@ export default {
     /** Effective look: the preset with the chart's own choices on top. */
     const T = () => {
       const t = { ...(THEMES[theme.preset] || THEMES.classic) };
-      ['line', 'end', 'bg', 'labels'].forEach((k) => { if (theme[k]) t[k] = theme[k]; });
+      ['line', 'end', 'bg', 'labels', 'text'].forEach((k) => { if (theme[k]) t[k] = theme[k]; });
       if (typeof theme.shadow === 'boolean') t.shadow = theme.shadow;
       t.flow = !!theme.flow && !reduceMotion;
       t.title = !!theme.title;
       t.colors = t.colors || {};
       return t;
     };
+    /** Text size of a shape / line: its own size (v1.20), else the default × the diagram's text scale. */
+    const fsOf = (it, base) => it.style?.fs || Math.round(base * (TEXT_SCALE[T().text] || 1) * 2) / 2;
+    const nodeBase = (n) => (n.type === 'card' || LANES.has(n.type) ? 15 : SHAPES[n.type]?.device ? 12.5 : 13.5);
     /** Colours of the canvas for this look (light presets stay light even in the app's dark mode). */
     function look() {
       const th = themeColors(), t = T();
@@ -343,7 +349,7 @@ export default {
     function change(fn, { panel = true } = {}) { if (!canEdit) return; pushHistory(); fn(); render({ panel }); markDirty(); }
     function setTheme(patch) {
       change(() => {
-        theme = patch.preset ? { preset: patch.preset, flow: theme.flow, title: theme.title } : { ...theme, ...patch };
+        theme = patch.preset ? { preset: patch.preset, flow: theme.flow, title: theme.title, text: theme.text } : { ...theme, ...patch };
         Object.keys(theme).forEach((k) => theme[k] === undefined && delete theme[k]);
       });
     }
@@ -404,15 +410,16 @@ export default {
         g.appendChild(cg);
       }
       if (e.label) {
-        const tw = wrapText(e.label, { size: 12, weight: 560, maxWidth: 150 });
+        const ef = fsOf(e, 12), ek = ef / 12;
+        const tw = wrapText(e.label, { size: ef, weight: 560, maxWidth: 150 * Math.max(1, ek) });
         const hh = tw.lines.length * tw.lineHeight + 6;
         if (t.labels === 'plain') {
-          const tx = textBlock(g, tw.lines, { cx: geo.mx, cy: geo.my, size: 12.5, weight: 600, color: e.style.stroke || (lk.dark ? lk.text : mix(col, '#0f172a', 0.55)), lineHeight: tw.lineHeight });
+          const tx = textBlock(g, tw.lines, { cx: geo.mx, cy: geo.my, size: 12.5 * ek, weight: 600, color: e.style.stroke || (lk.dark ? lk.text : mix(col, '#0f172a', 0.55)), lineHeight: tw.lineHeight });
           tx.setAttribute('stroke', lk.bg); tx.setAttribute('stroke-width', 4); tx.setAttribute('paint-order', 'stroke'); tx.setAttribute('stroke-linejoin', 'round');
         } else {
           const pill = t.labels === 'pill';
-          g.appendChild(svgEl('rect', { x: geo.mx - tw.width / 2 - (pill ? 11 : 7), y: geo.my - hh / 2, width: tw.width + (pill ? 22 : 14), height: hh, rx: pill ? hh / 2 : 7, fill: pill ? '#ffffff' : lk.elev, stroke: pill ? 'none' : lk.border, filter: pill ? shadow('soft') : null }));
-          textBlock(g, tw.lines, { cx: geo.mx, cy: geo.my, size: 12, weight: 560, color: pill ? '#1e293b' : lk.text, lineHeight: tw.lineHeight });
+          g.appendChild(svgEl('rect', { x: geo.mx - tw.width / 2 - (pill ? 11 : 7) * ek, y: geo.my - hh / 2, width: tw.width + (pill ? 22 : 14) * ek, height: hh, rx: pill ? hh / 2 : 7, fill: pill ? '#ffffff' : lk.elev, stroke: pill ? 'none' : lk.border, filter: pill ? shadow('soft') : null }));
+          textBlock(g, tw.lines, { cx: geo.mx, cy: geo.my, size: ef, weight: 560, color: pill ? '#1e293b' : lk.text, lineHeight: tw.lineHeight });
         }
       }
       gEdges.appendChild(g);
@@ -421,23 +428,24 @@ export default {
     function nodeText(g, n, color, subColor, t) {
       const card = n.type === 'card';
       const icName = n.style.icon && ICONS[n.style.icon] ? n.style.icon : null;
+      const k = fsOf(n, nodeBase(n)) / nodeBase(n);
       if (card) {
         const ic = icName ? 26 : 0;
-        const L = n.label ? wrapText(n.label, { size: 15, weight: 700, maxWidth: Math.max(30, n.w - 32 - (ic ? ic + 8 : 0)) }) : null;
-        const S = n.style.sub ? wrapText(n.style.sub, { size: 12, weight: 500, maxWidth: Math.max(30, n.w - 32) }) : null;
+        const L = n.label ? wrapText(n.label, { size: 15 * k, weight: 700, maxWidth: Math.max(30, n.w - 32 - (ic ? ic + 8 : 0)) }) : null;
+        const S = n.style.sub ? wrapText(n.style.sub, { size: 12 * k, weight: 500, maxWidth: Math.max(30, n.w - 32) }) : null;
         const lh = L ? Math.min(2, L.lines.length) * L.lineHeight : 0, sh = S ? Math.min(3, S.lines.length) * S.lineHeight : 0;
         let y = Math.max(14, (n.h - lh - sh - (S ? 4 : 0)) / 2);
         if (icName) g.appendChild(deviceIcon(icName, n.w - 16 - ic, 14, ic, color));
-        if (L) { textBlock(g, L.lines.slice(0, 2), { cx: 16, cy: y + lh / 2, size: 15, weight: 700, color, lineHeight: L.lineHeight, anchor: 'start' }); y += lh + 4; }
-        if (S) textBlock(g, S.lines.slice(0, 3), { cx: 16, cy: y + sh / 2, size: 12, weight: 500, color: subColor, lineHeight: S.lineHeight, anchor: 'start' });
+        if (L) { textBlock(g, L.lines.slice(0, 2), { cx: 16, cy: y + lh / 2, size: 15 * k, weight: 700, color, lineHeight: L.lineHeight, anchor: 'start' }); y += lh + 4; }
+        if (S) textBlock(g, S.lines.slice(0, 3), { cx: 16, cy: y + sh / 2, size: 12 * k, weight: 500, color: subColor, lineHeight: S.lineHeight, anchor: 'start' });
         return;
       }
       const pad = { decision: n.w * 0.4, triangle: n.w * 0.45, star: n.w * 0.5, hexagon: n.w * 0.3 }[n.type] ?? 24;
       const maxWidth = Math.max(30, n.w - pad);
-      const L = n.label ? wrapText(n.label, { size: 13.5, weight: 600, maxWidth }) : null;
-      const S = n.style.sub && n.type !== 'zone' ? wrapText(n.style.sub, { size: 11.5, weight: 500, maxWidth }) : null;
+      const L = n.label ? wrapText(n.label, { size: 13.5 * k, weight: 600, maxWidth }) : null;
+      const S = n.style.sub && n.type !== 'zone' ? wrapText(n.style.sub, { size: 11.5 * k, weight: 500, maxWidth }) : null;
       if (n.type === 'zone') {
-        if (L) textBlock(g, L.lines, { cx: n.w / 2, cy: Math.min(n.h / 2, 12 + (L.lines.length * L.lineHeight) / 2), size: 13.5, weight: 600, color, lineHeight: L.lineHeight });
+        if (L) textBlock(g, L.lines, { cx: n.w / 2, cy: Math.min(n.h / 2, 12 + (L.lines.length * L.lineHeight) / 2), size: 13.5 * k, weight: 600, color, lineHeight: L.lineHeight });
         return;
       }
       const ic = icName ? Math.max(16, Math.min(30, n.h * 0.32)) : 0;
@@ -445,8 +453,8 @@ export default {
       const cy = { document: n.h / 2 - 5, triangle: n.h * 0.66, star: n.h * 0.56, callout: n.h * 0.39 }[n.type] ?? n.h / 2;
       let y = cy - (ic + (ic && (L || S) ? 5 : 0) + lh + (S ? sh + 2 : 0)) / 2;
       if (icName) { g.appendChild(deviceIcon(icName, n.w / 2 - ic / 2, y, ic, color)); y += ic + 5; }
-      if (L) { textBlock(g, L.lines, { cx: n.w / 2, cy: y + lh / 2, size: 13.5, weight: 600, color, lineHeight: L.lineHeight }); y += lh + 2; }
-      if (S) textBlock(g, S.lines, { cx: n.w / 2, cy: y + sh / 2, size: 11.5, weight: 500, color: subColor, lineHeight: S.lineHeight });
+      if (L) { textBlock(g, L.lines, { cx: n.w / 2, cy: y + lh / 2, size: 13.5 * k, weight: 600, color, lineHeight: L.lineHeight }); y += lh + 2; }
+      if (S) textBlock(g, S.lines, { cx: n.w / 2, cy: y + sh / 2, size: 11.5 * k, weight: 500, color: subColor, lineHeight: S.lineHeight });
     }
     function drawShape(g, n, t, lk) {
       const base = SHAPES[n.type] || SHAPES.process;
@@ -457,11 +465,12 @@ export default {
         const accent = n.style.stroke || base.fill;
         const fg = filled ? (luminance(fill) > 0.6 ? '#111827' : '#ffffff') : accent;
         g.appendChild(shapeEl(n.type, n.w, n.h, { fill, stroke: accent, 'stroke-width': filled ? 2 : 1.6, class: 'body', filter: t.shadow && n.style.fill !== 'none' ? shadow(t.deep ? 'deep' : 'soft') : null }));
-        const label = n.label ? wrapText(n.label, { size: 12.5, weight: 600, maxWidth: Math.max(30, n.w - 14) }) : null;
+        const dfs = fsOf(n, 12.5);
+        const label = n.label ? wrapText(n.label, { size: dfs, weight: 600, maxWidth: Math.max(30, n.w - 14) }) : null;
         const textH = label ? Math.min(label.lines.length, 3) * label.lineHeight : 0;
         const size = Math.max(16, Math.min(n.w - 20, n.h - textH - 18, 64));
         g.appendChild(deviceIcon(base.device, (n.w - size) / 2, Math.max(6, (n.h - textH - size) / 2 - (label ? 2 : 0)), size, fg));
-        if (label) textBlock(g, label.lines.slice(0, 3), { cx: n.w / 2, cy: n.h - textH / 2 - 8, size: 12.5, weight: 600, color: n.style.text || (filled ? fg : lk.text), lineHeight: label.lineHeight });
+        if (label) textBlock(g, label.lines.slice(0, 3), { cx: n.w / 2, cy: n.h - textH / 2 - 8, size: dfs, weight: 600, color: n.style.text || (filled ? fg : lk.text), lineHeight: label.lineHeight });
         return;
       }
       if (LANES.has(n.type)) {
@@ -474,8 +483,9 @@ export default {
         g.appendChild(svgEl('rect', { class: 'lane-head', x: 0, y: 0, width: vert ? n.w : band, height: vert ? band : n.h, rx: 6, fill: mix(c, lk.elev, lk.dark ? 0.35 : 0.2), stroke: 'none' }));
         g.appendChild(shapeEl(n.type, n.w, n.h, { fill: 'none', stroke: 'transparent', 'stroke-width': 14, class: 'hit' }));
         if (n.label) {
-          const L = wrapText(n.label, { size: 15, weight: 650, maxWidth: (vert ? n.w : n.h) - 24 });
-          const tg = textBlock(g, L.lines.slice(0, 1), { cx: vert ? n.w / 2 : band / 2, cy: vert ? band / 2 : n.h / 2, size: 15, weight: 650, color: n.style.text || lk.text, lineHeight: L.lineHeight });
+          const lfs = fsOf(n, 15);
+          const L = wrapText(n.label, { size: lfs, weight: 650, maxWidth: (vert ? n.w : n.h) - 24 });
+          const tg = textBlock(g, L.lines.slice(0, 1), { cx: vert ? n.w / 2 : band / 2, cy: vert ? band / 2 : n.h / 2, size: lfs, weight: 650, color: n.style.text || lk.text, lineHeight: L.lineHeight });
           if (!vert) tg.setAttribute('transform', `rotate(-90 ${band / 2} ${n.h / 2})`);
         }
         return;
@@ -617,6 +627,7 @@ export default {
           <div class="field"><label>Arrow</label><div class="seg" data-edge-arrow>${[['end', 'arrow-right', 'One end'], ['both', 'arrow-left-right', 'Both'], ['none', 'minus', 'None']].map(([v, i, l]) => html`<button type="button" class="btn sm ${(edge.style.arrow || 'end') === v ? 'active' : ''}" data-arrow="${v}" data-tip="${l}">${icon(i, 'sm')} ${l}</button>`)}</div></div>
           <div class="field"><label>Route</label><div class="seg fc-seg">${[['', 'Theme'], ['curve', 'Curved'], ['elbow', 'Elbow'], ['straight', 'Straight']].map(([v, l]) => html`<button type="button" class="btn xs ${(edge.style.route || '') === v ? 'active' : ''}" data-route="${v}">${l}</button>`)}</div></div>
           <div class="field"><label>Thickness</label><div class="seg fc-seg">${[['s', 'Thin'], ['', 'Normal'], ['l', 'Thick']].map(([v, l]) => html`<button type="button" class="btn xs ${(edge.style.width || '') === v ? 'active' : ''}" data-ewidth="${v}">${l}</button>`)}</div></div>
+          ${fsField(fsOf(edge, 12), !!edge.style.fs, 'Name text size')}
           <label class="check small mb-2"><input type="checkbox" data-edge-dashed ${edge.style.dashed ? 'checked' : ''}> Dashed line</label>
           <div class="field"><label>Color</label>${swatchRow('edge-color', edge.style.stroke)}</div>
           <div class="grid grid-2" style="gap:6px"><button class="btn sm" data-a="reverse">${icon('arrow-left-right', 'sm')} Reverse</button><button class="btn sm danger" data-a="delete">${icon('trash-2', 'sm')} Delete</button></div>`);
@@ -626,6 +637,7 @@ export default {
         const n = byKey([...selected][0]);
         panel.innerHTML = String(html`${head('Shape')}
           <div class="field"><label>Text</label><textarea class="textarea" rows="2" data-node-label>${n.label}</textarea></div>
+          ${fsField(fsOf(n, nodeBase(n)), !!n.style.fs)}
           ${SHAPES[n.type]?.device || LANES.has(n.type) || n.type === 'zone' ? '' : html`<div class="field"><label>Second line <span class="subtle">(optional)</span></label><input class="input sm" data-node-sub maxlength="200" value="${n.style.sub || ''}" placeholder="e.g. 40% monthly increase · Step 2"></div>
           <div class="field"><label>Icon</label><div class="fc-icons"><button type="button" class="fc-ic ${!n.style.icon ? 'active' : ''}" data-node-icon="" aria-label="No icon">${icon('slash', 'sm')}</button>${NODE_ICONS.map((i) => html`<button type="button" class="fc-ic ${n.style.icon === i ? 'active' : ''}" data-node-icon="${i}" aria-label="${i}">${icon(i, 'sm')}</button>`)}</div></div>`}
           <div class="field"><label>Type</label><select class="select sm" data-node-type>${GROUPS.map(([g, gl]) => html`<optgroup label="${gl}">${Object.entries(SHAPES).filter(([, x]) => (x.group || 'flow') === g).map(([t, x]) => html`<option value="${t}" ${n.type === t ? 'selected' : ''}>${t === 'connector' ? 'Connector' : x.label.replace('?', '')}</option>`)}</optgroup>`)}</select></div>
@@ -642,7 +654,10 @@ export default {
         return;
       }
       if (selected.size > 1) {
+        const first = byKey([...selected][0]);
         panel.innerHTML = String(html`${head(`${selected.size} shapes`)}
+          ${fsField(fsOf(first, nodeBase(first)), [...selected].some((k) => byKey(k)?.style.fs))}
+          <div class="field"><label>Text color</label>${swatchRow('text', null)}</div>
           <div class="field"><label>Fill</label>${swatchRow('fill', null, true, true)}</div>
           <div class="grid grid-2 mb-2" style="gap:6px"><button class="btn sm" data-a="front">${icon('bring-to-front', 'sm')} To front</button><button class="btn sm" data-a="back">${icon('send-to-back', 'sm')} To back</button></div>
           <div class="grid grid-2" style="gap:6px"><button class="btn sm" data-a="duplicate">${icon('copy', 'sm')} Duplicate</button><button class="btn sm danger" data-a="delete">${icon('trash-2', 'sm')} Delete</button></div>`);
@@ -661,6 +676,7 @@ export default {
         <div class="field"><label>Line ends</label>${seg('end', [['arrow', 'Arrow'], ['chevron', 'Badge'], ['dot', 'Dots'], ['none', 'None']])}</div>
         <div class="field"><label>Line names</label>${seg('labels', [['box', 'Box'], ['pill', 'Pill'], ['plain', 'Text']])}</div>
         <div class="field"><label>Background</label>${seg('bg', [['plain', 'Plain'], ['gradient', 'Gradient'], ['dark', 'Dark']])}</div>
+        <div class="field"><label>Text size <span class="subtle">(all shapes & lines)</span></label><div class="seg fc-seg">${[['s', 'S'], ['m', 'M'], ['l', 'L'], ['xl', 'XL']].map(([v, l]) => html`<button type="button" class="btn xs ${(t.text || 'm') === v ? 'active' : ''}" data-theme-k="text" data-theme-v="${v}">${l}</button>`)}</div></div>
         ${sw('shadow', 'Shadows', t.shadow)}${sw('flow', 'Moving lines', !!theme.flow)}${sw('title', 'Title on the canvas', t.title)}
         </div>` : ''}
         <div class="field mt-3"><label>Description</label><textarea class="textarea" rows="4" data-desc placeholder="Describe this process…">${data.description || ''}</textarea></div>
@@ -715,7 +731,7 @@ export default {
       const r = g.getBoundingClientRect(), sr = stageEl.getBoundingClientRect();
       const ta = h('<textarea class="node-editor"></textarea>');
       ta.value = n.label;
-      Object.assign(ta.style, { left: r.left - sr.left + 'px', top: r.top - sr.top + 'px', width: Math.max(120, r.width) + 'px', height: Math.max(40, r.height) + 'px', fontSize: 13.5 * stage.vp.zoom + 'px' });
+      Object.assign(ta.style, { left: r.left - sr.left + 'px', top: r.top - sr.top + 'px', width: Math.max(120, r.width) + 'px', height: Math.max(40, r.height) + 'px', fontSize: fsOf(n, nodeBase(n)) * stage.vp.zoom + 'px' });
       stageEl.appendChild(ta);
       ta.focus();
       ta.select();
@@ -922,6 +938,12 @@ export default {
         const b = e.target.closest(`[data-${attr}]`);
         if (b && selected.size) return change(() => nodes.forEach((n) => { if (selected.has(n.key)) n.style = { ...n.style, [prop]: b.dataset[attr] || undefined }; }));
       }
+      const fst = e.target.closest('[data-fs-step],[data-fs-reset]');
+      if (fst) {
+        const box = fst.closest('[data-fs-box]');
+        if ('fsReset' in fst.dataset) return setFs(null);
+        return setFs(stepFs(box.querySelector('[data-fs]').value, +fst.dataset.fsStep));
+      }
       const pre = e.target.closest('[data-theme-preset]');
       if (pre) return setTheme({ preset: pre.dataset.themePreset });
       const tk = e.target.closest('[data-theme-k]');
@@ -999,9 +1021,16 @@ export default {
       if (t.matches('[data-desc]')) { data.description = t.value; markDirty(); if (T().title) render({ panel: false }); }
       if (t.matches('[data-title]')) { ctx.setTitle(t.value); markDirty(); if (T().title) render({ panel: false }); }
     });
+    /** Text size of the selected line or shapes (null = automatic). */
+    function setFs(v) {
+      const fs = v == null || v === '' ? undefined : clampFs(v);
+      if (selEdge) return change(() => { const ed = edges.find((x) => x.key === selEdge); ed.style = { ...ed.style, fs }; });
+      if (selected.size) change(() => nodes.forEach((x) => { if (selected.has(x.key)) x.style = { ...x.style, fs }; }));
+    }
     el.addEventListener('change', (e) => {
       const t = e.target;
       const n = selected.size === 1 ? byKey([...selected][0]) : null;
+      if (t.matches('[data-fs]') && +t.value > 0) return setFs(t.value);
       if (t.matches('[data-node-type]') && n) change(() => (n.type = t.value));
       if (t.matches('[data-node-dashed]') && n) change(() => (n.style = { ...n.style, dashed: t.checked }));
       if (t.matches('[data-node-grad]') && n) change(() => (n.style = { ...n.style, grad: t.checked || undefined }));
