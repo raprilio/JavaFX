@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS `user_settings` (
   `last_daily_agenda_at`   DATE NULL,
   `last_weekly_agenda_at`  DATE NULL,
   `dashboard_hidden`       TEXT NULL COMMENT 'JSON list of hidden dashboard widgets',
+  `dashboard_layout`       TEXT NULL COMMENT 'JSON [{k, w, h}] own dashboard layout (v1.21)',
   `updated_at`             DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`user_id`),
   CONSTRAINT `fk_usettings_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
@@ -928,7 +929,7 @@ INSERT IGNORE INTO `settings` (`setting_key`, `setting_value`) VALUES
 ('smtp_encryption', 'tls'),
 ('smtp_from_name', 'SmartNotes'),
 ('smtp_from_email', ''),
-('schema_version', '14'),
+('schema_version', '15'),
 ('allow_note_sharing', '1'),
 ('logo_display', 'logo'),
 ('logo_height', '34'),

@@ -56,6 +56,7 @@ final class AppController
             'daily_agenda_time' => substr((string) $s['daily_agenda_time'], 0, 5),
             'default_reminder' => $s['default_reminder'] === null ? null : (int) $s['default_reminder'],
             'dashboard_hidden' => json_decode_array($s['dashboard_hidden'] ?? null),
+            'dashboard_layout' => json_decode_array($s['dashboard_layout'] ?? null),
         ];
     }
 }

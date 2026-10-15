@@ -9,7 +9,7 @@ defined('SN_APP') || exit;
  */
 final class Migrator
 {
-    public const VERSION = 14;
+    public const VERSION = 15;
 
     public static function run(): void
     {
@@ -60,6 +60,9 @@ final class Migrator
             }
             if ($current < 14) {
                 self::v14();
+            }
+            if ($current < 15) {
+                self::addColumn('user_settings', 'dashboard_layout', "TEXT NULL COMMENT 'JSON [{k, w, h}] own dashboard layout (v1.21)'");
             }
             Settings::set('schema_version', (string) self::VERSION);
         } finally {

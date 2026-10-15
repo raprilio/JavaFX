@@ -104,6 +104,19 @@ final class ProfileController
             'daily_agenda_time' => static fn($v) => V::time($v) ?? '07:00:00',
             'default_reminder' => static fn($v) => V::int($v, 0, 10080),
             // Dashboard widgets the user chose to hide (keys like "recent_notes", "stat_audio").
+            // v1.21: own dashboard layout — widget order, column (0–11), width in 12ths, fixed height in px (null = fit the content).
+            'dashboard_layout' => static function ($v) {
+                $out = [];
+                foreach (array_slice(is_array($v) ? $v : [], 0, 40) as $w) {
+                    if (!is_array($w) || !is_string($w['k'] ?? null) || !preg_match('/^[a-z][a-z_]{1,39}$/', $w['k']) || isset($out[$w['k']])) {
+                        continue;
+                    }
+                    $h = isset($w['h']) && is_numeric($w['h']) ? (int) $w['h'] : null;
+                    $width = max(3, min(12, (int) ($w['w'] ?? 12)));
+                    $out[$w['k']] = ['k' => $w['k'], 'x' => max(0, min(12 - $width, (int) ($w['x'] ?? 0))), 'w' => $width, 'h' => $h ? max(120, min(1600, $h)) : null];
+                }
+                return $out ? json_encode(array_values($out)) : null;
+            },
             'dashboard_hidden' => static fn($v) => json_encode(array_values(array_unique(array_filter(
                 array_slice(is_array($v) ? $v : [], 0, 60),
                 static fn($k) => is_string($k) && preg_match('/^[a-z][a-z_]{1,39}$/', $k)

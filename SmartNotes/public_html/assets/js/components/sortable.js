@@ -33,6 +33,9 @@ export function sortable(root, { item, list, handle = null, onDrop, delay = 0, l
       ph.className = 'drag-placeholder';
       ph.style.height = r.height + 'px';
       if (layout !== 'list') ph.style.width = r.width + 'px';
+      // in a CSS grid the placeholder takes the same columns / rows as the item (e.g. dashboard widgets)
+      if (it.style.gridColumn) ph.style.gridColumn = it.style.gridColumn;
+      if (it.style.gridRow) ph.style.gridRow = it.style.gridRow;
       window.addEventListener('touchmove', noScroll, { passive: false });
       it.after(ph);
       it.classList.add('drag-source');
