@@ -14,6 +14,8 @@ final class FilesController
             'note_id' => $r['note_id'] !== null ? (int) $r['note_id'] : null,
             'task_id' => $r['task_id'] !== null ? (int) $r['task_id'] : null,
             'meeting_id' => $r['meeting_id'] !== null ? (int) $r['meeting_id'] : null,
+            'ptask_id' => isset($r['ptask_id']) ? (int) $r['ptask_id'] ?: null : null,
+            'uploader' => isset($r['uploader_name']) ? ['id' => (int) $r['user_id'], 'name' => $r['uploader_name']] : null,
             'name' => $r['original_name'],
             'mime_type' => $r['mime_type'],
             'kind' => $r['file_kind'],
@@ -98,7 +100,23 @@ final class FilesController
             && DB::val('SELECT m.id FROM meetings m WHERE m.id = ? AND m.deleted_at IS NULL AND ' . MeetingsController::visibleSql('m'), [$r['meeting_id'], $userId, $userId])) {
             return $r;
         }
+        // Files handed in for a progress task this user owns or works on (v1.22).
+        if ($r && !$r['deleted_at'] && !empty($r['ptask_id']) && PtasksController::involved((int) $r['ptask_id'], $userId)) {
+            return $r;
+        }
         throw new HttpException('File not found.', 404);
+    }
+
+    /** Every file attached to an item by anyone (meetings, progress tasks), with who added it (v1.22). */
+    public static function forItem(string $col, int $id): array
+    {
+        if (!in_array($col, ['meeting_id', 'ptask_id'], true)) {
+            return [];
+        }
+        return self::presentMany(DB::all(
+            "SELECT a.*, u.name AS uploader_name FROM note_attachments a JOIN users u ON u.id = a.user_id WHERE a.$col = ? AND a.deleted_at IS NULL ORDER BY a.id",
+            [$id]
+        ));
     }
 
     public static function forParent(string $parent, int $parentId, int $userId): array
@@ -123,6 +141,13 @@ final class FilesController
     private static function parents(int $userId, array $in): array
     {
         $out = [];
+        // v1.22: a file handed in for a progress task (by its owner or someone working on it)
+        if (array_key_exists('ptask_id', $in) && ($pid = V::id($in['ptask_id']))) {
+            if (!PtasksController::involved($pid, $userId)) {
+                throw new HttpException('Related item not found.', 404);
+            }
+            $out['ptask_id'] = $pid;
+        }
         foreach (['note_id' => 'notes', 'task_id' => 'tasks', 'meeting_id' => 'meetings'] as $k => $t) {
             if (array_key_exists($k, $in)) {
                 $id = V::id($in[$k]);
@@ -130,6 +155,11 @@ final class FilesController
                     // An admin attaching a file to a task they assigned: the file belongs to the task's owner.
                     $out[$k] = $id;
                     $out['__owner'] = (int) $owner;
+                    continue;
+                }
+                // v1.22: everyone in a meeting may add files to it
+                if ($id && $k === 'meeting_id' && DB::val('SELECT m.id FROM meetings m WHERE m.id = ? AND m.deleted_at IS NULL AND ' . MeetingsController::visibleSql('m'), [$id, $userId, $userId])) {
+                    $out[$k] = $id;
                     continue;
                 }
                 if ($id && !DB::val("SELECT id FROM `$t` WHERE id = ? AND user_id = ?", [$id, $userId])) {

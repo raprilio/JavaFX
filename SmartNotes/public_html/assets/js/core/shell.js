@@ -12,6 +12,7 @@ const NAV = [
   { path: '/', label: 'Dashboard', icon: 'layout-dashboard' },
   { path: '/notes', label: 'Notes', icon: 'notebook-pen' },
   { path: '/tasks', label: 'Tasks', icon: 'square-check-big' },
+  { path: '/tasks/progress', label: 'Progress tasks', icon: 'list-todo' },
   { path: '/progress', label: 'Team progress', icon: 'chart-no-axes-gantt' },
   { path: '/calendar', label: 'Calendar', icon: 'calendar-days' },
   { path: '/meetings', label: 'Meetings', icon: 'users' },
@@ -103,7 +104,9 @@ export function setActive(path) {
   if (!shellEl) return;
   const cat = new URLSearchParams(location.hash.split('?')[1] || '').get('category');
   const top = '/' + (path.split('/')[1] || '');
-  $$('[data-path]', shellEl).forEach((a) => a.classList.toggle('active', a.dataset.path === top && !(cat && top === '/notes' && a.classList.contains('nav-item'))));
+  // the most specific menu entry wins (/tasks/progress over /tasks)
+  const best = [...new Set($$('[data-path]', shellEl).map((a) => a.dataset.path))].filter((p) => path === p || (p !== '/' && path.startsWith(p + '/'))).sort((a, b) => b.length - a.length)[0] || top;
+  $$('[data-path]', shellEl).forEach((a) => a.classList.toggle('active', a.dataset.path === best && !(cat && top === '/notes' && a.classList.contains('nav-item'))));
   $$('[data-cat]', shellEl).forEach((a) => a.classList.toggle('active', top === '/notes' && a.dataset.cat === cat));
   shellEl.classList.remove('drawer-open');
 }
@@ -262,7 +265,7 @@ async function openNotifications(anchor) {
   const list = $('.notif-list', wrap);
   const items = r?.items || [];
   list.innerHTML = items.length ? items.map((n) => String(html`<div class="notif ${n.is_read ? '' : 'unread'}" data-id="${n.id}" data-link="${n.link || ''}">
-      <span class="n-icon">${icon(n.type === 'reminder' ? 'alarm-clock' : n.type === 'mention' ? 'at-sign' : n.type === 'progress' ? 'chart-no-axes-gantt' : 'bell', 'sm')}</span>
+      <span class="n-icon">${icon(n.type === 'reminder' ? 'alarm-clock' : n.type === 'mention' ? 'at-sign' : n.type === 'progress' ? 'chart-no-axes-gantt' : n.type === 'ptask' ? 'list-todo' : 'bell', 'sm')}</span>
       <div class="grow" style="min-width:0"><b>${n.title}</b>${n.message ? html`<div class="small muted" style="margin:2px 0">${n.message}</div>` : ''}<span>${timeAgo(n.created_at)}</span></div></div>`)).join('')
     : String(html`<div class="empty" style="padding:34px 16px"><div class="empty-art">${icon('bell-off', 'xl')}</div><h3>All caught up</h3><p>Reminders for tasks, meetings and schedules appear here.</p></div>`);
   wrap.addEventListener('click', async (e) => {

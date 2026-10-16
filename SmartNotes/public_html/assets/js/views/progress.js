@@ -8,6 +8,7 @@ import { navigate, setQuery } from '../core/router.js';
 import { toast, toastError, modal, confirm, avatarHtml, empty, menu } from '../core/ui.js';
 import { userPicker } from '../components/userPicker.js';
 import { sortable } from '../components/sortable.js';
+import { mountItemNotes } from '../components/itemNotes.js';
 
 const STATUS = {
   on_track: { label: 'On track', icon: 'circle-check', cls: 'success' },
@@ -223,12 +224,16 @@ async function renderDetail(el, ctx, id) {
                 <p class="pg-reason">${u.reason}</p></div></li>`)}</ol>` : html`<p class="small subtle">No updates yet.</p>`}</div>
         </div>
         <aside class="pg-side">
+          ${it.deleted_at ? '' : html`<div class="card card-pad pg-notes" data-pg-notes></div>`}
           ${it.description ? html`<div class="card card-pad"><h3>About</h3><p class="small" style="white-space:pre-wrap;margin:0">${it.description}</p></div>` : ''}
           ${it.fields.length ? html`<div class="card card-pad"><h3>Details</h3><dl class="kv small pg-kv">${it.fields.map((f) => html`<dt>${f.label}</dt><dd>${isUrl(f.value) ? html`<a href="${f.value}" target="_blank" rel="noopener noreferrer">${f.value.replace(/^https?:\/\//, '')}</a>` : f.value || '—'}</dd>`)}</dl></div>` : ''}
           <div class="card card-pad"><h3>Can update</h3>${it.updaters.map((u) => html`<div class="row pg-person">${avatarHtml(u, 'sm')}<span>${u.name}${u.id === state.user.id ? html` <span class="subtle">(you)</span>` : ''}</span></div>`)}</div>
           <div class="card card-pad small"><dl class="kv"><dt>Started</dt><dd>${it.start_date ? fmtDay(it.start_date) : '—'}</dd><dt>Target</dt><dd>${it.due_date ? fmtDay(it.due_date) : '—'}</dd><dt>Published</dt><dd>${it.published_at ? fmtDay(it.published_at.slice(0, 10)) : '—'}</dd></dl></div>
         </aside>
       </div></div>`);
+    // v1.22: reference notes of the project — everyone opens them; creator / admin / updaters add them
+    const notesEl = el.querySelector('[data-pg-notes]');
+    if (notesEl) mountItemNotes(notesEl, { type: 'progress', id, items: it.notes || [], canAdd: !!it.can_add_notes, title: 'Reference notes', hint: it.can_add_notes ? 'List the notes this project follows — specs, designs, decisions. Everyone can open them.' : 'No reference notes yet.', onChange: (list) => (it.notes = list) });
   };
   paint();
   let pick = { stage: null, status: it.status === 'done' ? 'on_track' : it.status };

@@ -147,7 +147,12 @@ final class MeetingsController
             'SELECT id, title, status, priority, due_date, due_time FROM tasks WHERE meeting_id = ? AND user_id = ? AND deleted_at IS NULL ORDER BY sort_order, id',
             [$id, $ownerId]
         ));
-        $m['attachments'] = FilesController::forParent('meeting', $id, $ownerId);
+        // v1.22: everyone in the meeting adds files and notes for the discussion
+        $m['attachments'] = array_map(static function ($f) use ($userId, $ownerId) {
+            $f['can_remove'] = $f['uploader']['id'] === $userId || $ownerId === $userId;
+            return $f;
+        }, FilesController::forItem('meeting_id', $id));
+        $m['notes'] = ItemNotesController::listFor('meeting', $id, $userId);
         if ($role === 'owner') {
             $note = $m['note_id'] ? DB::one('SELECT id, title, LEFT(content_text, 200) AS excerpt, is_locked FROM notes WHERE id = ? AND user_id = ? AND deleted_at IS NULL', [$m['note_id'], $userId]) : null;
             if ($note && $note['is_locked'] && !NoteLock::unlocked($userId)) {
@@ -161,6 +166,22 @@ final class MeetingsController
             $m['note_id'] = null;
         }
         return $m;
+    }
+
+    /** Take a file off the meeting (v1.22): its uploader or the meeting's owner. The file stays in its owner's Drive. */
+    public static function removeFile(int $id, int $fileId): void
+    {
+        $u = Auth::require();
+        [$m] = self::access($id, (int) $u['id']);
+        $f = DB::one('SELECT id, user_id FROM note_attachments WHERE id = ? AND meeting_id = ?', [$fileId, $id]);
+        if (!$f) {
+            throw new HttpException('File not found.', 404);
+        }
+        if ((int) $f['user_id'] !== (int) $u['id'] && (int) $m['user_id'] !== (int) $u['id']) {
+            throw new HttpException('Only the person who added the file or the meeting owner can remove it.', 403);
+        }
+        DB::run('UPDATE note_attachments SET meeting_id = NULL WHERE id = ?', [$fileId]);
+        Http::ok(['id' => $fileId]);
     }
 
     public static function show(int $id): void

@@ -334,6 +334,81 @@ CREATE TABLE IF NOT EXISTS `user_pins` (
   CONSTRAINT `fk_user_pins_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- v1.22 progress tasks (management or personal): a task split into parts, each filled by its own person
+CREATE TABLE IF NOT EXISTS `ptasks` (
+  `id`            INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `user_id`       INT UNSIGNED NOT NULL COMMENT 'Owner: manages the parts and approves submissions',
+  `title`         VARCHAR(255) NOT NULL,
+  `description`   TEXT NULL,
+  `color`         VARCHAR(9) NULL,
+  `due_date`      DATE NULL,
+  `percent`       TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Weighted average of the parts',
+  `status`        ENUM('open','done') NOT NULL DEFAULT 'open',
+  `completed_at`  DATETIME NULL,
+  `created_at`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `deleted_at`    DATETIME NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_ptasks_user` (`user_id`, `deleted_at`),
+  CONSTRAINT `fk_ptasks_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `ptask_parts` (
+  `id`                INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `ptask_id`          INT UNSIGNED NOT NULL,
+  `assignee_id`       INT UNSIGNED NULL COMMENT 'The only person who fills this bar',
+  `title`             VARCHAR(255) NOT NULL,
+  `weight`            TINYINT UNSIGNED NOT NULL DEFAULT 1,
+  `percent`           TINYINT UNSIGNED NOT NULL DEFAULT 0,
+  `needs_submission`  TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Must be handed in (setor) and approved',
+  `submission`        ENUM('none','submitted','approved','rejected') NOT NULL DEFAULT 'none',
+  `due_date`          DATE NULL,
+  `position`          INT NOT NULL DEFAULT 0,
+  `done_at`           DATETIME NULL,
+  `created_at`        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_ptask_parts_task` (`ptask_id`, `position`),
+  KEY `idx_ptask_parts_user` (`assignee_id`),
+  CONSTRAINT `fk_ptask_parts_task` FOREIGN KEY (`ptask_id`) REFERENCES `ptasks` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_ptask_parts_user` FOREIGN KEY (`assignee_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `ptask_updates` (
+  `id`            INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `ptask_id`      INT UNSIGNED NOT NULL,
+  `part_id`       INT UNSIGNED NULL,
+  `user_id`       INT UNSIGNED NULL,
+  `kind`          ENUM('progress','submit','approve','reject') NOT NULL DEFAULT 'progress',
+  `percent_from`  TINYINT UNSIGNED NULL,
+  `percent`       TINYINT UNSIGNED NULL,
+  `message`       TEXT NULL,
+  `files`         TEXT NULL COMMENT 'JSON list of handed-in file ids',
+  `notes`         TEXT NULL COMMENT 'JSON list of handed-in note ids',
+  `created_at`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_ptask_updates_task` (`ptask_id`, `created_at`),
+  KEY `fk_ptask_updates_part` (`part_id`),
+  KEY `fk_ptask_updates_user` (`user_id`),
+  CONSTRAINT `fk_ptask_updates_task` FOREIGN KEY (`ptask_id`) REFERENCES `ptasks` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_ptask_updates_part` FOREIGN KEY (`part_id`) REFERENCES `ptask_parts` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_ptask_updates_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- v1.22 notes listed on Team progress items, meetings and progress tasks (opened read-only by everyone there)
+CREATE TABLE IF NOT EXISTS `item_notes` (
+  `item_type`   VARCHAR(20) NOT NULL COMMENT 'progress, meeting or ptask',
+  `item_id`     INT UNSIGNED NOT NULL,
+  `note_id`     INT UNSIGNED NOT NULL,
+  `added_by`    INT UNSIGNED NULL,
+  `created_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`item_type`, `item_id`, `note_id`),
+  KEY `idx_item_notes_note` (`note_id`),
+  KEY `fk_item_notes_by` (`added_by`),
+  CONSTRAINT `fk_item_notes_note` FOREIGN KEY (`note_id`) REFERENCES `notes` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_item_notes_by` FOREIGN KEY (`added_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `progress_updaters` (
   `item_id`     INT UNSIGNED NOT NULL,
   `user_id`     INT UNSIGNED NOT NULL COMMENT 'Allowed to post progress updates',
@@ -507,6 +582,7 @@ CREATE TABLE IF NOT EXISTS `note_attachments` (
   `note_id`        INT UNSIGNED NULL,
   `task_id`        INT UNSIGNED NULL,
   `meeting_id`     INT UNSIGNED NULL,
+  `ptask_id`       INT UNSIGNED NULL COMMENT 'Handed in for a progress task (v1.22)',
   `folder_id`      INT UNSIGNED NULL COMMENT 'Drive folder',
   `file_name`      VARCHAR(120) NOT NULL COMMENT 'Stored (random) file name',
   `original_name`  VARCHAR(255) NOT NULL,
@@ -529,6 +605,7 @@ CREATE TABLE IF NOT EXISTS `note_attachments` (
   KEY `idx_att_note` (`note_id`),
   KEY `idx_att_task` (`task_id`),
   KEY `idx_att_meeting` (`meeting_id`),
+  KEY `idx_att_ptask` (`ptask_id`),
   KEY `idx_att_hash` (`user_id`, `file_hash`),
   KEY `idx_att_folder` (`folder_id`),
   CONSTRAINT `fk_att_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
@@ -929,7 +1006,7 @@ INSERT IGNORE INTO `settings` (`setting_key`, `setting_value`) VALUES
 ('smtp_encryption', 'tls'),
 ('smtp_from_name', 'SmartNotes'),
 ('smtp_from_email', ''),
-('schema_version', '15'),
+('schema_version', '16'),
 ('allow_note_sharing', '1'),
 ('logo_display', 'logo'),
 ('logo_height', '34'),

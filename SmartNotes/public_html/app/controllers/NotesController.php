@@ -200,6 +200,9 @@ final class NotesController
             if ((int) $n['pinned_global'] === 1 && !(int) $n['is_locked']) {
                 return [$n, 'view']; // pinned by an admin for everyone: read-only
             }
+            if (!(int) $n['is_locked'] && ItemNotesController::grants($id, $userId)) {
+                return [$n, 'view']; // listed on a Team progress item / meeting / progress task I can see (v1.22)
+            }
         }
         throw new HttpException('Note not found.', 404);
     }
@@ -207,11 +210,16 @@ final class NotesController
     /** Can a user other than the owner read this note (shared with them, or pinned by an admin for everyone)? */
     public static function readableBy(int $noteId, int $userId): bool
     {
-        return (bool) DB::val(
+        if (DB::val(
             'SELECT 1 FROM notes n WHERE n.id = ? AND n.deleted_at IS NULL
                AND (EXISTS (SELECT 1 FROM note_shares s WHERE s.note_id = n.id AND s.user_id = ?) OR (n.pinned_global = 1 AND n.is_locked = 0))',
             [$noteId, $userId]
-        );
+        )) {
+            return true;
+        }
+        // v1.22: listed on an item this user can see (its images and files open too)
+        return (bool) DB::val('SELECT 1 FROM notes WHERE id = ? AND deleted_at IS NULL AND is_locked = 0', [$noteId])
+            && ItemNotesController::grants($noteId, $userId);
     }
 
     /** Admin: pin one of my notes for every user (it appears pinned in everyone's All notes, read-only). */

@@ -196,6 +196,8 @@ File backup disimpan di `storage/backups/` (tidak bisa diakses publik). Simpan s
 2. Upload ulang semua file **kecuali** `app/config.php`, `uploads/`, dan `storage/`.
 3. Buka aplikasi. Perubahan skema dijalankan **otomatis** oleh migrator saat request pertama (tidak perlu phpMyAdmin). Versi skema tersimpan di tabel `settings` (`schema_version`).
 
+**Upgrade ke v1.22** (Progress tasks, catatan acuan Team progress, catatan & file meeting): timpa file. Database diperbarui **otomatis** ke skema 16 (tabel baru `ptasks`, `ptask_parts`, `ptask_updates`, `item_notes`, kolom `note_attachments.ptask_id`).
+
 **Upgrade ke v1.21** (tata letak dashboard sendiri): timpa file. Database diperbarui **otomatis** ke skema 15 (kolom `user_settings.dashboard_layout`).
 
 **Upgrade ke v1.20** (pin & drag Team progress / catatan, ukuran teks diagram, merge sel & warna teks tabel): timpa file seperti biasa. Database diperbarui **otomatis** ke skema 14 (tabel baru `user_pins`, kolom `notes.pinned_global_pos` dan `progress_items.pinned_global*`) pada request pertama. Data lama tidak disentuh.

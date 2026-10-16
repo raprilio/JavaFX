@@ -8,6 +8,7 @@ import { toast, toastError, menu, confirm, empty, skeletonRows } from '../core/u
 import { openMeetingForm, openTaskForm } from '../components/forms.js';
 import { createRTE } from '../components/rte.js';
 import { mountAttachments } from '../components/attachments.js';
+import { mountItemNotes } from '../components/itemNotes.js';
 import { openMeetingShare } from '../components/meetingShare.js';
 
 const STATUS_BADGE = { scheduled: 'accent', completed: 'success', cancelled: 'danger' };
@@ -88,7 +89,7 @@ async function renderDetail(el, ctx) {
           <button class="btn" data-a="edit">${icon('pencil', 'sm')} Edit</button>
           <button class="btn icon" data-a="more" aria-label="More">${icon('more-horizontal', 'sm')}</button>` : ''}</div>
       </div>
-      ${isOwner ? '' : html`<div class="share-banner mb-2">${icon('users', 'sm')}<span>Shared by <b>${m.owner?.name || 'another user'}</b> · view only — you'll get the reminder for this meeting.</span></div>`}
+      ${isOwner ? '' : html`<div class="share-banner mb-2">${icon('users', 'sm')}<span>Shared by <b>${m.owner?.name || 'another user'}</b> · you can add notes and files for the discussion · you'll get the reminder for this meeting.</span></div>`}
       <div class="dash-grid">
         <div class="col" style="gap:var(--gap)">
           ${m.description ? html`<div class="card card-pad"><div class="section-title">${icon('list', 'sm')} Agenda</div><p style="white-space:pre-line;margin:0">${m.description}</p></div>` : ''}
@@ -97,6 +98,7 @@ async function renderDetail(el, ctx) {
             ${isOwner && past && m.status === 'scheduled' ? html`<button class="btn sm soft" data-a="complete">${icon('check', 'sm')} Save & mark completed</button>` : ''}
             ${isOwner ? html`<button class="btn sm primary" data-a="save-min">${icon('save', 'sm')} Save</button>` : ''}</div></div>
             <div data-min-toolbar></div><div style="padding:16px 20px 22px" data-min-editor></div></div>
+          <div class="card card-pad" data-meet-notes></div>
           <div class="card card-pad" data-attachments></div>
         </div>
         <div class="col" style="gap:var(--gap)">
@@ -122,7 +124,12 @@ async function renderDetail(el, ctx) {
     if (!isOwner) { rte.editor.contentEditable = 'false'; rte.toolbar.style.display = 'none'; }
     el.querySelector('[data-min-toolbar]').appendChild(rte.toolbar);
     el.querySelector('[data-min-editor]').appendChild(rte.editor);
-    mountAttachments(el.querySelector('[data-attachments]'), { parent: 'meeting', parentId: id, items: m.attachments, readOnly: !isOwner });
+    // v1.22: everyone in the meeting brings notes and files for the discussion
+    mountItemNotes(el.querySelector('[data-meet-notes]'), { type: 'meeting', id, items: m.notes || [], canAdd: true, title: 'Notes for the discussion', hint: 'Everyone in this meeting can add notes to discuss — they open read-only for the others.', onChange: (list) => (m.notes = list) });
+    mountAttachments(el.querySelector('[data-attachments]'), {
+      parent: 'meeting', parentId: id, items: m.attachments, title: 'Files for the discussion', showUploader: true,
+      hint: 'Everyone in this meeting can add files.', onRemove: (f) => api.post(`meetings/${id}/files/${f.id}/remove`), onChange: (list) => (m.attachments = list),
+    });
   };
   const setMinState = (cls, text) => { const s = el.querySelector('[data-min-state]'); if (s) { s.className = 'save-state small ' + cls; s.innerHTML = String(html`<span class="d"></span>${text}`); } };
   async function saveMinutes(markCompleted = false) {

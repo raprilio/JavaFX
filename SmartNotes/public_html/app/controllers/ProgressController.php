@@ -300,6 +300,9 @@ final class ProgressController
             'status' => $r['status'], 'reason' => $r['reason'], 'created_at' => $r['created_at'],
             'user' => $r['user_id'] ? ['id' => (int) $r['user_id'], 'name' => $r['name']] : null,
         ], DB::all('SELECT u.*, us.name FROM progress_updates u LEFT JOIN users us ON us.id = u.user_id WHERE u.item_id = ? ORDER BY u.id DESC LIMIT 300', [$id]));
+        // v1.22: reference notes of the project (everyone opens them read-only); creator / admin / updaters add them
+        $out['notes'] = $it['deleted_at'] ? [] : ItemNotesController::listFor('progress', $id, $uid);
+        $out['can_add_notes'] = !$it['deleted_at'] && ($out['can_manage'] || $out['can_update']);
         return $out;
     }
 

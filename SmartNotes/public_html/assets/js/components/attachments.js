@@ -3,6 +3,7 @@ import { html, icon, fileBadge, fmtBytes, timeAgo, h, raw } from '../core/dom.js
 import { api } from '../core/api.js';
 import { toast, toastError, confirm, menu } from '../core/ui.js';
 import { openFilePreview } from './filePreview.js';
+import { state } from '../core/store.js';
 
 export function uploadFile(file, fields = {}, onProgress) {
   const fd = new FormData();
@@ -24,12 +25,12 @@ export function pickFiles({ accept = '', multiple = true } = {}) {
   });
 }
 
-export function fileRow(f, { removable = true } = {}) {
+export function fileRow(f, { removable = true, uploader = false } = {}) {
   return html`<div class="file-row" data-id="${f.id}">
     ${f.kind === 'image' && f.thumb_url ? html`<img src="${f.thumb_url}" alt="" style="width:38px;height:38px;border-radius:10px;object-fit:cover" loading="lazy">` : fileBadge(f.name)}
-    <div class="grow" style="min-width:0"><div class="truncate" style="font-weight:560">${f.name}</div><div class="tiny subtle">${fmtBytes(f.size)} · ${timeAgo(f.created_at)}</div></div>
+    <div class="grow" style="min-width:0"><div class="truncate" style="font-weight:560">${f.name}</div><div class="tiny subtle">${fmtBytes(f.size)} · ${timeAgo(f.created_at)}${uploader && f.uploader ? html` · ${icon('user', 'xs')} ${f.uploader.name}` : ''}</div></div>
     <a class="btn ghost icon sm" href="${f.download_url}" data-tip="Download" download>${icon('download', 'sm')}</a>
-    ${removable ? html`<button class="btn ghost icon sm" data-act="remove" data-tip="Remove">${icon('trash-2', 'sm')}</button>` : ''}
+    ${removable && f.can_remove !== false ? html`<button class="btn ghost icon sm" data-act="remove" data-tip="Remove">${icon('trash-2', 'sm')}</button>` : ''}
   </div>`;
 }
 
@@ -37,7 +38,7 @@ export function fileRow(f, { removable = true } = {}) {
  * Mount an attachment manager.
  * parent: 'note' | 'task' | 'meeting', parentId: number
  */
-export function mountAttachments(container, { parent, parentId, items = [], title = 'Attachments', onChange, readOnly = false } = {}) {
+export function mountAttachments(container, { parent, parentId, items = [], title = 'Attachments', onChange, readOnly = false, showUploader = false, onRemove = null, hint = '' } = {}) {
   let files = [...items];
   const field = parent + '_id';
 
@@ -45,7 +46,8 @@ export function mountAttachments(container, { parent, parentId, items = [], titl
     container.innerHTML = String(html`
       <div class="row between mb-2"><div class="section-title" style="margin:0">${icon('paperclip', 'sm')} ${title} <span class="subtle small">${files.length || ''}</span></div>
       ${readOnly ? '' : html`<button class="btn sm" data-act="add">${icon('upload', 'sm')} Upload</button>`}</div>
-      <div class="att-list">${files.length ? files.map((f) => fileRow(f, { removable: !readOnly })) : readOnly ? html`<p class="small subtle">No attachments.</p>` : html`<div class="dropzone small" data-act="add">${icon('upload-cloud')} <div class="mt-1">Drop files here or click to upload</div></div>`}</div>
+      ${hint ? html`<p class="tiny subtle" style="margin:-4px 0 8px">${hint}</p>` : ''}
+      <div class="att-list">${files.length ? files.map((f) => fileRow(f, { removable: !readOnly, uploader: showUploader })) : readOnly ? html`<p class="small subtle">No attachments.</p>` : html`<div class="dropzone small" data-act="add">${icon('upload-cloud')} <div class="mt-1">Drop files here or click to upload</div></div>`}</div>
       <div class="att-progress"></div>`);
   }
 
@@ -55,6 +57,7 @@ export function mountAttachments(container, { parent, parentId, items = [], titl
       container.querySelector('.att-progress').appendChild(row);
       try {
         const f = await uploadFile(file, { [field]: parentId }, (p) => (row.querySelector('.upload-progress span').style.width = Math.round(p * 100) + '%'));
+        if (showUploader) Object.assign(f, { can_remove: true, uploader: f.uploader || { id: state.user.id, name: state.user.name } });
         files.push(f);
         toast(`${file.name} uploaded`, 'success');
       } catch (e) {
@@ -74,9 +77,9 @@ export function mountAttachments(container, { parent, parentId, items = [], titl
       upload(await pickFiles());
     } else if (act === 'remove' && row) {
       const f = files.find((x) => x.id === +row.dataset.id);
-      if (!(await confirm({ title: 'Remove attachment?', message: `"${f.name}" will be moved to the trash.`, confirmText: 'Remove' }))) return;
+      if (!(await confirm({ title: 'Remove attachment?', message: onRemove ? `"${f.name}" is taken off this list (it stays in its owner's Drive).` : `"${f.name}" will be moved to the trash.`, confirmText: 'Remove' }))) return;
       try {
-        await api.post(`items/file/${f.id}/trash`);
+        if (onRemove) await onRemove(f); else await api.post(`items/file/${f.id}/trash`);
         files = files.filter((x) => x.id !== f.id);
         render();
         onChange?.(files);

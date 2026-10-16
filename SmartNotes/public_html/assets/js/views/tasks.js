@@ -58,7 +58,7 @@ export default {
       <div class="page-head"><div><h1>Tasks</h1><p data-sub>&nbsp;</p></div>
         <div class="row"><div class="btn-group" data-views>
           ${[['list', 'list', 'List'], ['board', 'columns-3', 'Board'], ['calendar', 'calendar-days', 'Calendar']].map(([v, i, l]) => html`<button class="btn ${f.view === v ? 'active' : ''}" data-view="${v}">${icon(i, 'sm')}<span class="hide-sm">${l}</span></button>`)}
-        </div><a class="btn" href="#/progress" data-tip="Team progress: shared items with % and reasons">${icon('chart-no-axes-gantt', 'sm')}<span class="hide-sm">Team progress</span></a><button class="btn primary" data-act="new">${icon('plus', 'sm')} New task</button></div></div>
+        </div><a class="btn" href="#/tasks/progress" data-tip="Progress tasks: split a task into parts, everyone fills their own bar">${icon('list-todo', 'sm')}<span class="hide-sm">Progress tasks</span></a><a class="btn" href="#/progress" data-tip="Team progress: shared items with % and reasons">${icon('chart-no-axes-gantt', 'sm')}<span class="hide-sm">Team progress</span></a><button class="btn primary" data-act="new">${icon('plus', 'sm')} New task</button></div></div>
       <div class="card card-pad mb-3" style="padding:14px 18px"><div class="row between small"><span class="muted">Progress</span><b data-pct>0%</b></div><div class="progress mt-1"><span data-bar style="width:0"></span></div>
         <div class="row wrap mt-2 small muted" data-stats></div></div>
       ${isAdmin ? html`<div class="chips mb-2" data-scopes>${[['', 'My tasks', 'square-check-big'], ['assigned', 'Assigned by me', 'user-plus']].map(([v, l, i]) => html`<button class="chip ${f.scope === v ? 'active' : ''}" data-scope="${v}">${icon(i, 'sm')} ${l}</button>`)}</div>` : ''}
