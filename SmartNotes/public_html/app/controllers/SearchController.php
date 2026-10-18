@@ -103,7 +103,7 @@ final class SearchController
             $rows = DB::all('SELECT t.id, t.title, t.description, t.status, t.priority, t.due_date FROM tasks t WHERE ' . implode(' AND ', $where) . " ORDER BY t.updated_at DESC LIMIT $limit", $params);
             $groups['task'] = array_map(static fn($r) => [
                 'id' => (int) $r['id'], 'title' => $r['title'], 'snippet' => self::snippet((string) $r['description'], $q),
-                'date' => $r['due_date'], 'meta' => [str_replace('_', ' ', $r['status']), $r['priority']], 'link' => '#/tasks?open=' . $r['id'],
+                'date' => $r['due_date'], 'meta' => [str_replace('_', ' ', $r['status']), $r['priority']], 'link' => '#/tasks/mine?open=' . $r['id'],
             ], $rows);
         }
 

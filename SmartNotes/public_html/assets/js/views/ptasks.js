@@ -1,7 +1,7 @@
-// Progress tasks (v1.22) — for yourself or for management (e.g. "Event preparation"). A task is split into parts;
+// Team progress (v1.22 "Progress tasks", renamed in v1.23) — for yourself or for management (e.g. "Event preparation"). A task is split into parts;
 // each part has its own bar and one person who fills it, and nobody else can. A part can need a hand-in ("setor"):
 // a message, files and notes that the task's owner approves (or sends back). The task is done at 100 %.
-// Team progress (programmers, everyone sees it) stays separate; these are private to the people on the task.
+// Product progress (programmers, everyone sees it) stays separate; these are private to the people on the task.
 import { html, icon, h, debounce, timeAgo, fmtDay, fmtBytes, fileBadge, todayStr } from '../core/dom.js';
 import { api } from '../core/api.js';
 import { state } from '../core/store.js';
@@ -102,7 +102,7 @@ async function openEditor(t = null) {
     if (k) p[k] = k === 'needs_submission' ? e.target.checked : k === 'title' ? e.target.value : +e.target.value;
   });
   return modal({
-    title: t ? 'Edit progress task' : 'New progress task', body, size: 'lg',
+    title: t ? 'Edit team task' : 'New team task', body, size: 'lg',
     onOpen: () => setTimeout(() => { if (!body.contains(document.activeElement)) body.querySelector('[name=title]').focus(); }, 60),
     actions: [{ label: 'Cancel' }, { label: t ? 'Save' : 'Create', variant: 'primary', onClick: async () => {
       const title = body.querySelector('[name=title]').value.trim();
@@ -170,7 +170,7 @@ async function review(t, part, approve) {
 async function renderDetail(el, ctx, id) {
   let t;
   try { t = await api.get(`ptasks/${id}`); } catch (e) {
-    el.innerHTML = String(empty({ icon: 'list-checks', title: 'Not found', text: e.message, action: '<a class="btn primary" href="#/tasks/progress">Back to progress tasks</a>' }));
+    el.innerHTML = String(empty({ icon: 'list-checks', title: 'Not found', text: e.message, action: '<a class="btn primary" href="#/tasks">Back to Team progress</a>' }));
     return;
   }
   const KIND = { progress: ['trending-up', 'updated'], submit: ['send', 'handed in'], approve: ['badge-check', 'approved'], reject: ['undo-2', 'sent back'] };
@@ -178,7 +178,7 @@ async function renderDetail(el, ctx, id) {
     ctx.setTitle(t.title);
     const done = t.parts.filter((p) => p.effective === 100).length;
     el.innerHTML = String(html`<div class="pt-detail" style="--pc:${pc(t)}">
-      <div class="page-head"><div class="row" style="gap:10px;align-items:flex-start"><a class="btn ghost icon sm" href="#/tasks/progress" aria-label="Back">${icon('arrow-left')}</a>
+      <div class="page-head"><div class="row" style="gap:10px;align-items:flex-start"><a class="btn ghost icon sm" href="#/tasks" aria-label="Back">${icon('arrow-left')}</a>
         <div><h1 class="pg-h1">${t.title}</h1><p class="row wrap" style="gap:8px">${t.status === 'done' ? html`<span class="badge success">${icon('party-popper', 'sm')} Completed ${t.completed_at ? fmtDay(t.completed_at.slice(0, 10)) : ''}</span>` : html`<span class="badge info">${icon('loader', 'sm')} In progress</span>`}
           ${t.due_date ? html`<span class="small ${t.due_date < todayStr() && t.status !== 'done' ? 'overdue' : 'subtle'}">${icon('calendar', 'sm')} ${fmtDay(t.due_date)}</span>` : ''}
           <span class="small subtle">managed by ${t.owner.name}</span>${t.deleted_at ? html`<span class="badge danger">Deleted</span>` : ''}</p></div></div>
@@ -243,7 +243,7 @@ async function renderDetail(el, ctx, id) {
     if (a === 'edit') { const r = await openEditor(t); if (r) reload(r, 'Saved'); }
     if (a === 'delete') {
       if (!(await confirm({ title: 'Delete this task?', message: 'Everyone on it loses access. You can restore it from Deleted.', confirmText: 'Delete' }))) return;
-      try { await api.post(`ptasks/${id}/delete`); navigate('/tasks/progress'); toast('Deleted', 'success', { action: 'Undo', onAction: () => api.post(`ptasks/${id}/restore`).then(() => navigate(`/tasks/progress/${id}`)) }); } catch (err) { toastError(err); }
+      try { await api.post(`ptasks/${id}/delete`); navigate('/tasks'); toast('Deleted', 'success', { action: 'Undo', onAction: () => api.post(`ptasks/${id}/restore`).then(() => navigate(`/tasks/progress/${id}`)) }); } catch (err) { toastError(err); }
     }
     if (a === 'restore') { try { reload(await api.post(`ptasks/${id}/restore`), 'Restored'); } catch (err) { toastError(err); } }
   });
@@ -251,14 +251,14 @@ async function renderDetail(el, ctx, id) {
 
 // ------------------------------------------------------------------ list
 export default {
-  title: 'Progress tasks',
+  title: 'Team progress',
   async render(el, ctx) {
     if (ctx.params.id) return renderDetail(el, ctx, +ctx.params.id);
     const f = { scope: ctx.query.scope || 'all', q: ctx.query.q || '' };
     el.innerHTML = String(html`
-      <div class="page-head"><div><h1>Progress tasks</h1><p>For yourself or your team — everyone fills only their own bar, hand-ins are approved, until 100%.</p></div>
-        <div class="row"><a class="btn" href="#/tasks">${icon('square-check-big', 'sm')}<span class="hide-sm">Tasks</span></a><a class="btn" href="#/progress" data-tip="Team progress for programmers">${icon('chart-no-axes-gantt', 'sm')}<span class="hide-sm">Team progress</span></a>
-          <button class="btn primary" data-a="new">${icon('plus', 'sm')} New progress task</button></div></div>
+      <div class="page-head"><div><h1>Team progress</h1><p>For yourself or your team — everyone fills only their own bar, hand-ins are approved, until 100%.</p></div>
+        <div class="row"><a class="btn" href="#/progress" data-tip="Product progress: programmers' items, everyone can follow">${icon('chart-no-axes-gantt', 'sm')}<span class="hide-sm">Product progress</span></a>
+          <button class="btn primary" data-a="new">${icon('plus', 'sm')} New team task</button></div></div>
       <div class="pt-summary" data-summary></div>
       <div class="toolbar"><div class="chips">${[['all', 'All', 'layers'], ['todo', 'My parts to do', 'user'], ['created', 'I manage', 'briefcase'], ['done', 'Completed', 'party-popper'], ['deleted', 'Deleted', 'trash-2']].map(([v, l, i]) => html`<button class="chip ${f.scope === v ? 'active' : ''}" data-scope="${v}">${icon(i, 'sm')} ${l}</button>`)}</div>
         <div class="grow"></div><div class="input-icon" style="width:min(240px,100%)">${icon('search', 'sm')}<input class="input sm" type="search" placeholder="Search…" value="${f.q}" data-search></div></div>
@@ -272,7 +272,7 @@ export default {
       el.querySelector('[data-summary]').innerHTML = String(html`${s.my_open_parts ? html`<button class="pt-stat" data-scope="todo">${icon('user', 'sm')}<b>${s.my_open_parts}</b><span>part${s.my_open_parts === 1 ? '' : 's'} for you to fill</span></button>` : ''}
         ${s.waiting_review ? html`<button class="pt-stat warn" data-scope="created">${icon('hourglass', 'sm')}<b>${s.waiting_review}</b><span>hand-in${s.waiting_review === 1 ? '' : 's'} to approve</span></button>` : ''}`);
       grid.innerHTML = r.items.length ? r.items.map((t) => String(card(t))).join('')
-        : String(empty({ icon: 'list-checks', title: f.scope === 'todo' ? 'Nothing for you to fill' : 'No progress tasks yet', text: 'Split a task into parts — for yourself or for your team — and follow each bar to 100%.', action: '<button class="btn primary" data-a="new">New progress task</button>' }));
+        : String(empty({ icon: 'list-checks', title: f.scope === 'todo' ? 'Nothing for you to fill' : 'No team tasks yet', text: 'Split a task into parts — for yourself or for your team — and follow each bar to 100%.', action: '<button class="btn primary" data-a="new">New team task</button>' }));
     }
     el.addEventListener('click', async (e) => {
       const sc = e.target.closest('[data-scope]');

@@ -1,4 +1,4 @@
-// Team progress (v1.19): work items followed from the first step to "published". Everyone sees every item;
+// Product progress (v1.19, renamed in v1.23 — was "Team progress"): work items followed from the first step to "published". Everyone sees every item;
 // only the people chosen for an item post updates (percentage, stage, status and a reason). The creator or an
 // administrator customises the item: stages, custom fields, who may update, priority, colour and dates.
 import { html, icon, h, esc, debounce, timeAgo, fmtDay, fmtDateTime, todayStr } from '../core/dom.js';
@@ -190,7 +190,7 @@ function chartSvg(it) {
 async function renderDetail(el, ctx, id) {
   let it;
   try { it = await api.get(`progress/${id}`); } catch (e) {
-    el.innerHTML = String(html`<div class="content">${empty({ icon: 'chart-no-axes-gantt', title: 'Not found', text: e.message, action: '<a class="btn primary" href="#/progress">Back to Team progress</a>' })}</div>`);
+    el.innerHTML = String(html`<div class="content">${empty({ icon: 'chart-no-axes-gantt', title: 'Not found', text: e.message, action: '<a class="btn primary" href="#/progress">Back to Product progress</a>' })}</div>`);
     return;
   }
   const paint = () => {
@@ -265,7 +265,7 @@ async function renderDetail(el, ctx, id) {
     const a = e.target.closest('[data-a]')?.dataset.a;
     if (a === 'edit') { const r = await openEditor(it); if (r) { it = r; paint(); toast('Saved', 'success', { timeout: 1200 }); } }
     if (a === 'delete') {
-      if (!(await confirm({ title: `Delete "${it.title}"?`, message: 'It disappears for everyone. You (or an administrator) can restore it from Team progress → Deleted.', confirmText: 'Delete' }))) return;
+      if (!(await confirm({ title: `Delete "${it.title}"?`, message: 'It disappears for everyone. You (or an administrator) can restore it from Product progress → Deleted.', confirmText: 'Delete' }))) return;
       try { await api.post(`progress/${id}/delete`); toast('Deleted', 'success', { action: 'Undo', onAction: () => api.post(`progress/${id}/restore`).then(() => navigate(`/progress/${id}`)) }); navigate('/progress'); } catch (err) { toastError(err); }
     }
     if (a === 'pin' || a === 'pin-global') {
@@ -312,14 +312,14 @@ function sortItems(list, sort, smartIdx) {
 }
 
 export default {
-  title: 'Team progress',
+  title: 'Product progress',
   async render(el, ctx) {
     if (ctx.params.id) return renderDetail(el, ctx, +ctx.params.id);
     const f = { scope: ctx.query.scope || 'all', status: ctx.query.status || '', q: ctx.query.q || '', sort: ctx.query.sort || store.get('sn-pg-sort') || 'smart' };
     if (!SORTS.some(([k]) => k === f.sort)) f.sort = 'smart';
     el.innerHTML = String(html`
-      <div class="page-head"><div><h1>Team progress</h1><p data-sub>Everyone can follow the work · only the chosen people post updates</p></div>
-        <div class="row"><a class="btn" href="#/tasks">${icon('square-check-big', 'sm')}<span class="hide-sm">My tasks</span></a><button class="btn primary" data-a="new">${icon('plus', 'sm')} New item</button></div></div>
+      <div class="page-head"><div><h1>Product progress</h1><p data-sub>Everyone can follow the work · only the chosen people post updates</p></div>
+        <div class="row"><a class="btn" href="#/tasks">${icon('users-round', 'sm')}<span class="hide-sm">Team progress</span></a><a class="btn" href="#/tasks/mine">${icon('square-check-big', 'sm')}<span class="hide-sm">My tasks</span></a><button class="btn primary" data-a="new">${icon('plus', 'sm')} New item</button></div></div>
       <div class="pg-summary" data-summary></div>
       <div class="toolbar">
         <div class="chips" data-scopes>${[['all', 'All', 'layers'], ['pinned', 'Pinned', 'pin'], ['mine', 'I update', 'pencil'], ['created', 'Created by me', 'user'], ['published', 'Published', 'rocket'], ['deleted', 'Deleted', 'trash-2']].map(([v, l, i]) => html`<button class="chip ${f.scope === v ? 'active' : ''}" data-scope="${v}">${icon(i, 'sm')} ${l}</button>`)}</div>

@@ -553,7 +553,7 @@ export default {
     async function loadTasks() {
       try {
         const r = await api.get('tasks', { note_id: id });
-        $('[data-tasks]').innerHTML = r.items.length ? r.items.map((t) => String(html`<a class="list-item" href="#/tasks?open=${t.id}" style="padding:6px 4px">
+        $('[data-tasks]').innerHTML = r.items.length ? r.items.map((t) => String(html`<a class="list-item" href="#/tasks/mine?open=${t.id}" style="padding:6px 4px">
           <span class="t-check ${t.status === 'completed' ? 'on' : ''} prio-${t.priority}" style="width:18px;height:18px">${icon('check')}</span><span class="li-main truncate small">${t.title}</span></a>`)).join('')
           : '<p class="small subtle">No tasks linked yet.</p>';
       } catch { /* ignore */ }

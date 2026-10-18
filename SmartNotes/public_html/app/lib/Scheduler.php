@@ -229,7 +229,7 @@ final class Scheduler
             }
             $rows = ['Jatuh tempo' => Agenda::dayLabel($t['due_date']) . ($t['due_time'] ? ' ' . substr($t['due_time'], 0, 5) : ''), 'Prioritas' => ucfirst($t['priority'])];
             $text = $t['description'];
-            $link = '#/tasks?open=' . $id;
+            $link = '#/tasks/mine?open=' . $id;
         } elseif ($type === 'meeting') {
             $t = DB::one('SELECT * FROM meetings WHERE id = ? AND deleted_at IS NULL', [$id]);
             if (!$t || $t['status'] !== 'scheduled') {

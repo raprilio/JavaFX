@@ -62,13 +62,13 @@ final class TasksController
         $msg = $by['name'] . ' ' . ($reassigned ? 'mengalihkan tugas kepada Anda' : 'memberi Anda tugas') . ': "' . $title . '"';
         $t = DB::one('SELECT due_date, due_time, priority FROM tasks WHERE id = ?', [$taskId]);
         $due = $t['due_date'] ? 'Tenggat ' . date('d M Y', strtotime($t['due_date'])) . ($t['due_time'] ? ' ' . substr($t['due_time'], 0, 5) : '') : 'Tanpa tenggat';
-        Notify::create($to, 'task', $msg, $due . ' · prioritas ' . $t['priority'], '#/tasks?open=' . $taskId);
+        Notify::create($to, 'task', $msg, $due . ' · prioritas ' . $t['priority'], '#/tasks/mine?open=' . $taskId);
         if (!Mailer::isConfigured()) {
             return;
         }
         $r = DB::one('SELECT u.name, u.email, COALESCE(s.email_notifications, 1) AS email_on, COALESCE(s.notify_task, 1) AS n_task FROM users u LEFT JOIN user_settings s ON s.user_id = u.id WHERE u.id = ?', [$to]);
         if ($r && (int) $r['email_on'] && (int) $r['n_task']) {
-            $html = Mailer::template('Tugas baru', '<p>Halo ' . e($r['name']) . ',</p><p>' . e($msg) . '.</p><p>' . e($due) . '.</p><p style="margin:24px 0"><a class="btn" href="' . e(app_url() . '#/tasks?open=' . $taskId) . '">Buka tugas</a></p>');
+            $html = Mailer::template('Tugas baru', '<p>Halo ' . e($r['name']) . ',</p><p>' . e($msg) . '.</p><p>' . e($due) . '.</p><p style="margin:24px 0"><a class="btn" href="' . e(app_url() . '#/tasks/mine?open=' . $taskId) . '">Buka tugas</a></p>');
             Mailer::queue($to, 'task', $r['email'], $msg, $html, ['task_id' => $taskId]);
         }
     }
@@ -390,7 +390,7 @@ final class TasksController
     {
         $by = (int) ($t['assigned_by'] ?? 0);
         if ($by && $by !== (int) $u['id'] && (int) $t['user_id'] === (int) $u['id']) {
-            Notify::create($by, 'task', $u['name'] . ' ' . $verb . ' tugas "' . $t['title'] . '"', null, '#/tasks?scope=assigned&open=' . $t['id']);
+            Notify::create($by, 'task', $u['name'] . ' ' . $verb . ' tugas "' . $t['title'] . '"', null, '#/tasks/mine?scope=assigned&open=' . $t['id']);
         }
     }
 

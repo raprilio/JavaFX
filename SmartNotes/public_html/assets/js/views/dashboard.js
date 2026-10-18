@@ -13,7 +13,7 @@ import { CREATE_ITEMS } from '../core/actions.js';
 
 const TYPE_COLOR = { event: '#8b5cf6', meeting: '#0ea5e9', task: '#10b981' };
 const TYPE_ICON = { event: 'calendar-days', meeting: 'users', task: 'square-check-big' };
-/** Team progress line colours by status (yellow = at risk, red = blocked). */
+/** Product progress line colours by status (yellow = at risk, red = blocked). */
 const TP_COLOR = { on_track: '#22c55e', at_risk: '#eab308', blocked: '#ef4444', done: '#10b981' };
 const TP_LABEL = { on_track: 'On track', at_risk: 'At risk', blocked: 'Blocked', done: 'Published' };
 
@@ -25,8 +25,8 @@ const teamRow = (it) => html`<a class="tp-row" href="#/progress/${it.id}" style=
 const STATS = [
   ['stat_notes', 'Total notes', (c) => c.notes, 'notebook-pen', '#6366f1', (c) => (c.notes_today ? `+${c.notes_today} today` : ''), '#/notes'],
   ['stat_notes_today', 'Notes today', (c) => c.notes_today, 'sparkles', '#ec4899', () => '', '#/notes?sort=created'],
-  ['stat_tasks_active', 'Active tasks', (c) => c.tasks_active, 'circle-dot', '#f59e0b', (c) => (c.tasks_overdue ? `${c.tasks_overdue} overdue` : ''), '#/tasks'],
-  ['stat_tasks_done', 'Completed tasks', (c) => c.tasks_completed, 'circle-check', '#10b981', () => '', '#/tasks?status=completed'],
+  ['stat_tasks_active', 'Active tasks', (c) => c.tasks_active, 'circle-dot', '#f59e0b', (c) => (c.tasks_overdue ? `${c.tasks_overdue} overdue` : ''), '#/tasks/mine'],
+  ['stat_tasks_done', 'Completed tasks', (c) => c.tasks_completed, 'circle-check', '#10b981', () => '', '#/tasks/mine?status=completed'],
   ['stat_meetings', 'Upcoming meetings', (c) => c.meetings_upcoming, 'users', '#0ea5e9', () => '', '#/meetings'],
   ['stat_events', 'Upcoming schedule', (c) => c.events_upcoming, 'calendar-clock', '#8b5cf6', () => '30 days', '#/calendar'],
   ['stat_audio', 'Audio notes', (c) => c.audio, 'mic', '#db2777', () => '', '#/audio'],
@@ -38,7 +38,7 @@ const STATS = [
 const SECTIONS = [
   ['quick_create', 'Quick create', 'plus'], ['stats', 'Statistic cards', 'chart-column'], ['today', 'Today', 'sun'],
   ['shared_notes', 'Shared with me', 'users'], ['recent_notes', 'Recent notes', 'history'], ['task_progress', 'Task progress', 'chart-pie'],
-  ['team_progress', 'Team progress', 'chart-no-axes-gantt'],
+  ['team_progress', 'Product progress', 'chart-no-axes-gantt'],
   ['upcoming', 'Upcoming', 'calendar-clock'], ['notes_week', 'Notes this week', 'activity'],
 ];
 
@@ -90,7 +90,7 @@ function statCard([key, label, val, ic, color, foot, link], c) {
 function agendaRow(it) {
   const d = parseDate(it.start);
   const time = it.all_day ? 'All day' : fmtTime(it.start);
-  const link = it.type === 'meeting' ? `#/meetings/${it.id}` : it.type === 'task' ? `#/tasks?open=${it.id}` : `#/calendar?event=${it.id}&date=${it.start.slice(0, 10)}`;
+  const link = it.type === 'meeting' ? `#/meetings/${it.id}` : it.type === 'task' ? `#/tasks/mine?open=${it.id}` : `#/calendar?event=${it.id}&date=${it.start.slice(0, 10)}`;
   return html`<a class="agenda-item" href="${link}" style="color:inherit;text-decoration:none">
     <div class="agenda-time">${time}</div><span class="agenda-bar" style="--c:${it.color || TYPE_COLOR[it.type]}"></span>
     <div class="grow" style="min-width:0"><div class="truncate" style="font-weight:580;${it.status === 'completed' ? 'text-decoration:line-through;color:var(--text-3)' : ''}">${it.title}</div>
@@ -120,7 +120,7 @@ function render(el, d) {
         <div><div class="label mb-1">Tasks due</div>
           ${d.today_tasks.length ? d.today_tasks.map((t) => html`<div class="row" style="padding:7px 0;border-bottom:1px dashed var(--border)">
             <button class="t-check prio-${t.priority}" data-done="${t.id}" aria-label="Complete">${icon('check')}</button>
-            <a class="grow truncate" href="#/tasks?open=${t.id}" style="color:inherit">${t.title}</a>
+            <a class="grow truncate" href="#/tasks/mine?open=${t.id}" style="color:inherit">${t.title}</a>
             <span class="tiny ${t.due_date < todayStr() ? 'overdue' : 'subtle'}">${t.due_date < todayStr() ? fmtDay(t.due_date) : t.due_time || 'Today'}</span></div>`)
             : html`<p class="small subtle" style="padding:10px 0">Nothing due. Nice work!</p>`}</div>
       </div></div></div>`,
@@ -129,7 +129,7 @@ function render(el, d) {
     recent_notes: show('recent_notes') && html`<div class="card" data-widget="recent_notes"><div class="card-head"><h3>${icon('history', 'sm')} Recent notes</h3><div class="row" style="gap:2px"><a class="btn ghost sm" href="#/notes">View all ${icon('chevron-right', 'sm')}</a>${hideBtn('recent_notes')}</div></div>
       <div class="card-body">${d.recent_notes.length ? html`<div class="grid grid-3" style="gap:12px">${d.recent_notes.map((n) => noteCard(n, html`${icon('clock', 'sm')} ${timeAgo(n.last_opened_at || n.updated_at)}`))}</div>`
         : empty({ icon: 'notebook-pen', title: 'No notes yet', text: 'Create your first note to see it here.', action: '<button class="btn primary" data-qc="note">New note</button>' })}</div></div>`,
-    task_progress: show('task_progress') && html`<div class="card" data-widget="task_progress"><div class="card-head"><h3>${icon('chart-pie', 'sm')} Task progress</h3><div class="row" style="gap:2px"><a class="btn ghost sm" href="#/tasks?view=board">Board</a>${hideBtn('task_progress')}</div></div>
+    task_progress: show('task_progress') && html`<div class="card" data-widget="task_progress"><div class="card-head"><h3>${icon('chart-pie', 'sm')} Task progress</h3><div class="row" style="gap:2px"><a class="btn ghost sm" href="#/tasks/mine?view=board">Board</a>${hideBtn('task_progress')}</div></div>
       <div class="card-body"><div class="row" style="gap:22px">
         <div class="ring" style="--v:${p.percent}"><span>${p.percent}%</span></div>
         <div class="col" style="gap:8px;flex:1">
@@ -139,9 +139,9 @@ function render(el, d) {
           ${c.tasks_overdue ? html`<div class="badge danger">${icon('alert-triangle', 'sm')} ${c.tasks_overdue} overdue</div>` : ''}
         </div></div>
         <div class="progress mt-3"><span style="width:${p.percent}%"></span></div></div></div>`,
-    team_progress: show('team_progress') && html`<div class="card" data-widget="team_progress"><div class="card-head"><h3>${icon('chart-no-axes-gantt', 'sm')} Team progress</h3><div class="row" style="gap:2px"><a class="btn ghost sm" href="#/progress">View all ${icon('chevron-right', 'sm')}</a>${hideBtn('team_progress')}</div></div>
+    team_progress: show('team_progress') && html`<div class="card" data-widget="team_progress"><div class="card-head"><h3>${icon('chart-no-axes-gantt', 'sm')} Product progress</h3><div class="row" style="gap:2px"><a class="btn ghost sm" href="#/progress">View all ${icon('chevron-right', 'sm')}</a>${hideBtn('team_progress')}</div></div>
       <div class="card-body">${tp.items.length ? html`${tp.active ? html`<div class="tp-sum small muted">${tp.active} in progress · average <b>${tp.avg_active}%</b></div>` : ''}<div class="tp-list">${tp.items.map(teamRow)}</div>`
-        : html`<p class="small subtle" style="margin:0">No team progress yet. <a href="#/progress">Start tracking</a></p>`}</div></div>`,
+        : html`<p class="small subtle" style="margin:0">No product progress yet. <a href="#/progress">Start tracking</a></p>`}</div></div>`,
     upcoming: show('upcoming') && html`<div class="card" data-widget="upcoming"><div class="card-head"><h3>${icon('calendar-clock', 'sm')} Upcoming</h3><div class="row" style="gap:2px"><a class="btn ghost sm" href="#/calendar">Calendar</a>${hideBtn('upcoming')}</div></div>
       <div class="card-body">${d.upcoming.length ? d.upcoming.map((it) => {
         const dt = parseDate(it.start);
