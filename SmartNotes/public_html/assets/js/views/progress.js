@@ -1,6 +1,8 @@
 // Product progress (v1.19, renamed in v1.23 — was "Team progress"): work items followed from the first step to "published". Everyone sees every item;
 // only the people chosen for an item post updates (percentage, stage, status and a reason). The creator or an
 // administrator customises the item: stages, custom fields, who may update, priority, colour and dates.
+// v1.25: an item can be split into parts worked on in parallel (each with its own people and bar); the item % is
+// their weighted average and everyone updates only the part(s) they work on.
 import { html, icon, h, esc, debounce, timeAgo, fmtDay, fmtDateTime, todayStr } from '../core/dom.js';
 import { api } from '../core/api.js';
 import { state } from '../core/store.js';
@@ -55,6 +57,14 @@ function dueHtml(it) {
   return html`<span class="${late ? 'overdue' : ''}">${icon('calendar', 'sm')} ${fmtDay(it.due_date)}${late ? ' · late' : ''}</span>`;
 }
 
+/** Thin bars of the parts (v1.25): who works on what and how far each part is. */
+function partBars(it, max = 99) {
+  const list = it.parts.slice(0, max);
+  return html`<div class="pg-parts-mini">${list.map((p) => html`<div class="pg-pm ${it.my_parts?.includes(p.id) ? 'mine' : ''}" title="${p.title}: ${p.percent}% · ${p.people.map((u) => u.name).join(', ')}">
+      <span class="pg-pm-name truncate">${p.title}</span><span class="pg-pm-bar"><i class="pg-${p.status}" style="width:${p.percent}%"></i></span><span class="pg-pm-pct">${p.percent}%</span></div>`)}
+    ${it.parts.length > max ? html`<span class="tiny subtle">+${it.parts.length - max} more parts</span>` : ''}</div>`;
+}
+
 function card(it) {
   return html`<a class="pg-card ${it.deleted_at ? 'deleted' : ''} ${it.pinned || it.pinned_global ? 'pinned' : ''}" href="#/progress/${it.id}" style="--pc:${it.color || 'var(--accent)'}" data-id="${it.id}" draggable="false">
     ${it.pinned_global ? html`<span class="pg-pinned-by">${icon('megaphone', 'xs')} Pinned by ${it.pinned_by?.name || 'admin'} · for everyone</span>` : ''}
@@ -62,9 +72,10 @@ function card(it) {
       ${it.deleted_at ? '' : html`<button type="button" class="btn ghost icon xs pg-pin ${it.pinned ? 'on' : ''}" data-pin="${it.id}" data-tip="${it.pinned ? 'Unpin' : 'Pin to top (only me)'}" aria-label="${it.pinned ? 'Unpin' : 'Pin'}">${icon(it.pinned ? 'pin-off' : 'pin', 'sm')}</button>`}
       <span class="pg-pct">${it.percent}%</span></div>
     ${stageBar(it)}
+    ${it.parts?.length ? partBars(it, 4) : ''}
     <div class="pg-card-meta"><span class="pg-stage">${icon('milestone', 'sm')} ${it.stage || '—'}</span>${statusBadge(it.status)}
       ${it.priority === 'high' || it.priority === 'urgent' ? html`<span class="badge prio prio-${it.priority}">${icon('flag', 'sm')} ${PRIORITY[it.priority]}</span>` : ''}${dueHtml(it)}</div>
-    ${it.last ? html`<p class="pg-last small"><b>${it.last.by || 'Someone'}</b> ${it.last.percent_from}% → ${it.last.percent}% · ${timeAgo(it.last.at)}<span class="truncate block subtle">${it.last.reason}</span></p>` : html`<p class="pg-last small subtle">No updates yet</p>`}
+    ${it.last ? html`<p class="pg-last small"><b>${it.last.by || 'Someone'}</b> ${it.last.part ? html`<span class="pg-part-tag">${it.last.part}</span> ` : ''}${it.last.percent_from}% → ${it.last.percent}% · ${timeAgo(it.last.at)}<span class="truncate block subtle">${it.last.reason}</span></p>` : html`<p class="pg-last small subtle">No updates yet</p>`}
     <div class="pg-card-foot">${people(it.updaters)}<span class="tiny subtle">${it.can_update ? html`<span class="badge success">${icon('pencil', 'xs')} You update this</span>` : `by ${it.creator.name || '—'}`}</span></div>
   </a>`;
 }
@@ -84,7 +95,10 @@ async function openEditor(it = null) {
       <button type="button" class="btn xs mt-1" data-add-stage>${icon('plus', 'sm')} Add stage</button></div>
     <div class="field" style="margin:0"><label>Custom fields</label><div data-fields></div>
       <button type="button" class="btn xs mt-1" data-add-field>${icon('plus', 'sm')} Add field</button></div>
-    <div class="field" style="margin:0"><label>Who can update the progress</label><div data-picker></div>
+    <div class="field" style="margin:0"><label>Parts worked on in parallel <span class="subtle">(optional)</span></label><div data-parts></div>
+      <button type="button" class="btn xs mt-1" data-add-part>${icon('plus', 'sm')} Add part</button>
+      <span class="hint">Split the work, e.g. <i>Back-end</i> for one person and <i>Front-end</i> for another — each starts whenever they like and updates only their own bar. The item % is the weighted average of the parts.</span></div>
+    <div class="field" style="margin:0" data-who><label>Who can update the progress</label><div data-picker></div>
       <label class="check small mt-1"><input type="checkbox" name="me" ${meIn ? 'checked' : ''}> Me too</label>
       <span class="hint">Everyone can see the item; only these people can post progress.</span></div>
     <div class="form-grid"><div class="field" style="margin:0"><label>Priority</label><select class="select" name="priority">${Object.entries(PRIORITY).map(([k, l]) => html`<option value="${k}" ${(it?.priority || 'medium') === k ? 'selected' : ''}>${l}</option>`)}</select></div>
@@ -93,6 +107,26 @@ async function openEditor(it = null) {
   </form>`));
   const picker = userPicker({ value: (it?.updaters || []).filter((u) => u.id !== state.user.id), placeholder: 'Type a name… (programmers, designers)' });
   body.querySelector('[data-picker]').appendChild(picker.el);
+  // v1.25 parts: [{id?, title, weight, people}] — one people picker per part
+  let parts = (it?.parts || []).map((x) => ({ id: x.id, title: x.title, weight: x.weight, people: x.people.map((u) => ({ ...u })), percent: x.percent }));
+  let partPickers = [];
+  const syncParts = () => partPickers.forEach((pk, i) => { if (parts[i]) parts[i].people = pk.users(); });
+  const paintParts = () => {
+    const box = body.querySelector('[data-parts]');
+    box.innerHTML = parts.length ? String(html`${parts.map((x, i) => html`<div class="pg-part-row" data-pi="${i}">
+      <div class="pg-row"><span class="pg-num">${i + 1}</span><input class="input sm" data-ptitle value="${x.title}" placeholder="Part (e.g. Back-end API)" maxlength="120">
+        <select class="select sm" data-pweight aria-label="Weight" title="Weight: how much this part counts in the item %" style="width:auto">${[1, 2, 3, 4, 5].map((w) => html`<option value="${w}" ${x.weight === w ? 'selected' : ''}>×${w}</option>`)}</select>
+        ${x.id ? html`<span class="badge" title="Current progress of this part">${x.percent}%</span>` : ''}
+        <button type="button" class="btn ghost icon xs" data-del-part="${i}" aria-label="Remove part">${icon('x', 'sm')}</button></div>
+      <div class="pg-part-people" data-ppick></div></div>`)}`) : '<p class="small subtle" style="margin:0">No parts — one bar for the whole item.</p>';
+    partPickers = parts.map((x, i) => {
+      const pk = userPicker({ value: x.people, placeholder: 'Who works on this part…' });
+      box.querySelectorAll('[data-ppick]')[i].appendChild(pk.el);
+      return pk;
+    });
+    body.querySelector('[data-who]').classList.toggle('hidden', parts.length > 0);
+  };
+  paintParts();
   const paintStages = () => {
     body.querySelector('[data-stages]').innerHTML = String(html`${stages.map((s, i) => html`<div class="pg-row" data-i="${i}">
       <span class="pg-num">${i + 1}</span><input class="input sm" data-sname value="${s.name}" placeholder="Stage name" maxlength="60">
@@ -114,6 +148,14 @@ async function openEditor(it = null) {
     if (e.target.matches('[data-flabel]')) fields[i].label = e.target.value;
     if (e.target.matches('[data-fvalue]')) fields[i].value = e.target.value;
   });
+  body.addEventListener('input', (e) => {
+    const pr = e.target.closest('[data-pi]');
+    if (pr && e.target.matches('[data-ptitle]')) parts[+pr.dataset.pi].title = e.target.value;
+  });
+  body.addEventListener('change', (e) => {
+    const pr = e.target.closest('[data-pi]');
+    if (pr && e.target.matches('[data-pweight]')) parts[+pr.dataset.pi].weight = +e.target.value;
+  });
   body.addEventListener('click', (e) => {
     const tpl = e.target.closest('[data-tpl]');
     if (tpl) {
@@ -134,6 +176,15 @@ async function openEditor(it = null) {
     const ds = e.target.closest('[data-del-stage]');
     if (ds) { stages.splice(+ds.dataset.delStage, 1); paintStages(); }
     if (e.target.closest('[data-add-field]')) { fields.push({ label: '', value: '' }); paintFields(); body.querySelectorAll('[data-flabel]')[fields.length - 1]?.focus(); }
+    if (e.target.closest('[data-add-part]')) {
+      syncParts();
+      if (!parts.length && it?.percent > 0) toast(`The parts start at ${Math.min(99, it.percent)}% — the work already done is kept`, 'info', { timeout: 3200 });
+      parts.push({ title: '', weight: 1, people: [] });
+      paintParts();
+      body.querySelectorAll('[data-ptitle]')[parts.length - 1]?.focus();
+    }
+    const dp = e.target.closest('[data-del-part]');
+    if (dp) { syncParts(); parts.splice(+dp.dataset.delPart, 1); paintParts(); }
     const df = e.target.closest('[data-del-field]');
     if (df) { fields.splice(+df.dataset.delField, 1); paintFields(); }
     const sw = e.target.closest('[data-color]');
@@ -146,12 +197,18 @@ async function openEditor(it = null) {
         const f = new FormData(body);
         const title = String(f.get('title') || '').trim();
         if (!title) { body.querySelector('[name=title]').classList.add('invalid'); return false; }
+        syncParts();
+        const useParts = parts.filter((x) => x.title.trim());
+        const noPeople = useParts.find((x) => !x.people.length);
+        if (noPeople) { toast(`Choose who works on "${noPeople.title.trim()}"`, 'warning'); return false; }
         const ids = picker.get();
         if (f.get('me')) ids.unshift(state.user.id);
-        if (!ids.length) { toast('Choose at least one person who can update the progress', 'warning'); return false; }
+        if (!useParts.length && !ids.length) { toast('Choose at least one person who can update the progress', 'warning'); return false; }
         const payload = {
           title, description: String(f.get('description') || ''), priority: f.get('priority'), due_date: f.get('due_date') || null, color: color || null,
-          stages: stages.filter((s) => s.name.trim()), fields: fields.filter((x) => x.label.trim()), updater_ids: ids,
+          stages: stages.filter((s) => s.name.trim()), fields: fields.filter((x) => x.label.trim()),
+          ...(useParts.length ? {} : { updater_ids: ids }),
+          ...(useParts.length || it?.parts?.length ? { parts: useParts.map((x) => ({ id: x.id || undefined, title: x.title.trim(), weight: x.weight, user_ids: x.people.map((u) => u.id) })) } : {}),
         };
         try {
           ctx.el.querySelector('.btn.primary').disabled = true;
@@ -169,7 +226,9 @@ function chartSvg(it) {
   // Percentage after every update, oldest first, evenly spaced (updates often come in bursts on one day).
   const ups = [...it.updates].reverse();
   if (!ups.length) return '';
-  const pts = [{ p: ups[0].percent_from, s: 'start', at: it.start_date || it.created_at }, ...ups.map((u) => ({ p: u.percent, s: u.status, at: u.created_at }))];
+  // v1.25: an update of a part moves the item to its weighted average (item_percent)
+  const first = ups[0].part ? 0 : ups[0].percent_from; // an item with parts from the start begins at 0
+  const pts = [{ p: first, s: 'start', at: it.start_date || it.created_at }, ...ups.map((u) => ({ p: u.item_percent ?? u.percent, s: u.status, at: u.created_at, part: u.part?.title }))];
   const W = 640, H = 160, L = 34, R = 10, T = 10, B = 22;
   const X = (i) => L + (i / pts.length) * (W - L - R), Y = (p) => T + (1 - p / 100) * (H - T - B);
   let d = `M${X(0)} ${Y(pts[0].p)}`;
@@ -183,7 +242,7 @@ function chartSvg(it) {
   return html`<svg class="pg-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Progress over time">
     ${marks.map((st) => html`<line x1="${L}" x2="${W - R}" y1="${Y(st.percent)}" y2="${Y(st.percent)}" class="pg-grid"/><text x="${L - 6}" y="${Y(st.percent) + 3}" class="pg-gl pg-axis" text-anchor="end">${st.percent}%</text>`)}
     <path d="${area}" class="pg-area"/><path d="${d}" class="pg-line"/>
-    ${pts.slice(1).map((q, i) => html`<circle cx="${X(i + 1)}" cy="${Y(q.p)}" r="4" class="pg-dot pg-${q.s}"><title>${q.p}% · ${day(q.at)}</title></circle>`)}
+    ${pts.slice(1).map((q, i) => html`<circle cx="${X(i + 1)}" cy="${Y(q.p)}" r="4" class="pg-dot pg-${q.s}"><title>${q.p}%${q.part ? ` · ${q.part}` : ''} · ${day(q.at)}</title></circle>`)}
     <text x="${L}" y="${H - 6}" class="pg-gl">${day(pts[0].at)}</text><text x="${W - R}" y="${H - 6}" class="pg-gl" text-anchor="end">${day(pts[pts.length - 1].at)}</text></svg>`;
 }
 
@@ -193,9 +252,19 @@ async function renderDetail(el, ctx, id) {
     el.innerHTML = String(html`<div class="content">${empty({ icon: 'chart-no-axes-gantt', title: 'Not found', text: e.message, action: '<a class="btn primary" href="#/progress">Back to Product progress</a>' })}</div>`);
     return;
   }
+  // v1.25: with parts, the update form works on one of my parts (the first unfinished one by default)
+  let pick = { stage: null, status: null, part: null };
+  const myParts = () => (it.parts || []).filter((p) => it.my_parts.includes(p.id));
+  const target = () => {
+    if (!it.parts?.length) return it;
+    const mine = myParts();
+    return mine.find((p) => p.id === pick.part) || mine.find((p) => p.percent < 100) || mine[0] || null;
+  };
   const paint = () => {
     ctx.setTitle(it.title);
     const others = it.updaters.map((u) => u.name).join(', ');
+    const cur = target();
+    if (cur) { pick.part = it.parts?.length ? cur.id : null; if (!pick.status) pick.status = cur.status === 'done' ? 'on_track' : cur.status; }
     el.innerHTML = String(html`<div class="pg-detail" style="--pc:${it.color || 'var(--accent)'}">
       <div class="page-head"><div class="row" style="gap:10px;align-items:flex-start"><a class="btn ghost icon sm" href="#/progress" aria-label="Back">${icon('arrow-left')}</a>
         <div><h1 class="pg-h1">${it.title}</h1><p class="row wrap" style="gap:8px">${statusBadge(it.status)}<span class="badge prio prio-${it.priority}">${icon('flag', 'sm')} ${PRIORITY[it.priority]}</span>${dueHtml(it)}<span class="small subtle">by ${it.creator.name || '—'} · ${timeAgo(it.created_at)}</span>${it.pinned_global ? html`<span class="badge warning">${icon('megaphone', 'sm')} Pinned by ${it.pinned_by?.name || 'admin'} · for everyone</span>` : ''}${it.deleted_at ? html`<span class="badge danger">Deleted</span>` : ''}</p></div></div>
@@ -208,18 +277,26 @@ async function renderDetail(el, ctx, id) {
         ${stageBar(it, true)}</div>
       <div class="pg-cols">
         <div class="pg-main">
-          ${it.can_update ? html`<form class="card card-pad pg-update" data-update novalidate><h3>${icon('trending-up', 'sm')} Update progress</h3>
-            <div class="pg-range"><input type="range" min="0" max="100" step="1" value="${it.percent}" data-range aria-label="Percent"><span class="input-suffix"><input class="input sm" type="number" min="0" max="100" value="${it.percent}" data-num aria-label="Percent"><span>%</span></span></div>
-            <div class="seg pg-stagepick">${it.stages.map((s) => html`<button type="button" class="btn xs ${s.name === it.stage ? 'active' : ''}" data-stage="${s.name}" data-pct="${s.percent}">${s.name} <span class="subtle">${s.percent}%</span></button>`)}</div>
-            <div class="seg">${['on_track', 'at_risk', 'blocked'].map((k) => html`<button type="button" class="btn xs ${it.status === k || (it.status === 'done' && k === 'on_track') ? 'active' : ''}" data-status="${k}">${icon(STATUS[k].icon, 'sm')} ${STATUS[k].label}</button>`)}</div>
+          ${it.parts?.length ? html`<div class="card card-pad pg-parts" data-parts-card><h3>${icon('git-fork', 'sm')} Parts <span class="subtle">${it.parts.length} · worked on in parallel</span></h3>
+            ${it.parts.map((p) => html`<div class="pg-part ${it.my_parts.includes(p.id) ? 'mine' : ''}" data-part-row="${p.id}">
+              <div class="row between wrap" style="gap:6px"><div class="row wrap" style="gap:6px;min-width:0"><b class="truncate">${p.title}</b>${p.weight > 1 ? html`<span class="badge" title="Counts ${p.weight}× in the item %">×${p.weight}</span>` : ''}${it.my_parts.includes(p.id) ? html`<span class="badge success">${icon('pencil', 'xs')} You</span>` : ''}${statusBadge(p.status)}</div>
+                <span class="pg-part-pct">${p.percent}%</span></div>
+              <div class="pg-pm-bar big"><i class="pg-${p.status}" style="width:${p.percent}%"></i></div>
+              <div class="row between wrap small muted" style="gap:6px"><span class="row" style="gap:6px">${people(p.people, 5)}<span class="truncate">${p.people.map((u) => u.name).join(', ')}</span></span>
+                <span>${icon('milestone', 'sm')} ${p.stage || '—'}${p.last_update_at ? ` · ${timeAgo(p.last_update_at)}` : ' · not started'}</span></div></div>`)}</div>` : ''}
+          ${it.can_update && cur ? html`<form class="card card-pad pg-update" data-update novalidate><h3>${icon('trending-up', 'sm')} Update progress${it.parts?.length ? html` <span class="subtle">· ${cur.title}</span>` : ''}</h3>
+            ${myParts().length > 1 ? html`<div class="seg pg-partpick">${myParts().map((p) => html`<button type="button" class="btn xs ${p.id === cur.id ? 'active' : ''}" data-part="${p.id}">${p.title} <span class="subtle">${p.percent}%</span></button>`)}</div>` : ''}
+            <div class="pg-range"><input type="range" min="0" max="100" step="1" value="${cur.percent}" data-range aria-label="Percent"><span class="input-suffix"><input class="input sm" type="number" min="0" max="100" value="${cur.percent}" data-num aria-label="Percent"><span>%</span></span></div>
+            <div class="seg pg-stagepick">${it.stages.map((s) => html`<button type="button" class="btn xs ${s.name === cur.stage ? 'active' : ''}" data-stage="${s.name}" data-pct="${s.percent}">${s.name} <span class="subtle">${s.percent}%</span></button>`)}</div>
+            <div class="seg">${['on_track', 'at_risk', 'blocked'].map((k) => html`<button type="button" class="btn xs ${pick.status === k ? 'active' : ''}" data-status="${k}">${icon(STATUS[k].icon, 'sm')} ${STATUS[k].label}</button>`)}</div>
             <textarea class="textarea" rows="3" data-reason maxlength="2000" placeholder="Reason — what was done, or why the progress changed (required)"></textarea>
             <div class="row between"><span class="tiny subtle" data-hint></span><button class="btn primary" type="submit">${icon('send', 'sm')} Post update</button></div></form>`
-            : it.deleted_at ? '' : html`<div class="card card-pad small muted pg-ro">${icon('lock', 'sm')} Only ${others || 'the chosen people'} can update this progress. Everyone can follow it here.</div>`}
+            : it.deleted_at ? '' : html`<div class="card card-pad small muted pg-ro">${icon('lock', 'sm')} ${it.parts?.length ? 'Each part is updated by the people working on it.' : `Only ${others || 'the chosen people'} can update this progress.`} Everyone can follow it here.</div>`}
           ${it.updates.length ? html`<div class="card card-pad"><h3>${icon('chart-line', 'sm')} Progress over time</h3>${chartSvg(it)}</div>` : ''}
           <div class="card card-pad"><h3>${icon('history', 'sm')} History <span class="subtle">${it.updates.length}</span></h3>
             ${it.updates.length ? html`<ol class="pg-timeline">${it.updates.map((u) => html`<li class="pg-${u.status}">
-              <span class="pg-tl-dot"></span><div class="pg-tl-body"><div class="row wrap" style="gap:6px"><b>${u.user?.name || 'Former user'}</b>
-                <span class="pg-delta ${u.percent < u.percent_from ? 'down' : ''}">${u.percent_from}% → ${u.percent}%</span><span class="badge">${u.stage || ''}</span>${statusBadge(u.status)}
+              <span class="pg-tl-dot"></span><div class="pg-tl-body"><div class="row wrap" style="gap:6px"><b>${u.user?.name || 'Former user'}</b>${u.part ? html`<span class="pg-part-tag">${u.part.title}</span>` : ''}
+                <span class="pg-delta ${u.percent < u.percent_from ? 'down' : ''}">${u.percent_from}% → ${u.percent}%</span><span class="badge">${u.stage || ''}</span>${statusBadge(u.status)}${u.part ? html`<span class="tiny subtle">total ${u.item_percent}%</span>` : ''}
                 <span class="tiny subtle" title="${u.created_at}">${timeAgo(u.created_at)}</span></div>
                 <p class="pg-reason">${u.reason}</p></div></li>`)}</ol>` : html`<p class="small subtle">No updates yet.</p>`}</div>
         </div>
@@ -227,7 +304,7 @@ async function renderDetail(el, ctx, id) {
           ${it.deleted_at ? '' : html`<div class="card card-pad pg-notes" data-pg-notes></div>`}
           ${it.description ? html`<div class="card card-pad"><h3>About</h3><p class="small" style="white-space:pre-wrap;margin:0">${it.description}</p></div>` : ''}
           ${it.fields.length ? html`<div class="card card-pad"><h3>Details</h3><dl class="kv small pg-kv">${it.fields.map((f) => html`<dt>${f.label}</dt><dd>${isUrl(f.value) ? html`<a href="${f.value}" target="_blank" rel="noopener noreferrer">${f.value.replace(/^https?:\/\//, '')}</a>` : f.value || '—'}</dd>`)}</dl></div>` : ''}
-          <div class="card card-pad"><h3>Can update</h3>${it.updaters.map((u) => html`<div class="row pg-person">${avatarHtml(u, 'sm')}<span>${u.name}${u.id === state.user.id ? html` <span class="subtle">(you)</span>` : ''}</span></div>`)}</div>
+          <div class="card card-pad"><h3>${it.parts?.length ? 'Who works on what' : 'Can update'}</h3>${it.updaters.map((u) => html`<div class="row pg-person">${avatarHtml(u, 'sm')}<span>${u.name}${u.id === state.user.id ? html` <span class="subtle">(you)</span>` : ''}${it.parts?.length ? html`<span class="block tiny subtle">${it.parts.filter((p) => p.people.some((x) => x.id === u.id)).map((p) => p.title).join(' · ')}</span>` : ''}</span></div>`)}</div>
           <div class="card card-pad small"><dl class="kv"><dt>Started</dt><dd>${it.start_date ? fmtDay(it.start_date) : '—'}</dd><dt>Target</dt><dd>${it.due_date ? fmtDay(it.due_date) : '—'}</dd><dt>Published</dt><dd>${it.published_at ? fmtDay(it.published_at.slice(0, 10)) : '—'}</dd></dl></div>
         </aside>
       </div></div>`);
@@ -236,7 +313,6 @@ async function renderDetail(el, ctx, id) {
     if (notesEl) mountItemNotes(notesEl, { type: 'progress', id, items: it.notes || [], canAdd: !!it.can_add_notes, title: 'Reference notes', hint: it.can_add_notes ? 'List the notes this project follows — specs, designs, decisions. Everyone can open them.' : 'No reference notes yet.', onChange: (list) => (it.notes = list) });
   };
   paint();
-  let pick = { stage: null, status: it.status === 'done' ? 'on_track' : it.status };
   el.addEventListener('input', (e) => {
     const f = el.querySelector('[data-update]');
     if (!f) return;
@@ -247,7 +323,8 @@ async function renderDetail(el, ctx, id) {
       const p = +e.target.value;
       const st = it.stages.find((s) => p <= s.percent) || it.stages[it.stages.length - 1];
       f.querySelectorAll('[data-stage]').forEach((b) => b.classList.toggle('active', b.dataset.stage === st.name));
-      f.querySelector('[data-hint]').textContent = p === 100 ? '100% marks it as published 🚀' : `${it.percent}% → ${p}%`;
+      const cur = target();
+      f.querySelector('[data-hint]').textContent = p === 100 ? (it.parts?.length ? `${cur.title} done ✓` : '100% marks it as published 🚀') : `${cur.percent}% → ${p}%`;
     }
   });
   el.addEventListener('click', async (e) => {
@@ -257,13 +334,21 @@ async function renderDetail(el, ctx, id) {
       pick.stage = st.dataset.stage;
       f.querySelector('[data-range]').value = f.querySelector('[data-num]').value = st.dataset.pct;
       f.querySelectorAll('[data-stage]').forEach((b) => b.classList.toggle('active', b === st));
-      f.querySelector('[data-hint]').textContent = `${it.percent}% → ${st.dataset.pct}%`;
+      f.querySelector('[data-hint]').textContent = `${target().percent}% → ${st.dataset.pct}%`;
+      return;
+    }
+    const pp = e.target.closest('[data-part]');
+    if (pp && f) {
+      const reason = f.querySelector('[data-reason]').value;
+      pick = { stage: null, status: null, part: +pp.dataset.part };
+      paint();
+      el.querySelector('[data-reason]').value = reason;
       return;
     }
     const ss = e.target.closest('[data-status]');
     if (ss && f) { pick.status = ss.dataset.status; f.querySelectorAll('[data-status]').forEach((b) => b.classList.toggle('active', b === ss)); return; }
     const a = e.target.closest('[data-a]')?.dataset.a;
-    if (a === 'edit') { const r = await openEditor(it); if (r) { it = r; paint(); toast('Saved', 'success', { timeout: 1200 }); } }
+    if (a === 'edit') { const r = await openEditor(it); if (r) { it = r; pick = { stage: null, status: null, part: pick.part }; paint(); toast('Saved', 'success', { timeout: 1200 }); } }
     if (a === 'delete') {
       if (!(await confirm({ title: `Delete "${it.title}"?`, message: 'It disappears for everyone. You (or an administrator) can restore it from Product progress → Deleted.', confirmText: 'Delete' }))) return;
       try { await api.post(`progress/${id}/delete`); toast('Deleted', 'success', { action: 'Undo', onAction: () => api.post(`progress/${id}/restore`).then(() => navigate(`/progress/${id}`)) }); navigate('/progress'); } catch (err) { toastError(err); }
@@ -287,10 +372,11 @@ async function renderDetail(el, ctx, id) {
     const btn = f.querySelector('button[type=submit]');
     btn.disabled = true;
     try {
-      it = await api.post(`progress/${id}/updates`, { percent: +f.querySelector('[data-num]').value, stage: pick.stage, status: pick.status, reason });
-      pick = { stage: null, status: it.status === 'done' ? 'on_track' : it.status };
+      const part = it.parts?.length ? pick.part : undefined;
+      it = await api.post(`progress/${id}/updates`, { percent: +f.querySelector('[data-num]').value, stage: pick.stage, status: pick.status, reason, ...(part ? { part_id: part } : {}) });
+      pick = { stage: null, status: null, part };
       paint();
-      toast(it.percent === 100 ? 'Published — 100% 🚀' : 'Progress updated', 'success', { timeout: 1600 });
+      toast(it.percent === 100 ? 'Published — 100% 🚀' : part ? `Updated · total ${it.percent}%` : 'Progress updated', 'success', { timeout: 1600 });
     } catch (err) { toastError(err); btn.disabled = false; }
   });
 }

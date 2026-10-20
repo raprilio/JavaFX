@@ -433,6 +433,32 @@ CREATE TABLE IF NOT EXISTS `progress_updaters` (
   CONSTRAINT `fk_progress_updaters_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `progress_parts` (
+  `id`              INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `item_id`         INT UNSIGNED NOT NULL,
+  `title`           VARCHAR(120) NOT NULL,
+  `weight`          TINYINT UNSIGNED NOT NULL DEFAULT 1 COMMENT 'Share of the item percentage, 1 to 5',
+  `percent`         TINYINT UNSIGNED NOT NULL DEFAULT 0,
+  `stage`           VARCHAR(80) NULL,
+  `status`          ENUM('on_track','at_risk','blocked','done') NOT NULL DEFAULT 'on_track',
+  `position`        INT NOT NULL DEFAULT 0,
+  `last_update_at`  DATETIME NULL,
+  `done_at`         DATETIME NULL,
+  `created_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_progress_parts_item` (`item_id`, `position`),
+  CONSTRAINT `fk_progress_parts_item` FOREIGN KEY (`item_id`) REFERENCES `progress_items` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `progress_part_people` (
+  `part_id`     INT UNSIGNED NOT NULL,
+  `user_id`     INT UNSIGNED NOT NULL COMMENT 'Works on this part and posts its updates',
+  PRIMARY KEY (`part_id`, `user_id`),
+  KEY `idx_progress_part_people_user` (`user_id`),
+  CONSTRAINT `fk_progress_part_people_part` FOREIGN KEY (`part_id`) REFERENCES `progress_parts` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_progress_part_people_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `progress_updates` (
   `id`            INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `item_id`       INT UNSIGNED NOT NULL,
@@ -443,11 +469,16 @@ CREATE TABLE IF NOT EXISTS `progress_updates` (
   `status`        ENUM('on_track','at_risk','blocked','done') NOT NULL DEFAULT 'on_track',
   `reason`        TEXT NOT NULL,
   `created_at`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `part_id`       INT UNSIGNED NULL COMMENT 'The part this update is for (v1.25)',
+  `part_title`    VARCHAR(120) NULL,
+  `item_percent`  TINYINT UNSIGNED NULL COMMENT 'Item percentage after this update',
   PRIMARY KEY (`id`),
   KEY `idx_progress_updates_item` (`item_id`, `created_at`),
   KEY `fk_progress_updates_user` (`user_id`),
+  KEY `fk_progress_updates_part` (`part_id`),
   CONSTRAINT `fk_progress_updates_item` FOREIGN KEY (`item_id`) REFERENCES `progress_items` (`id`) ON DELETE CASCADE,
-  CONSTRAINT `fk_progress_updates_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
+  CONSTRAINT `fk_progress_updates_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_progress_updates_part` FOREIGN KEY (`part_id`) REFERENCES `progress_parts` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Personal IMAP/SMTP mailboxes (Gmail with an App Password, etc.), one user each (v1.8)
@@ -1020,7 +1051,7 @@ INSERT IGNORE INTO `settings` (`setting_key`, `setting_value`) VALUES
 ('smtp_encryption', 'tls'),
 ('smtp_from_name', 'SmartNotes'),
 ('smtp_from_email', ''),
-('schema_version', '17'),
+('schema_version', '18'),
 ('allow_note_sharing', '1'),
 ('logo_display', 'logo'),
 ('logo_height', '34'),

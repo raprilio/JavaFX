@@ -9,7 +9,7 @@ defined('SN_APP') || exit;
  */
 final class Migrator
 {
-    public const VERSION = 17;
+    public const VERSION = 18;
 
     public static function run(): void
     {
@@ -69,6 +69,9 @@ final class Migrator
             }
             if ($current < 17 && !self::hasTable('note_pin_targets')) {
                 DB::pdo()->exec(self::NOTE_PIN_TARGETS_SQL);
+            }
+            if ($current < 18) {
+                self::v18();
             }
             Settings::set('schema_version', (string) self::VERSION);
         } finally {
@@ -299,6 +302,49 @@ final class Migrator
             DB::pdo()->exec("ALTER TABLE `note_attachments` ADD COLUMN `ptask_id` INT UNSIGNED NULL COMMENT 'Handed in for a progress task (v1.22)', ADD KEY `idx_att_ptask` (`ptask_id`)");
         }
     }
+
+    /** v1.25: Product progress parts worked on in parallel. */
+    private static function v18(): void
+    {
+        foreach (['progress_parts' => self::PROGRESS_PARTS_SQL, 'progress_part_people' => self::PROGRESS_PART_PEOPLE_SQL] as $t => $sql) {
+            if (!self::hasTable($t)) {
+                DB::pdo()->exec($sql);
+            }
+        }
+        self::addColumn('progress_updates', 'part_id', "INT UNSIGNED NULL COMMENT 'The part this update is for (v1.25)'");
+        self::addColumn('progress_updates', 'part_title', 'VARCHAR(120) NULL');
+        self::addColumn('progress_updates', 'item_percent', "TINYINT UNSIGNED NULL COMMENT 'Item percentage after this update'");
+        if (!self::hasConstraint('progress_updates', 'fk_progress_updates_part')) {
+            DB::pdo()->exec('ALTER TABLE `progress_updates` ADD KEY `fk_progress_updates_part` (`part_id`), ADD CONSTRAINT `fk_progress_updates_part` FOREIGN KEY (`part_id`) REFERENCES `progress_parts` (`id`) ON DELETE SET NULL');
+        }
+    }
+
+    /** v1.25: a Product progress item split into parts worked on in parallel, each with its own people and bar. */
+    public const PROGRESS_PARTS_SQL = "CREATE TABLE `progress_parts` (
+  `id`              INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `item_id`         INT UNSIGNED NOT NULL,
+  `title`           VARCHAR(120) NOT NULL,
+  `weight`          TINYINT UNSIGNED NOT NULL DEFAULT 1 COMMENT 'Share of the item percentage, 1 to 5',
+  `percent`         TINYINT UNSIGNED NOT NULL DEFAULT 0,
+  `stage`           VARCHAR(80) NULL,
+  `status`          ENUM('on_track','at_risk','blocked','done') NOT NULL DEFAULT 'on_track',
+  `position`        INT NOT NULL DEFAULT 0,
+  `last_update_at`  DATETIME NULL,
+  `done_at`         DATETIME NULL,
+  `created_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_progress_parts_item` (`item_id`, `position`),
+  CONSTRAINT `fk_progress_parts_item` FOREIGN KEY (`item_id`) REFERENCES `progress_items` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+
+    public const PROGRESS_PART_PEOPLE_SQL = "CREATE TABLE `progress_part_people` (
+  `part_id`     INT UNSIGNED NOT NULL,
+  `user_id`     INT UNSIGNED NOT NULL COMMENT 'Works on this part and posts its updates',
+  PRIMARY KEY (`part_id`, `user_id`),
+  KEY `idx_progress_part_people_user` (`user_id`),
+  CONSTRAINT `fk_progress_part_people_part` FOREIGN KEY (`part_id`) REFERENCES `progress_parts` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_progress_part_people_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
 
     /** v1.24: an administrator pins a note for chosen people (the people tagged in it). */
     public const NOTE_PIN_TARGETS_SQL = "CREATE TABLE `note_pin_targets` (

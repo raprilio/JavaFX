@@ -196,6 +196,8 @@ File backup disimpan di `storage/backups/` (tidak bisa diakses publik). Simpan s
 2. Upload ulang semua file **kecuali** `app/config.php`, `uploads/`, dan `storage/`.
 3. Buka aplikasi. Perubahan skema dijalankan **otomatis** oleh migrator saat request pertama (tidak perlu phpMyAdmin). Versi skema tersimpan di tabel `settings` (`schema_version`).
 
+**Upgrade ke v1.25** (Product progress dengan beberapa bagian paralel): timpa file. Database diperbarui **otomatis** ke skema 18 (tabel baru `progress_parts`, `progress_part_people`, kolom `progress_updates.part_id`, `part_title`, `item_percent`). Item lama tidak berubah.
+
 **Upgrade ke v1.24** (Unlock user di Admin → Users, pin catatan untuk orang yang di-tag): timpa file. Database diperbarui **otomatis** ke skema 17 (tabel baru `note_pin_targets`).
 
 **Upgrade ke v1.23** (Team progress → Product progress, Progress tasks → Team progress di dalam Tasks): timpa file. Tidak ada perubahan database; link lama tetap berfungsi.
