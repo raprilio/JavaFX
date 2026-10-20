@@ -104,8 +104,9 @@ final class Mentions
             'SELECT u.id, u.name, COUNT(*) AS c FROM note_mentions m JOIN notes n ON n.id = m.note_id AND n.deleted_at IS NULL
                JOIN users u ON u.id = m.user_id
              WHERE n.user_id = ? OR EXISTS (SELECT 1 FROM note_shares s WHERE s.note_id = n.id AND s.user_id = ?) OR (n.pinned_global = 1 AND n.is_locked = 0)
+                OR (n.is_locked = 0 AND EXISTS (SELECT 1 FROM note_pin_targets t WHERE t.note_id = n.id AND t.user_id = ?))
              GROUP BY u.id, u.name ORDER BY c DESC, u.name LIMIT 100',
-            [$userId, $userId]
+            [$userId, $userId, $userId]
         ));
     }
 }

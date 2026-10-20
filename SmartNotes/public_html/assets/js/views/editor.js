@@ -12,6 +12,7 @@ import { openImageViewer } from '../components/imageViewer.js';
 import { audioItemHtml, bindAudioPlayers, openRecorder, uploadAudioFile, peaksFromFile, stopAudio } from '../components/audio.js';
 import { openTaskForm, refreshTags } from '../components/forms.js';
 import { openShareDialog } from '../components/share.js';
+import { openPinPeople } from '../components/notePinPeople.js';
 import { openFilePreview } from '../components/filePreview.js';
 import { renderLockScreen, unlockNotes, toggleNoteLock, lockNow } from '../components/notePin.js';
 import { openDrawingEditor, openDrawingViewer, normalizeDrawing } from '../components/drawPad.js';
@@ -63,12 +64,14 @@ export default {
             <button class="btn ghost icon sm ${note.is_favorite ? 'active' : ''}" data-a="favorite" data-tip="Favorite">${icon('star', 'sm')}</button>
             <button class="btn ghost icon sm" data-a="color" data-tip="Color & background">${icon('palette', 'sm')}</button>`
               : note.shared ? html`<button class="btn ghost icon sm ${note.share_pinned ? 'active' : ''}" data-a="spin" data-tip="Pin to my shared notes">${icon('pin', 'sm')}</button>` : ''}
+            ${isOwner && (note.pin_targets || []).length && !trashed ? html`<span class="badge accent" data-people-badge data-tip="Pinned for ${(note.pin_targets || []).map((p) => p.name).join(', ')}">${icon('user-check', 'sm')}<span class="hide-sm">For ${note.pin_targets.length}</span></span>` : ''}
             ${isOwner && note.pinned_global && !trashed ? html`<span class="badge warning" data-global-badge data-tip="Everyone sees this note pinned at the top of their notes">${icon('megaphone', 'sm')}<span class="hide-sm">For everyone</span></span>` : ''}
             <button class="btn ghost icon sm" data-a="info" data-tip="Details">${icon('panel-right', 'sm')}</button>
             <button class="btn ghost icon sm" data-a="more" data-tip="More">${icon('more-horizontal', 'sm')}</button>
           </div>
           ${!isOwner && note.pinned_global ? html`<div class="share-banner global">${icon('megaphone', 'sm')}<span>Pinned for everyone by <b>${note.owner?.name || 'an administrator'}</b>${note.shared ? (role === 'edit' ? ' · shared with you, you can edit the title and text' : ' · view only') : ' · view only'}</span></div>` : ''}
-          ${!isOwner && !note.pinned_global ? html`<div class="share-banner">${icon('users', 'sm')}<span>Shared by <b>${note.owner?.name || 'another user'}</b> · ${role === 'edit' ? 'you can edit the title, text and checklists' : 'view only — the text and checklists cannot be changed'}${note.updated_by_name ? html` · last edited by ${note.updated_by_name}` : ''}</span></div>` : ''}
+          ${!isOwner && !note.pinned_global && note.pinned_for_me && !note.shared ? html`<div class="share-banner forme">${icon('user-check', 'sm')}<span>Pinned for you by <b>${note.pinned_by_name || 'an administrator'}</b> · view only</span></div>` : ''}
+          ${!isOwner && !note.pinned_global && (note.shared || !note.pinned_for_me) ? html`<div class="share-banner">${icon('users', 'sm')}<span>Shared by <b>${note.owner?.name || 'another user'}</b> · ${role === 'edit' ? 'you can edit the title, text and checklists' : 'view only — the text and checklists cannot be changed'}${note.updated_by_name ? html` · last edited by ${note.updated_by_name}` : ''}</span></div>` : ''}
           <div data-toolbar></div>
           <div class="editor-paper" style="position:relative">
             <div class="drop-hint">${icon('upload', 'lg')}&nbsp; Drop to attach</div>
@@ -175,7 +178,7 @@ export default {
     /** A person was just mentioned: the owner may share the note with them so they can open it. */
     async function offerShare(u) {
       if (!u || u.id === state.user.id || !isOwner) return;
-      if (note.pinned_global || (note.shares || []).some((s) => s.user_id === u.id)) return;
+      if (note.pinned_global || (note.shares || []).some((s) => s.user_id === u.id) || (note.pin_targets || []).some((p) => p.id === u.id)) return;
       if (note.is_locked) return toast(`${u.name} cannot open a locked note`, 'info', { timeout: 2500 });
       if (state.branding?.allow_note_sharing === false) return;
       toast(`${u.name} cannot open this note yet`, 'info', { timeout: 9000, action: 'Share (view)', onAction: async () => {
@@ -526,7 +529,12 @@ export default {
             await save();
             try { const r = await api.post(`notes/${id}/pin-global`, { pinned: on }); note.pinned_global = r.pinned_global; toast(on ? 'Pinned for everyone' : 'Unpinned for everyone', 'success'); emit('notes:changed'); remount(); } catch (e) { toastError(e); }
           } }] : []),
-          ...(trashed || note.pinned_global ? [] : [{ label: note.is_locked ? 'Remove lock' : 'Lock with PIN', icon: note.is_locked ? 'lock-open' : 'lock', onClick: async () => { await save(); if (await toggleNoteLock(note)) remount(); } }]),
+          ...(!trashed && state.user.role === 'admin' ? [{ label: (note.pin_targets || []).length ? `Pinned for tagged people (${note.pin_targets.length})…` : 'Pin for tagged people…', icon: 'user-check', disabled: note.is_locked, onClick: async () => {
+            await save();
+            const r = await openPinPeople(note, rte.mentions());
+            if (r) { note.pin_targets = r.pin_targets; emit('notes:changed'); remount(); }
+          } }] : []),
+          ...(trashed || note.pinned_global || (note.pin_targets || []).length ? [] : [{ label: note.is_locked ? 'Remove lock' : 'Lock with PIN', icon: note.is_locked ? 'lock-open' : 'lock', onClick: async () => { await save(); if (await toggleNoteLock(note)) remount(); } }]),
           { label: 'Export as HTML', icon: 'file-code', onClick: () => exportNote('html') },
           { label: 'Export as text', icon: 'file-text', onClick: () => exportNote('txt') },
           { label: 'Print / save as PDF', icon: 'printer', onClick: () => window.print() },

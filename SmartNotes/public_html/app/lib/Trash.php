@@ -71,6 +71,7 @@ final class Trash
         if (!$n) {
             throw new HttpException('Item not found.', 404);
         }
+        DB::run('DELETE FROM note_pin_targets WHERE note_id = ?', [$id]);
     }
 
     /** Admin trash: delete for good the notes that users deleted more than $days ago (0 = keep until an admin deletes them). */

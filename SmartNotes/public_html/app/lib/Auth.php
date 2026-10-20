@@ -250,6 +250,47 @@ final class Auth
         return $byEmail >= self::MAX_ATTEMPTS_EMAIL || $byIp >= self::MAX_ATTEMPTS_IP;
     }
 
+    /**
+     * Sign-in lock status per e-mail (admin user list, v1.24): e-mail => time the lock lifts, for the accounts
+     * that hit the failed-attempt limit in the last LOCK_MINUTES.
+     */
+    public static function loginLocks(): array
+    {
+        $since = date('Y-m-d H:i:s', time() - self::LOCK_MINUTES * 60);
+        $out = [];
+        foreach (DB::all(
+            "SELECT email, created_at FROM login_attempts WHERE attempt_type = 'login' AND success = 0 AND created_at > ? ORDER BY email, created_at DESC",
+            [$since]
+        ) as $r) {
+            $out[$r['email']][] = $r['created_at'];
+        }
+        $locks = [];
+        foreach ($out as $email => $times) {
+            if (count($times) >= self::MAX_ATTEMPTS_EMAIL) {
+                // the lock lifts when the oldest of the last MAX attempts leaves the window
+                $locks[$email] = date('Y-m-d H:i:s', strtotime($times[self::MAX_ATTEMPTS_EMAIL - 1]) + self::LOCK_MINUTES * 60);
+            }
+        }
+        return $locks;
+    }
+
+    /**
+     * Admin unlock (v1.24): forget the failed sign-ins of this e-mail, and the recent failures from the
+     * addresses it failed from (so the person's own network is not still blocked by the per-IP limit).
+     * @return int failed attempts removed
+     */
+    public static function unlockLogin(string $email): int
+    {
+        $email = mb_strtolower($email);
+        $since = date('Y-m-d H:i:s', time() - self::LOCK_MINUTES * 60);
+        $ips = DB::col("SELECT DISTINCT ip_address FROM login_attempts WHERE attempt_type = 'login' AND email = ? AND success = 0 AND created_at > ?", [$email, $since]);
+        $n = DB::run("DELETE FROM login_attempts WHERE attempt_type IN ('login', 'forgot') AND email = ? AND success = 0", [$email])->rowCount();
+        if ($ips) {
+            $n += DB::run("DELETE FROM login_attempts WHERE attempt_type = 'login' AND success = 0 AND created_at > ? AND ip_address IN (" . DB::in($ips) . ')', [$since, ...$ips])->rowCount();
+        }
+        return $n;
+    }
+
     private static function recordAttempt(string $type, string $email, string $ip, bool $success): void
     {
         DB::insert('login_attempts', ['attempt_type' => $type, 'email' => $email, 'ip_address' => $ip, 'success' => $success ? 1 : 0]);

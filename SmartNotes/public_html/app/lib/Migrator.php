@@ -9,7 +9,7 @@ defined('SN_APP') || exit;
  */
 final class Migrator
 {
-    public const VERSION = 16;
+    public const VERSION = 17;
 
     public static function run(): void
     {
@@ -66,6 +66,9 @@ final class Migrator
             }
             if ($current < 16) {
                 self::v16();
+            }
+            if ($current < 17 && !self::hasTable('note_pin_targets')) {
+                DB::pdo()->exec(self::NOTE_PIN_TARGETS_SQL);
             }
             Settings::set('schema_version', (string) self::VERSION);
         } finally {
@@ -296,6 +299,21 @@ final class Migrator
             DB::pdo()->exec("ALTER TABLE `note_attachments` ADD COLUMN `ptask_id` INT UNSIGNED NULL COMMENT 'Handed in for a progress task (v1.22)', ADD KEY `idx_att_ptask` (`ptask_id`)");
         }
     }
+
+    /** v1.24: an administrator pins a note for chosen people (the people tagged in it). */
+    public const NOTE_PIN_TARGETS_SQL = "CREATE TABLE `note_pin_targets` (
+  `note_id`     INT UNSIGNED NOT NULL,
+  `user_id`     INT UNSIGNED NOT NULL COMMENT 'Sees the note pinned at the top, read-only',
+  `pinned_by`   INT UNSIGNED NULL,
+  `position`    INT NULL COMMENT 'Order the person arranged by dragging',
+  `created_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`note_id`, `user_id`),
+  KEY `idx_note_pin_targets_user` (`user_id`),
+  KEY `fk_note_pin_targets_by` (`pinned_by`),
+  CONSTRAINT `fk_note_pin_targets_note` FOREIGN KEY (`note_id`) REFERENCES `notes` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_note_pin_targets_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_note_pin_targets_by` FOREIGN KEY (`pinned_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
 
     public const PTASKS_SQL = "CREATE TABLE `ptasks` (
   `id`            INT UNSIGNED NOT NULL AUTO_INCREMENT,

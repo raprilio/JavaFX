@@ -110,6 +110,12 @@ final class NoteLock
         }
     }
 
+    /** Admin unlock (v1.24): lift a wrong-PIN block now. True when there was a block or failed attempts to clear. */
+    public static function clearBlock(int $userId): bool
+    {
+        return DB::run('UPDATE note_pins SET failed_attempts = 0, locked_until = NULL WHERE user_id = ? AND (failed_attempts > 0 OR locked_until IS NOT NULL)', [$userId])->rowCount() > 0;
+    }
+
     public static function unlock(int $userId): void
     {
         $_SESSION['note_unlock'] = ['u' => $userId, 't' => time() + self::UNLOCK_TTL];

@@ -88,17 +88,22 @@ const tabs = {
 
   async users(el) {
     let data = await api.get('admin/users');
+    // v1.24: locked out after too many wrong passwords (sign-in) or notes PINs; Unlock lifts it right away
+    const lockBadge = (u) => {
+      const parts = [u.login_locked_until && ['Sign-in locked', u.login_locked_until], u.pin_blocked_until && ['PIN blocked', u.pin_blocked_until]].filter(Boolean);
+      return parts.length ? html`<div class="row wrap" style="gap:4px;margin-top:3px">${parts.map(([t, until]) => html`<span class="badge danger" data-locked data-tip="Until ${new Date(until.replace(' ', 'T')).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} — or press Unlock">${icon('lock', 'xs')} ${t}</span>`)}</div>` : '';
+    };
     let q = '';
     const paint = () => {
       el.innerHTML = String(card(html`${icon('users', 'sm')} Users <span class="subtle small">${data.items.length}</span>`, html`
         <div class="toolbar"><div class="input-icon grow" style="max-width:300px">${icon('search', 'sm')}<input class="input sm" type="search" placeholder="Search users…" value="${q}" data-q></div><div class="grow"></div><button class="btn primary sm" data-a="new">${icon('user-plus', 'sm')} Add user</button></div>
         <div class="table-wrap"><table class="table"><thead><tr><th>User</th><th>Role</th><th class="hide-sm">Status</th><th class="hide-sm">Content</th><th class="hide-sm">Last login</th><th></th></tr></thead><tbody>
-        ${data.items.map((u) => html`<tr data-id="${u.id}"><td><div class="row"><span class="avatar sm">${initials(u.name)}</span><div style="min-width:0"><div class="truncate" style="font-weight:600">${u.name}</div><div class="tiny subtle truncate">${u.email}</div></div></div></td>
+        ${data.items.map((u) => html`<tr data-id="${u.id}"><td><div class="row"><span class="avatar sm">${initials(u.name)}</span><div style="min-width:0"><div class="truncate" style="font-weight:600">${u.name}</div><div class="tiny subtle truncate">${u.email}</div>${lockBadge(u)}</div></div></td>
           <td><span class="badge ${u.role === 'admin' ? 'accent' : ''}">${u.role}</span>${u.permissions.length && u.role !== 'admin' ? html` <span class="badge info" data-tip="${u.permissions.join(', ')}">+${u.permissions.length}</span>` : ''}</td>
           <td class="hide-sm"><span class="badge ${u.status === 'active' ? 'success' : 'danger'}">${u.status}</span>${u.must_change_password ? html` <span class="badge warning" data-tip="Must set a new password at next sign-in">${icon('key-round', 'sm')}</span>` : ''}</td>
           <td class="hide-sm small">${u.notes} notes · ${u.tasks} tasks · ${fmtBytes(u.storage)}</td>
           <td class="hide-sm small">${u.last_login_at ? timeAgo(u.last_login_at) : 'Never'}</td>
-          <td class="nowrap"><button class="btn ghost icon sm" data-edit="${u.id}" aria-label="Edit" data-tip="Edit">${icon('pencil', 'sm')}</button><button class="btn ghost icon sm" data-logout="${u.id}" aria-label="Sign out everywhere" data-tip="Sign out of all devices">${icon('log-out', 'sm')}</button>${u.id !== state.user.id ? html`<button class="btn ghost icon sm" data-del="${u.id}" aria-label="Delete">${icon('trash-2', 'sm')}</button>` : ''}</td></tr>`)}
+          <td class="nowrap user-acts"><button class="btn ghost icon sm" data-edit="${u.id}" aria-label="Edit" data-tip="Edit">${icon('pencil', 'sm')}</button><button class="btn ghost icon sm" data-logout="${u.id}" aria-label="Sign out everywhere" data-tip="Sign out of all devices">${icon('log-out', 'sm')}</button><button class="btn ghost icon sm ${u.login_locked_until || u.pin_blocked_until ? 'warn-on' : ''}" data-unlock="${u.id}" aria-label="Unlock" data-tip="Unlock now — lift the 15-minute lock after wrong passwords or notes PINs">${icon('lock-open', 'sm')}</button>${u.id !== state.user.id ? html`<button class="btn ghost icon sm" data-del="${u.id}" aria-label="Delete">${icon('trash-2', 'sm')}</button>` : ''}</td></tr>`)}
         </tbody></table></div>`));
     };
     const reload = async () => { data = await api.get('admin/users', { q }); paint(); };
@@ -146,6 +151,13 @@ const tabs = {
         const u = data.items.find((x) => x.id === +lo.dataset.logout);
         if (!(await confirm({ title: `Sign out ${u.name}?`, message: 'The user is signed out of every browser and device and must sign in again.', confirmText: 'Sign out everywhere' }))) return;
         try { await api.post(`admin/users/${u.id}/logout`); toast(`${u.name} was signed out everywhere`, 'success'); } catch (err) { toastError(err); }
+        return;
+      }
+      const un = e.target.closest('[data-unlock]');
+      if (un) {
+        const u = data.items.find((x) => x.id === +un.dataset.unlock);
+        if (!(await confirm({ title: `Unlock ${u.name}?`, message: 'Forgets the wrong password and notes PIN attempts, so the user can sign in (and open locked notes) right away instead of waiting 15 minutes.', confirmText: 'Unlock now', danger: false, icon: 'lock-open' }))) return;
+        try { const r = await api.post(`admin/users/${u.id}/unlock`); toast(r.cleared_attempts || r.pin_cleared ? `${u.name} is unlocked` : `${u.name} was not locked`, 'success'); reload(); } catch (err) { toastError(err); }
         return;
       }
       const del = e.target.closest('[data-del]');

@@ -73,6 +73,7 @@ export function userPicker({ value = [], placeholder = 'Type a name to tag colle
   return {
     el,
     get: () => picked.map((u) => u.id),
+    users: () => picked.map((u) => ({ ...u })),
     set: (users) => { picked = users.map((u) => ({ id: +u.id, name: u.name, email: u.email || '' })); paintChips(); },
   };
 }

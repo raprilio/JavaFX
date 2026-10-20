@@ -119,6 +119,11 @@ final class AdminController
              WHERE ' . implode(' AND ', $where) . ' ORDER BY u.created_at DESC LIMIT 500',
             $params
         );
+        $locks = Auth::loginLocks();
+        $pinBlocks = [];
+        foreach (DB::all('SELECT user_id, locked_until FROM note_pins WHERE locked_until > ?', [now()]) as $b) {
+            $pinBlocks[(int) $b['user_id']] = $b['locked_until'];
+        }
         foreach ($rows as &$r) {
             $r['id'] = (int) $r['id'];
             $r['permissions'] = json_decode_array($r['permissions']);
@@ -127,6 +132,9 @@ final class AdminController
             $r['storage'] = (int) $r['storage'];
             $r['shares'] = (int) $r['shares'];
             $r['must_change_password'] = (bool) $r['must_change_password'];
+            // v1.24: locked out after too many wrong passwords / notes PINs (an admin can lift it right away)
+            $r['login_locked_until'] = $locks[mb_strtolower($r['email'])] ?? null;
+            $r['pin_blocked_until'] = $pinBlocks[$r['id']] ?? null;
         }
         Http::ok(['items' => $rows, 'permissions' => Auth::PERMISSIONS]);
     }
@@ -231,6 +239,24 @@ final class AdminController
         }
         Activity::log('admin.user_logout', 'user', $id, 'Signed out everywhere: ' . $user['email']);
         Http::ok(null, 'The user has been signed out of all devices.');
+    }
+
+    /** Lift a sign-in lock (too many wrong passwords) and a notes-PIN block now, instead of waiting 15 minutes (v1.24). */
+    public static function unlockUser(int $id): void
+    {
+        Auth::require();
+        $user = DB::one('SELECT id, email, role FROM users WHERE id = ? AND deleted_at IS NULL', [$id]);
+        if (!$user) {
+            throw new HttpException('User not found.', 404);
+        }
+        if ($user['role'] === 'admin' && !Auth::isAdmin()) {
+            throw new HttpException('Only administrators can unlock administrators.', 403);
+        }
+        $attempts = Auth::unlockLogin((string) $user['email']);
+        $pin = NoteLock::clearBlock($id);
+        Activity::log('admin.user_unlock', 'user', $id, 'Unlocked sign-in' . ($pin ? ' and notes PIN' : '') . ': ' . $user['email']);
+        Http::ok(['cleared_attempts' => $attempts, 'pin_cleared' => $pin],
+            $attempts || $pin ? 'Unlocked — the user can sign in' . ($pin ? ' and open locked notes' : '') . ' again now.' : 'This user was not locked.');
     }
 
     private static function requireFullAdmin(): void

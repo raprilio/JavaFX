@@ -409,6 +409,20 @@ CREATE TABLE IF NOT EXISTS `item_notes` (
   CONSTRAINT `fk_item_notes_by` FOREIGN KEY (`added_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `note_pin_targets` (
+  `note_id`     INT UNSIGNED NOT NULL,
+  `user_id`     INT UNSIGNED NOT NULL COMMENT 'Sees the note pinned at the top, read-only',
+  `pinned_by`   INT UNSIGNED NULL,
+  `position`    INT NULL COMMENT 'Order the person arranged by dragging',
+  `created_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`note_id`, `user_id`),
+  KEY `idx_note_pin_targets_user` (`user_id`),
+  KEY `fk_note_pin_targets_by` (`pinned_by`),
+  CONSTRAINT `fk_note_pin_targets_note` FOREIGN KEY (`note_id`) REFERENCES `notes` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_note_pin_targets_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_note_pin_targets_by` FOREIGN KEY (`pinned_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `progress_updaters` (
   `item_id`     INT UNSIGNED NOT NULL,
   `user_id`     INT UNSIGNED NOT NULL COMMENT 'Allowed to post progress updates',
@@ -1006,7 +1020,7 @@ INSERT IGNORE INTO `settings` (`setting_key`, `setting_value`) VALUES
 ('smtp_encryption', 'tls'),
 ('smtp_from_name', 'SmartNotes'),
 ('smtp_from_email', ''),
-('schema_version', '16'),
+('schema_version', '17'),
 ('allow_note_sharing', '1'),
 ('logo_display', 'logo'),
 ('logo_height', '34'),

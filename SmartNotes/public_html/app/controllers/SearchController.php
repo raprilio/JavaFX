@@ -41,8 +41,9 @@ final class SearchController
 
         if ($want('note')) {
             // Own notes + notes other users shared with me.
-            $where = ['(n.user_id = ? OR EXISTS (SELECT 1 FROM note_shares sh WHERE sh.note_id = n.id AND sh.user_id = ?) OR (n.pinned_global = 1 AND n.is_locked = 0))', 'n.deleted_at IS NULL'];
-            $params = [$uid, $uid];
+            $where = ['(n.user_id = ? OR EXISTS (SELECT 1 FROM note_shares sh WHERE sh.note_id = n.id AND sh.user_id = ?) OR (n.pinned_global = 1 AND n.is_locked = 0)
+                OR (n.is_locked = 0 AND EXISTS (SELECT 1 FROM note_pin_targets pt WHERE pt.note_id = n.id AND pt.user_id = ?)))', 'n.deleted_at IS NULL'];
+            $params = [$uid, $uid, $uid];
             $unlocked = NoteLock::unlocked($uid);
             if ($q !== '') {
                 // Locked notes match on their title only until the PIN is entered.
