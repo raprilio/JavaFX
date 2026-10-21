@@ -14,14 +14,15 @@ final class MindmapsController
     public static function index(): void
     {
         $u = Auth::require();
-        // Own items plus items other users shared with me (scope: mine | shared).
+        // Own items plus items other users shared with me (scope: mine | shared); All also lists the mind maps pinned
+        // for everyone or for me (v1.27).
         $sharedSql = "EXISTS (SELECT 1 FROM item_shares s WHERE s.item_type = 'mindmap' AND s.item_id = m.id AND s.user_id = ?)";
         $where = match (Http::query('scope')) {
             'mine' => 'm.user_id = ?',
             'shared' => $sharedSql,
-            default => "(m.user_id = ? OR $sharedSql)",
+            default => "(m.user_id = ? OR $sharedSql OR " . ItemPins::visibleSql('m') . ')',
         } . ' AND m.deleted_at IS NULL';
-        $params = Http::query('scope') === 'mine' || Http::query('scope') === 'shared' ? [$u['id']] : [$u['id'], $u['id']];
+        $params = Http::query('scope') === 'mine' || Http::query('scope') === 'shared' ? [$u['id']] : [$u['id'], $u['id'], 'mindmap', $u['id']];
         if ($q = V::str(Http::query('q'), 100)) {
             $where .= ' AND (m.title LIKE ? OR m.description LIKE ?)';
             $like = '%' . addcslashes($q, '%_\\') . '%';
@@ -37,10 +38,13 @@ final class MindmapsController
              FROM mindmaps m JOIN users o ON o.id = m.user_id WHERE $where ORDER BY m.updated_at DESC LIMIT 500",
             array_merge([$u['id']], $params)
         );
+        $pins = ItemPins::forList('mindmap', array_map(static fn($r) => (int) $r['id'], $rows), (int) $u['id']);
         foreach ($rows as &$r) {
             $r['id'] = (int) $r['id'];
+            $r += $pins[$r['id']] ?? [];
             $r['shared'] = (int) $r['owner_id'] !== $u['id'];
             $r['access'] = $r['shared'] ? ($r['my_permission'] ?: 'view') : 'owner';
+            $r['in_shares'] = $r['my_permission'] !== null; // shared with me (not only visible through a pin)
             $r['share_count'] = (int) $r['share_count'];
             if (!$r['shared']) {
                 $r['owner_name'] = null;
@@ -101,6 +105,7 @@ final class MindmapsController
             'owner' => DB::one('SELECT id, name FROM users WHERE id = ?', [$m['user_id']]),
             'updated_by_name' => $m['updated_by'] && (int) $m['updated_by'] !== $userId ? DB::val('SELECT name FROM users WHERE id = ?', [$m['updated_by']]) : null,
             'shares' => $role === 'owner' ? Shares::list('mindmap', $id) : [],
+            'pins' => ItemPins::state('mindmap', $id, $userId),
             'nodes' => $outNodes,
             'edges' => array_values(array_filter($edges, static fn($e) => $e['source'] && $e['target'])),
         ];

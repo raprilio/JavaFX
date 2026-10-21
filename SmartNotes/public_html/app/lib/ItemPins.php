@@ -4,14 +4,15 @@ declare(strict_types=1);
 defined('SN_APP') || exit;
 
 /**
- * Pins for items other than notes (v1.26, flowcharts): pin to the top of my own list (anyone, on anything they can
- * see), pin for everyone (an administrator, on their own item) and pin for chosen people (an administrator, on their
- * own item). An item pinned for everyone or for me can be opened read-only.
+ * Pins for items other than notes (v1.26 flowcharts, v1.27 mind maps): pin to the top of my own list (anyone, on
+ * anything they can see), pin for everyone and pin for chosen people (people with the pin_everyone permission —
+ * administrators always — on their own item). An item pinned for everyone or for me can be opened read-only.
  */
 final class ItemPins
 {
     public const TYPES = [
         'flowchart' => ['table' => 'flowcharts', 'label' => 'flowchart', 'link' => '#/flowcharts/%d'],
+        'mindmap' => ['table' => 'mindmaps', 'label' => 'mind map', 'link' => '#/mindmaps/%d'], // v1.27
     ];
 
     public static function cfg(string $type): array
@@ -97,11 +98,12 @@ final class ItemPins
 
     // ------------------------------------------------------------------ endpoints
 
-    private static function own(string $type, int $id, int $uid): array
+    /** The owner's item — or, to take a pin away ($unpin), any item for an administrator (v1.27). */
+    private static function own(string $type, int $id, int $uid, bool $unpin = false): array
     {
         $t = self::cfg($type)['table'];
         $row = DB::one("SELECT * FROM `$t` WHERE id = ? AND deleted_at IS NULL", [$id]);
-        if (!$row || (int) $row['user_id'] !== $uid) {
+        if (!$row || ((int) $row['user_id'] !== $uid && !($unpin && Auth::isAdmin()))) {
             throw new HttpException('Only the owner can do this.', 404);
         }
         return $row;
@@ -125,10 +127,10 @@ final class ItemPins
             }
             Http::ok(self::state($type, $id, $uid));
         }
-        if (!Auth::isAdmin()) {
-            throw new HttpException('Only administrators can pin for everyone.', 403);
+        if (!Auth::can('pin_everyone')) {
+            throw new HttpException('You are not allowed to pin for everyone. Ask an administrator.', 403);
         }
-        $row = self::own($type, $id, $uid);
+        $row = self::own($type, $id, $uid, !$on);
         if ($on && !(int) $row['pinned_global']) {
             DB::run("UPDATE `{$cfg['table']}` SET pinned_global = 1, pinned_global_at = NOW(), pinned_global_by = ?, updated_at = updated_at WHERE id = ?", [$uid, $id]);
             foreach (DB::col("SELECT id FROM users WHERE status = 'active' AND deleted_at IS NULL AND id <> ?", [$uid]) as $to) {
@@ -147,11 +149,11 @@ final class ItemPins
         $u = Auth::require();
         $uid = (int) $u['id'];
         $cfg = self::cfg($type);
-        if (!Auth::isAdmin()) {
-            throw new HttpException('Only administrators can pin for other people.', 403);
+        if (!Auth::can('pin_everyone')) {
+            throw new HttpException('You are not allowed to pin for other people. Ask an administrator.', 403);
         }
-        $row = self::own($type, $id, $uid);
         $want = array_values(array_filter(array_slice(V::ids(Http::input('user_ids', [])), 0, 500), static fn($v) => $v !== $uid));
+        $row = self::own($type, $id, $uid, !$want);
         if ($want) {
             $want = array_map('intval', DB::col("SELECT id FROM users WHERE status = 'active' AND deleted_at IS NULL AND id IN (" . DB::in($want) . ')', $want));
         }

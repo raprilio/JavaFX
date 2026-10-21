@@ -785,6 +785,9 @@ CREATE TABLE IF NOT EXISTS `mindmaps` (
   `created_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `deleted_at`      DATETIME NULL,
+  `pinned_global`   TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Pinned for everyone (v1.27)',
+  `pinned_global_at` DATETIME NULL,
+  `pinned_global_by` INT UNSIGNED NULL,
   PRIMARY KEY (`id`),
   KEY `idx_mm_user` (`user_id`, `deleted_at`, `updated_at`),
   CONSTRAINT `fk_mm_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
@@ -1067,7 +1070,7 @@ INSERT IGNORE INTO `settings` (`setting_key`, `setting_value`) VALUES
 ('smtp_encryption', 'tls'),
 ('smtp_from_name', 'SmartNotes'),
 ('smtp_from_email', ''),
-('schema_version', '19'),
+('schema_version', '20'),
 ('allow_note_sharing', '1'),
 ('logo_display', 'logo'),
 ('logo_height', '34'),

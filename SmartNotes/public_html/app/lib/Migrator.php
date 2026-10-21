@@ -9,7 +9,7 @@ defined('SN_APP') || exit;
  */
 final class Migrator
 {
-    public const VERSION = 19;
+    public const VERSION = 20;
 
     public static function run(): void
     {
@@ -75,6 +75,12 @@ final class Migrator
             }
             if ($current < 19) {
                 self::v19();
+            }
+            if ($current < 20) {
+                // v1.27: pin mind maps for everyone (like flowcharts)
+                self::addColumn('mindmaps', 'pinned_global', "TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Pinned for everyone (v1.27)'");
+                self::addColumn('mindmaps', 'pinned_global_at', 'DATETIME NULL');
+                self::addColumn('mindmaps', 'pinned_global_by', 'INT UNSIGNED NULL');
             }
             Settings::set('schema_version', (string) self::VERSION);
         } finally {

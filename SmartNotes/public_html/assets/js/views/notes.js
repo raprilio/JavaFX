@@ -1,7 +1,7 @@
 // Notes list: filters, search, sort, grid/list, infinite scroll, quick actions, bulk actions, drag & drop images.
 import { html, icon, timeAgo, debounce, esc, h, raw } from '../core/dom.js';
 import { api } from '../core/api.js';
-import { state, emit } from '../core/store.js';
+import { state, emit, can } from '../core/store.js';
 import { navigate, setQuery } from '../core/router.js';
 import { toast, toastError, menu, contextMenu, colorPicker, confirm, empty, skeletonCards } from '../core/ui.js';
 import { newNote } from '../core/actions.js';
@@ -35,7 +35,7 @@ function card(n, selecting, selected) {
         ${n.audio_count ? html`<span>${icon('mic', 'sm')}${n.audio_count}</span>` : ''}
         ${n.is_favorite ? html`<span style="color:var(--warning)">${icon('star', 'sm')}</span>` : ''}
         ${n.is_locked && !n.locked ? html`<span class="nc-lock" data-tip="Locked note (unlocked now)">${icon('lock-open', 'sm')}</span>` : ''}
-        ${n.pinned_global ? html`<span class="badge warning nc-global">${icon('megaphone', 'sm')} ${others ? n.owner_name : 'Admin'} · for everyone</span>` : ''}
+        ${n.pinned_global ? html`<span class="badge warning nc-global">${icon('megaphone', 'sm')} ${others ? n.owner_name : 'You'} · for everyone</span>` : ''}
         ${!n.pinned_global && n.pinned_for_me ? html`<span class="badge accent nc-forme">${icon('user-check', 'sm')} ${n.pinned_by_name || 'Admin'} · for you</span>` : ''}
         ${!others && n.pin_target_count ? html`<span class="badge accent nc-pinned-people" data-tip="Pinned for ${n.pin_target_count} tagged ${n.pin_target_count === 1 ? 'person' : 'people'}">${icon('user-check', 'sm')} ${n.pin_target_count}</span>` : ''}
         ${n.shared ? html`<span class="badge info nc-owner" data-tip="Shared with you by ${n.owner_name}">${icon('share-2', 'sm')} Shared by ${n.owner_name}${n.permission === 'edit' ? ' · edit' : ''}</span>` : !others && n.share_count ? html`<span class="badge info" data-tip="Shared with ${n.share_count}">${icon('users', 'sm')} ${n.share_count}</span>` : ''}
@@ -141,15 +141,15 @@ export default {
       grid.style.columns = '';
       // All / Pinned: admin pins for everyone, then my own pins, then the rest — each with a heading.
       const sections = ['all', 'pinned'].includes(f.filter) ? [
-        ['global', 'megaphone', 'Pinned by admin — for everyone', items.filter((n) => n.pinned_global)],
-        ['people', 'user-check', 'Pinned by admin — for you', items.filter((n) => !n.pinned_global && n.pinned_for_me)],
+        ['global', 'megaphone', 'Pinned for everyone', items.filter((n) => n.pinned_global)],
+        ['people', 'user-check', 'Pinned for you', items.filter((n) => !n.pinned_global && n.pinned_for_me)],
         ['mine', 'pin', 'Pinned by me', items.filter((n) => !n.pinned_global && !n.pinned_for_me && n.is_pinned)],
         ['rest', 'notebook', 'Other notes', items.filter((n) => !n.pinned_global && !n.pinned_for_me && !n.is_pinned)],
       ].filter((x) => x[3].length) : [];
       const cards = (list) => list.map((n) => String(card(n, selecting, selected.has(n.id)))).join('');
       // v1.20: each pinned group is its own box, so its notes can be dragged into a new order.
       const hint = matchMedia('(pointer: coarse)').matches ? 'hold & drag to move' : 'drag to move';
-      const canArrange = (k) => !selecting && (k === 'mine' || k === 'people' || (k === 'global' && state.user.role === 'admin'));
+      const canArrange = (k) => !selecting && (k === 'mine' || k === 'people' || (k === 'global' && can('pin_everyone')));
       const sectioned = sections.some(([k]) => k !== 'rest');
       grid.classList.toggle('sectioned', sectioned);
       grid.innerHTML = sectioned
@@ -230,7 +230,7 @@ export default {
       const items2 = [
         { label: 'Open', icon: 'square-arrow-out-up-right', onClick: () => navigate(`/notes/${n.id}`) },
         { label: n.is_pinned ? 'Unpin (only me)' : 'Pin to top (only me)', icon: 'pin', onClick: () => update(n, { is_pinned: !n.is_pinned }) },
-        ...(state.user.role === 'admin' ? [{ label: n.pinned_global ? 'Unpin for everyone' : 'Pin for everyone', icon: 'megaphone', disabled: n.is_locked, onClick: () => pinGlobal(n) },
+        ...(can('pin_everyone') ? [{ label: n.pinned_global ? 'Unpin for everyone' : 'Pin for everyone', icon: 'megaphone', disabled: n.is_locked, onClick: () => pinGlobal(n) },
           { label: n.pin_target_count ? `Pinned for tagged people (${n.pin_target_count})…` : 'Pin for tagged people…', icon: 'user-check', disabled: n.is_locked, onClick: async () => { if (await openPinPeople(n)) load(true); } }] : []),
         { label: n.is_favorite ? 'Remove from favorites' : 'Add to favorites', icon: 'star', onClick: () => update(n, { is_favorite: !n.is_favorite }) },
         { label: n.is_archived ? 'Unarchive' : 'Archive', icon: 'archive', onClick: () => update(n, { is_archived: !n.is_archived }, n.is_archived ? 'Note restored from archive' : 'Note archived') },

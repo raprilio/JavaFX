@@ -259,8 +259,8 @@ final class NotesController
         }
         $in = DB::in($ids);
         if ($section === 'global') {
-            if (!Auth::isAdmin()) {
-                throw new HttpException('Only administrators can arrange the notes pinned for everyone.', 403);
+            if (!Auth::can('pin_everyone')) {
+                throw new HttpException('Only people allowed to pin for everyone can arrange these notes.', 403);
             }
             $valid = array_map('intval', DB::col("SELECT id FROM notes WHERE pinned_global = 1 AND deleted_at IS NULL AND id IN ($in)", $ids));
         } elseif ($section === 'people') {
@@ -290,11 +290,13 @@ final class NotesController
     public static function pinGlobal(int $id): void
     {
         $u = Auth::require();
-        if (!Auth::isAdmin()) {
-            throw new HttpException('Only administrators can pin notes for everyone.', 403);
+        if (!Auth::can('pin_everyone')) {
+            throw new HttpException('You are not allowed to pin notes for everyone. Ask an administrator.', 403);
         }
-        $n = self::find($id, $u['id']);
         $on = V::bool(Http::input('pinned'));
+        // v1.27: an administrator may take away a pin someone else made (e.g. after their permission was removed)
+        $other = !$on && Auth::isAdmin() ? DB::one('SELECT * FROM notes WHERE id = ? AND user_id <> ? AND deleted_at IS NULL', [$id, $u['id']]) : null;
+        $n = $other ?: self::find($id, $u['id']);
         if ($on && (int) $n['is_locked']) {
             throw new HttpException('A locked note cannot be pinned for everyone. Remove the lock first.', 422);
         }
@@ -309,7 +311,7 @@ final class NotesController
             }
         }
         Activity::log($on ? 'note.pin_global' : 'note.unpin_global', 'note', $id, $on ? 'Pinned for everyone' : 'Unpinned for everyone');
-        Http::ok(self::payload($id, $u['id']));
+        Http::ok($other ? ['id' => $id, 'pinned_global' => false] : self::payload($id, $u['id']));
     }
 
     /** The people an admin pinned this note for (v1.24). */
@@ -329,11 +331,13 @@ final class NotesController
     {
         $u = Auth::require();
         $me = (int) $u['id'];
-        if (!Auth::isAdmin()) {
-            throw new HttpException('Only administrators can pin notes for other people.', 403);
+        if (!Auth::can('pin_everyone')) {
+            throw new HttpException('You are not allowed to pin notes for other people. Ask an administrator.', 403);
         }
-        $n = self::find($id, $me);
         $want = array_values(array_unique(array_filter(array_map('intval', (array) Http::input('user_ids', [])), static fn($v) => $v > 0 && $v !== $me)));
+        // v1.27: an administrator may clear the list of someone else's note (taking the pins away)
+        $other = !$want && Auth::isAdmin() ? DB::one('SELECT * FROM notes WHERE id = ? AND user_id <> ? AND deleted_at IS NULL', [$id, $me]) : null;
+        $n = $other ?: self::find($id, $me);
         if ($want) {
             if ((int) $n['is_locked']) {
                 throw new HttpException('A locked note cannot be pinned for other people. Remove the lock first.', 422);
@@ -358,7 +362,7 @@ final class NotesController
         if ($new || $gone) {
             Activity::log($want ? 'note.pin_people' : 'note.unpin_people', 'note', $id, $want ? 'Pinned for ' . count($want) . ' people' : 'Unpinned for tagged people');
         }
-        Http::ok(self::payload($id, $me));
+        Http::ok($other ? ['id' => $id, 'pin_targets' => []] : self::payload($id, $me));
     }
 
     public static function payload(int $id, int $viewerId): array

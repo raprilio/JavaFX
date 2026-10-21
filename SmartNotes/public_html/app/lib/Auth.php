@@ -16,7 +16,11 @@ final class Auth
         'manage_categories' => 'Manage default categories',
         'view_stats' => 'View statistics & activity log',
         'manage_backup' => 'Backup, restore & export',
+        // v1.27: not part of the admin panel — lets a user pin notes, flowcharts, mind maps and Product progress for everyone / chosen people
+        'pin_everyone' => 'Pin for everyone & for chosen people',
     ];
+    /** Permissions that do not open the admin panel. */
+    private const NOT_PANEL = ['pin_everyone'];
 
     private const REMEMBER_COOKIE = 'sn_remember';
     private const REMEMBER_DAYS = 30;
@@ -132,7 +136,7 @@ final class Auth
 
     public static function hasAnyAdminPermission(): bool
     {
-        foreach (array_keys(self::PERMISSIONS) as $p) {
+        foreach (array_diff(array_keys(self::PERMISSIONS), self::NOT_PANEL) as $p) {
             if (self::can($p)) {
                 return true;
             }

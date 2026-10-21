@@ -196,6 +196,8 @@ File backup disimpan di `storage/backups/` (tidak bisa diakses publik). Simpan s
 2. Upload ulang semua file **kecuali** `app/config.php`, `uploads/`, dan `storage/`.
 3. Buka aplikasi. Perubahan skema dijalankan **otomatis** oleh migrator saat request pertama (tidak perlu phpMyAdmin). Versi skema tersimpan di tabel `settings` (`schema_version`).
 
+**Upgrade ke v1.27** (izin *Pin for everyone* untuk user tertentu, pin mind map): timpa file. Database diperbarui **otomatis** ke skema 20 (kolom `mindmaps.pinned_global`, `pinned_global_at`, `pinned_global_by`). Setelah upgrade hanya admin yang bisa *Pin for everyone*; beri izinnya ke user lain di *Admin → Users*.
+
 **Upgrade ke v1.26** (pin flowchart untuk saya / semua / orang tertentu, empty state di tengah): timpa file. Database diperbarui **otomatis** ke skema 19 (tabel baru `item_pin_targets`, kolom `flowcharts.pinned_global`, `pinned_global_at`, `pinned_global_by`).
 
 **Upgrade ke v1.25** (Product progress dengan beberapa bagian paralel): timpa file. Database diperbarui **otomatis** ke skema 18 (tabel baru `progress_parts`, `progress_part_people`, kolom `progress_updates.part_id`, `part_title`, `item_percent`). Item lama tidak berubah.

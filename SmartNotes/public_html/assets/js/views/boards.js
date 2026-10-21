@@ -1,8 +1,9 @@
 // Shared list page for mind maps and flowcharts.
-// v1.26 flowcharts: pin to the top for me (anyone), for everyone or for chosen people (administrators, own flowcharts).
+// v1.26 flowcharts, v1.27 mind maps: pin to the top for me (anyone), for everyone or for chosen people (own items,
+// people with the "Pin for everyone" permission — administrators always).
 import { html, icon, timeAgo, debounce } from '../core/dom.js';
 import { api } from '../core/api.js';
-import { state } from '../core/store.js';
+import { state, can } from '../core/store.js';
 import { openPinPeople } from '../components/pinPeople.js';
 import { navigate } from '../core/router.js';
 import { toast, toastError, menu, confirm, prompt, empty, contextMenu } from '../core/ui.js';
@@ -11,7 +12,7 @@ import { openItemShare, leaveShared } from '../components/itemShare.js';
 
 export function boardsView(kind) {
   const cfg = kind === 'mindmap'
-    ? { route: 'mindmaps', type: 'mindmap', title: 'Mind Maps', icon: 'network', color: '#eab308', create: newMindmap, sub: 'Brainstorm visually and organise ideas into connected topics.', emptyText: 'Start from a central topic and branch out with children and siblings.' }
+    ? { route: 'mindmaps', type: 'mindmap', pins: true, title: 'Mind Maps', icon: 'network', color: '#eab308', create: newMindmap, sub: 'Brainstorm visually and organise ideas into connected topics.', emptyText: 'Start from a central topic and branch out with children and siblings.' }
     : { route: 'flowcharts', type: 'flowchart', pins: true, title: 'Flowcharts', icon: 'workflow', color: '#0ea5e9', create: newFlowchart, sub: 'Design processes with start/end, process, decision, input/output, database and document shapes.', emptyText: 'Drag shapes onto the canvas and connect them to map out any process.' };
   return {
     title: cfg.title,
@@ -50,7 +51,7 @@ export function boardsView(kind) {
         const forMe = items.filter((m) => !m.pinned_global && m.pinned_for_me).sort(by('pinned_for_me_at'));
         const mine = items.filter((m) => !m.pinned_global && !m.pinned_for_me && m.pinned).sort(by('pinned_at'));
         const rest = items.filter((m) => !m.pinned_global && !m.pinned_for_me && !m.pinned);
-        const secs = [['global', 'megaphone', 'Pinned by admin — for everyone', global], ['people', 'user-check', 'Pinned by admin — for you', forMe], ['mine', 'pin', 'Pinned by me', mine],
+        const secs = [['global', 'megaphone', 'Pinned for everyone', global], ['people', 'user-check', 'Pinned for you', forMe], ['mine', 'pin', 'Pinned by me', mine],
           ['rest', cfg.icon, `Other ${cfg.title.toLowerCase()}`, rest]].filter((x) => x[3].length);
         list.innerHTML = secs.length > 1 || secs[0][0] !== 'rest'
           ? secs.map(([k, ic, label, arr]) => `<div class="board-sec-head ${k}">${icon(ic, 'sm')} ${label} <span class="subtle">${arr.length}</span></div>${arr.map((m) => String(card(m))).join('')}`).join('')
@@ -75,7 +76,7 @@ export function boardsView(kind) {
       /** Pin entries of the ⋯ menu (v1.26). */
       const pinItems = (m) => (!cfg.pins ? [] : [
         { label: m.pinned ? 'Unpin (only me)' : 'Pin to top (only me)', icon: 'pin', onClick: () => pin(m, 'me', !m.pinned) },
-        ...(state.user.role === 'admin' && !m.shared ? [
+        ...(can('pin_everyone') && !m.shared ? [
           { label: m.pinned_global ? 'Unpin for everyone' : 'Pin for everyone', icon: 'megaphone', onClick: async () => {
             if (!m.pinned_global && !(await confirm({ title: 'Pin for everyone?', message: `"${m.title}" appears pinned at the top of every user's ${cfg.title.toLowerCase()} (view only for them) and they get a notification.`, confirmText: 'Pin for everyone', danger: false, icon: 'megaphone' }))) return;
             pin(m, 'everyone', !m.pinned_global);
@@ -88,6 +89,7 @@ export function boardsView(kind) {
           const shared = [
             { label: 'Open', icon: 'square-arrow-out-up-right', onClick: () => navigate(`/${cfg.route}/${m.id}`) },
             ...pinItems(m),
+            ...(m.pinned_global && state.user.role === 'admin' ? [{ label: 'Unpin for everyone (admin)', icon: 'megaphone', onClick: () => pin(m, 'everyone', false) }] : []),
             { label: 'Make a copy', icon: 'copy', onClick: async () => { const r = await api.post(`${cfg.route}/${m.id}/duplicate`).catch(toastError); if (r) { toast('Copied to your account', 'success'); navigate(`/${cfg.route}/${r.id}`); } } },
             ...(m.in_shares === false ? [] : [{ divider: true },
               { label: 'Remove from my list', icon: 'log-out', danger: true, onClick: async () => { try { await leaveShared(cfg.type, m.id); load(); } catch (e) { toastError(e); } } }]),

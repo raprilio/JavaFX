@@ -193,8 +193,8 @@ final class ProgressController
     public static function pinGlobal(int $id): void
     {
         $u = Auth::require();
-        if (!Auth::isAdmin()) {
-            throw new HttpException('Only administrators can pin an item for everyone.', 403);
+        if (!Auth::can('pin_everyone')) {
+            throw new HttpException('You are not allowed to pin for everyone. Ask an administrator.', 403);
         }
         $it = self::item($id);
         $on = V::bool(Http::input('pinned'));
@@ -223,8 +223,8 @@ final class ProgressController
         }
         $in = DB::in($ids);
         if ($section === 'global') {
-            if (!Auth::isAdmin()) {
-                throw new HttpException('Only administrators can arrange the items pinned for everyone.', 403);
+            if (!Auth::can('pin_everyone')) {
+                throw new HttpException('Only people allowed to pin for everyone can arrange these items.', 403);
             }
             $valid = array_map('intval', DB::col("SELECT id FROM progress_items WHERE pinned_global = 1 AND id IN ($in)", $ids));
         } elseif ($section === 'mine') {

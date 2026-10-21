@@ -1,7 +1,7 @@
 // Note editor: rich text, checklist, images, audio, files, tags, category, color, autosave.
 import { html, icon, h, esc, fmtDateTime, timeAgo, debounce, raw, fileBadge, fmtBytes, downloadBlob } from '../core/dom.js';
 import { api, url as apiUrl, getCsrf } from '../core/api.js';
-import { state, emit } from '../core/store.js';
+import { state, emit, can } from '../core/store.js';
 import { navigate } from '../core/router.js';
 import { shell } from '../core/shell.js';
 import { toast, toastError, menu, confirm, colorPicker, setTitle, prompt, modal } from '../core/ui.js';
@@ -505,6 +505,10 @@ export default {
       }
       if (a === 'more' && !isOwner) {
         return menu(btn, [
+          // v1.27: an administrator can take away a pin for everyone made by someone else
+          ...(note.pinned_global && state.user.role === 'admin' ? [{ label: 'Unpin for everyone (admin)', icon: 'megaphone', onClick: async () => {
+            try { await api.post(`notes/${id}/pin-global`, { pinned: false }); toast('Unpinned for everyone', 'success'); emit('notes:changed'); navigate('/notes'); } catch (e) { toastError(e); }
+          } }, { divider: true }] : []),
           { label: 'Export as HTML', icon: 'file-code', onClick: () => exportNote('html') },
           { label: 'Export as text', icon: 'file-text', onClick: () => exportNote('txt') },
           { label: 'Print / save as PDF', icon: 'printer', onClick: () => window.print() },
@@ -523,13 +527,13 @@ export default {
           { label: note.is_archived ? 'Unarchive' : 'Archive', icon: 'archive', onClick: async () => { const r = await saveField({ is_archived: !note.is_archived }); toast(r?.is_archived ? 'Note archived' : 'Note unarchived', 'success'); } },
           ...(trashed ? [] : [{ label: 'Link Drive folder', icon: 'folder-plus', onClick: () => linkFolder() }]),
           { label: 'Duplicate', icon: 'copy', onClick: async () => { await save(); const r = await api.post(`notes/${id}/duplicate`).catch(toastError); if (r) navigate(`/notes/${r.id}`); } },
-          ...(!trashed && state.user.role === 'admin' ? [{ label: note.pinned_global ? 'Unpin for everyone' : 'Pin for everyone', icon: 'megaphone', disabled: note.is_locked, onClick: async () => {
+          ...(!trashed && can('pin_everyone') ? [{ label: note.pinned_global ? 'Unpin for everyone' : 'Pin for everyone', icon: 'megaphone', disabled: note.is_locked, onClick: async () => {
             const on = !note.pinned_global;
             if (on && !(await confirm({ title: 'Pin for everyone?', message: 'This note appears pinned at the top of every user\'s notes (read-only for them) and they get a notification.', confirmText: 'Pin for everyone', danger: false, icon: 'megaphone' }))) return;
             await save();
             try { const r = await api.post(`notes/${id}/pin-global`, { pinned: on }); note.pinned_global = r.pinned_global; toast(on ? 'Pinned for everyone' : 'Unpinned for everyone', 'success'); emit('notes:changed'); remount(); } catch (e) { toastError(e); }
           } }] : []),
-          ...(!trashed && state.user.role === 'admin' ? [{ label: (note.pin_targets || []).length ? `Pinned for tagged people (${note.pin_targets.length})…` : 'Pin for tagged people…', icon: 'user-check', disabled: note.is_locked, onClick: async () => {
+          ...(!trashed && can('pin_everyone') ? [{ label: (note.pin_targets || []).length ? `Pinned for tagged people (${note.pin_targets.length})…` : 'Pin for tagged people…', icon: 'user-check', disabled: note.is_locked, onClick: async () => {
             await save();
             const r = await openPinPeople(note, rte.mentions());
             if (r) { note.pin_targets = r.pin_targets; emit('notes:changed'); remount(); }

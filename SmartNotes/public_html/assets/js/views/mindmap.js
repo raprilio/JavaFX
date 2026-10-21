@@ -6,6 +6,7 @@ import { navigate } from '../core/router.js';
 import { shell } from '../core/shell.js';
 import { toast, toastError, menu, confirm, prompt } from '../core/ui.js';
 import { openItemShare } from '../components/itemShare.js';
+import { openItemPinMenu, pinActive } from '../components/itemPinMenu.js';
 import { createStage, svgEl, wrapText, textBlock, themeColors, exportPng, exportSvg, exportPdf, safeName, FONT_STACK } from '../components/canvas.js';
 import { createFlowPlayer, exportFlowVideo, schedule } from '../components/flowPlayer.js';
 import { fsField, stepFs, clampFs } from '../components/fontSize.js';
@@ -52,6 +53,7 @@ export default {
     let revision = data.revision ?? 0;
     let conflict = false;
     let shareCount = (data.shares || []).length;
+    let pins = data.pins || {}; // v1.27: pinned for me / for everyone / for people
     /** @type {Map<string, any>} */
     const nodes = new Map();
     data.nodes.forEach((n, i) => nodes.set(n.key, { ...n, order: n.order ?? i }));
@@ -68,7 +70,8 @@ export default {
         <input class="title-input" value="${data.title}" data-title maxlength="255" aria-label="Title" ${canEdit ? '' : 'readonly'}>
         <span class="save-state" data-save><span class="d"></span><span data-save-text>${canEdit ? 'Saved' : 'View only'}</span></span>
         ${isOwner ? html`<button class="btn ghost sm ${shareCount ? 'active' : ''}" data-a="share" data-tip="Share with users">${icon('users', 'sm')}<span class="hide-sm">Share</span><span data-share-count>${shareCount || ''}</span></button>`
-          : html`<span class="badge info shared-by">${icon('user', 'sm')} ${data.owner?.name} · ${canEdit ? 'can edit' : 'view only'}</span>${canEdit ? '' : html`<button class="btn sm" data-a="copy">${icon('copy', 'sm')}<span class="hide-sm">Make a copy</span></button>`}`}
+          : html`<span class="badge info shared-by">${icon('user', 'sm')} ${data.owner?.name} · ${canEdit ? 'can edit' : 'view only'}</span>${pins.pinned_global ? html`<span class="badge warning hide-sm" data-pin-badge>${icon('megaphone', 'sm')} Pinned for everyone</span>` : pins.pinned_for_me ? html`<span class="badge accent hide-sm" data-pin-badge>${icon('user-check', 'sm')} Pinned for you</span>` : ''}${canEdit ? '' : html`<button class="btn sm" data-a="copy">${icon('copy', 'sm')}<span class="hide-sm">Make a copy</span></button>`}`}
+        <button class="btn ghost icon sm ${pinActive(pins) ? 'active' : ''}" data-a="pins" data-tip="Pin">${icon('pin', 'sm')}</button>
         <div class="grow"></div>
         <button class="btn ghost icon sm" data-a="undo" data-edit data-tip="Undo (Ctrl+Z)">${icon('undo-2', 'sm')}</button>
         <button class="btn ghost icon sm" data-a="redo" data-edit data-tip="Redo (Ctrl+Y)">${icon('redo-2', 'sm')}</button>
@@ -922,6 +925,10 @@ export default {
         case 'share': {
           const n = await openItemShare({ type: 'mindmap', id, title: $('[data-title]').value });
           if (n !== null) { shareCount = n; const b = e.target.closest('[data-a]'); b.classList.toggle('active', n > 0); b.querySelector('[data-share-count]').textContent = n || ''; }
+          break;
+        }
+        case 'pins': {
+          openItemPinMenu(e.target.closest('[data-a]'), { type: 'mindmap', id, what: 'mind map', title: () => $('[data-title]').value, isOwner, pins, onChange: (p) => (pins = p) });
           break;
         }
         case 'copy': { const r = await api.post(`mindmaps/${id}/duplicate`).catch(toastError); if (r) { toast('Copied to your account — you can edit the copy', 'success'); navigate(`/mindmaps/${r.id}`); } break; }

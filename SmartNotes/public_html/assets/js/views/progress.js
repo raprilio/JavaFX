@@ -5,7 +5,7 @@
 // their weighted average and everyone updates only the part(s) they work on.
 import { html, icon, h, esc, debounce, timeAgo, fmtDay, fmtDateTime, todayStr } from '../core/dom.js';
 import { api } from '../core/api.js';
-import { state } from '../core/store.js';
+import { state, can } from '../core/store.js';
 import { navigate, setQuery } from '../core/router.js';
 import { toast, toastError, modal, confirm, avatarHtml, empty, menu } from '../core/ui.js';
 import { userPicker } from '../components/userPicker.js';
@@ -34,7 +34,7 @@ const SORTS = [['smart', 'Smart (needs attention first)', 'sparkles'], ['updated
   ['progress_asc', 'Progress: low → high', 'arrow-up-narrow-wide'], ['due', 'Target date', 'calendar'], ['priority', 'Priority', 'flag'], ['title', 'Title (A–Z)', 'arrow-down-a-z'],
   ['created', 'Newest first', 'calendar-plus'], ['custom', 'My order (drag to arrange)', 'grip-vertical']];
 const PRIO_RANK = { urgent: 0, high: 1, medium: 2, low: 3 };
-const isAdmin = () => state.user?.role === 'admin';
+const canPinAll = () => can('pin_everyone'); // v1.27: administrators and people given the permission
 const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* private mode */ } } };
 
 function statusBadge(s) {
@@ -269,7 +269,7 @@ async function renderDetail(el, ctx, id) {
       <div class="page-head"><div class="row" style="gap:10px;align-items:flex-start"><a class="btn ghost icon sm" href="#/progress" aria-label="Back">${icon('arrow-left')}</a>
         <div><h1 class="pg-h1">${it.title}</h1><p class="row wrap" style="gap:8px">${statusBadge(it.status)}<span class="badge prio prio-${it.priority}">${icon('flag', 'sm')} ${PRIORITY[it.priority]}</span>${dueHtml(it)}<span class="small subtle">by ${it.creator.name || '—'} · ${timeAgo(it.created_at)}</span>${it.pinned_global ? html`<span class="badge warning">${icon('megaphone', 'sm')} Pinned by ${it.pinned_by?.name || 'admin'} · for everyone</span>` : ''}${it.deleted_at ? html`<span class="badge danger">Deleted</span>` : ''}</p></div></div>
         <div class="row">${it.deleted_at ? '' : html`<button class="btn ${it.pinned ? 'active' : ''}" data-a="pin" data-tip="${it.pinned ? 'Unpin' : 'Pin to the top of my list'}">${icon(it.pinned ? 'pin-off' : 'pin', 'sm')}<span class="hide-sm">${it.pinned ? 'Pinned' : 'Pin'}</span></button>
-          ${isAdmin() ? html`<button class="btn ${it.pinned_global ? 'active' : ''}" data-a="pin-global" data-tip="${it.pinned_global ? 'Unpin for everyone' : 'Pin on top for every user'}">${icon('megaphone', 'sm')}<span class="hide-sm">${it.pinned_global ? 'Pinned for all' : 'Pin for everyone'}</span></button>` : ''}`}
+          ${canPinAll() ? html`<button class="btn ${it.pinned_global ? 'active' : ''}" data-a="pin-global" data-tip="${it.pinned_global ? 'Unpin for everyone' : 'Pin on top for every user'}">${icon('megaphone', 'sm')}<span class="hide-sm">${it.pinned_global ? 'Pinned for all' : 'Pin for everyone'}</span></button>` : ''}`}
           ${it.can_manage ? (it.deleted_at ? html`<button class="btn" data-a="restore">${icon('rotate-ccw', 'sm')} Restore</button>`
           : html`<button class="btn" data-a="edit">${icon('settings-2', 'sm')}<span class="hide-sm">Customise</span></button><button class="btn ghost icon" data-a="delete" data-tip="Delete" aria-label="Delete">${icon('trash-2', 'sm')}</button>`) : ''}</div></div>
       <div class="card card-pad pg-hero"><div class="row between"><div><div class="pg-big">${it.percent}<small>%</small></div><div class="small muted">${it.percent === 100 ? html`Published ${it.published_at ? fmtDateTime(it.published_at) : ''}` : html`Stage: <b>${it.stage || '—'}</b>`}</div></div>
@@ -434,7 +434,7 @@ export default {
       }
       const head = (k, ic, label, n, can) => html`<div class="pg-sec-head ${k}">${icon(ic, 'sm')} ${label} <span class="subtle">${n}</span>${can ? html`<span class="pg-sec-hint">· ${hint}</span>` : ''}</div>`;
       const sections = [
-        global.length && ['global', 'megaphone', 'Pinned for everyone', global, isAdmin()],
+        global.length && ['global', 'megaphone', 'Pinned for everyone', global, canPinAll()],
         mine.length && ['mine', 'pin', 'Pinned by me', mine, true],
         rest.length && ['rest', 'layers', global.length || mine.length ? 'Other items' : '', rest, f.sort === 'custom' && !deleted],
       ].filter(Boolean);

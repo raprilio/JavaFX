@@ -6,8 +6,7 @@ import { navigate } from '../core/router.js';
 import { shell } from '../core/shell.js';
 import { toast, toastError, menu, confirm, prompt } from '../core/ui.js';
 import { openItemShare } from '../components/itemShare.js';
-import { openPinPeople } from '../components/pinPeople.js';
-import { state } from '../core/store.js';
+import { openItemPinMenu, pinActive } from '../components/itemPinMenu.js';
 import { createStage, svgEl, wrapText, textBlock, themeColors, exportPng, exportSvg, exportPdf, safeName } from '../components/canvas.js';
 import { createFlowPlayer, exportFlowVideo, schedule } from '../components/flowPlayer.js';
 import { fsField, stepFs, clampFs } from '../components/fontSize.js';
@@ -229,7 +228,7 @@ export default {
     let conflict = false;
     let shareCount = (data.shares || []).length;
     let pins = data.pins || {}; // v1.26: pinned for me / for everyone / for people
-    const pinOn = () => !!(pins.pinned || pins.pinned_global || pins.pin_target_count);
+    const pinOn = () => pinActive(pins);
     let nodes = data.nodes.map((n) => ({ ...n, style: n.style || {} }));
     let edges = data.edges.map((e) => ({ ...e, style: e.style || {} }));
     const settings = { grid: true, snap: true, ...(data.settings || {}) };
@@ -972,26 +971,7 @@ export default {
           break;
         }
         case 'pins': {
-          const btn = e.target.closest('[data-a]');
-          const setPin = async (scope, on) => {
-            try { pins = await api.post(`pins/flowchart/${id}`, { scope, pinned: on }); btn.classList.toggle('active', pinOn()); toast(on ? (scope === 'me' ? 'Pinned to the top of your list' : 'Pinned for everyone') : 'Unpinned', 'success', { timeout: 1600 }); } catch (err) { toastError(err); }
-          };
-          menu(btn, [
-            { label: pins.pinned ? 'Unpin (only me)' : 'Pin to top (only me)', icon: 'pin', onClick: () => setPin('me', !pins.pinned) },
-            ...(isOwner && state.user.role === 'admin' ? [
-              { label: pins.pinned_global ? 'Unpin for everyone' : 'Pin for everyone', icon: 'megaphone', onClick: async () => {
-                if (!pins.pinned_global && !(await confirm({ title: 'Pin for everyone?', message: 'This flowchart appears pinned at the top of every user\'s flowcharts (view only for them) and they get a notification.', confirmText: 'Pin for everyone', danger: false, icon: 'megaphone' }))) return;
-                setPin('everyone', !pins.pinned_global);
-              } },
-              { label: pins.pin_target_count ? `Pinned for people (${pins.pin_target_count})…` : 'Pin for people…', icon: 'user-check', onClick: async () => {
-                const shares = (await api.get(`flowcharts/${id}`).catch(() => null))?.shares || [];
-                const r = await openPinPeople({ title: 'Pin for people', itemTitle: $('[data-title]').value, what: 'flowcharts', current: pins.pin_targets || [],
-                  suggested: shares.map((x) => ({ id: x.user_id, name: x.name, email: x.email })), suggestedLabel: 'Everyone it is shared with', prefill: false,
-                  save: (ids) => api.post(`pins/flowchart/${id}/people`, { user_ids: ids }) });
-                if (r) { pins = r; btn.classList.toggle('active', pinOn()); }
-              } },
-            ] : []),
-          ], { align: 'end' });
+          openItemPinMenu(e.target.closest('[data-a]'), { type: 'flowchart', id, what: 'flowchart', title: () => $('[data-title]').value, isOwner, pins, onChange: (p) => (pins = p) });
           break;
         }
         case 'copy': { const r = await api.post(`flowcharts/${id}/duplicate`).catch(toastError); if (r) { toast('Copied to your account — you can edit the copy', 'success'); navigate(`/flowcharts/${r.id}`); } break; }
