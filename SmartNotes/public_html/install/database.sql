@@ -446,6 +446,19 @@ CREATE TABLE IF NOT EXISTS `item_pin_targets` (
   CONSTRAINT `fk_item_pin_targets_by` FOREIGN KEY (`pinned_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `progress_editors` (
+  `item_id`     INT UNSIGNED NOT NULL,
+  `user_id`     INT UNSIGNED NOT NULL COMMENT 'May customise this item like its creator (not delete it)',
+  `added_by`    INT UNSIGNED NULL,
+  `created_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`item_id`, `user_id`),
+  KEY `idx_progress_editors_user` (`user_id`),
+  KEY `fk_progress_editors_by` (`added_by`),
+  CONSTRAINT `fk_progress_editors_item` FOREIGN KEY (`item_id`) REFERENCES `progress_items` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_progress_editors_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_progress_editors_by` FOREIGN KEY (`added_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `progress_parts` (
   `id`              INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `item_id`         INT UNSIGNED NOT NULL,
@@ -1070,7 +1083,7 @@ INSERT IGNORE INTO `settings` (`setting_key`, `setting_value`) VALUES
 ('smtp_encryption', 'tls'),
 ('smtp_from_name', 'SmartNotes'),
 ('smtp_from_email', ''),
-('schema_version', '20'),
+('schema_version', '21'),
 ('allow_note_sharing', '1'),
 ('logo_display', 'logo'),
 ('logo_height', '34'),

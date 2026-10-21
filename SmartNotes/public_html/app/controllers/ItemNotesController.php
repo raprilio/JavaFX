@@ -29,9 +29,16 @@ final class ItemNotesController
         if ($type === 'progress') {
             $it = DB::one('SELECT user_id FROM progress_items WHERE id = ? AND deleted_at IS NULL', [$id]);
             return $it && ((int) $it['user_id'] === $uid || Auth::isAdmin()
-                || DB::val('SELECT 1 FROM progress_updaters WHERE item_id = ? AND user_id = ?', [$id, $uid]));
+                || DB::val('SELECT 1 FROM progress_updaters WHERE item_id = ? AND user_id = ?', [$id, $uid])
+                || DB::val('SELECT 1 FROM progress_editors WHERE item_id = ? AND user_id = ?', [$id, $uid])); // v1.28 editors
         }
         return self::canSee($type, $id, $uid); // everyone in the meeting / on the progress task
+    }
+
+    /** Someone an administrator allowed to edit this Product progress item (v1.28). */
+    private static function progressEditor(int $id, int $uid): bool
+    {
+        return (bool) DB::val('SELECT 1 FROM progress_editors WHERE item_id = ? AND user_id = ?', [$id, $uid]);
     }
 
     /** The item's owner (may remove any note from it). */
@@ -57,7 +64,7 @@ final class ItemNotesController
     public static function listFor(string $type, int $id, int $uid): array
     {
         $owner = self::ownerOf($type, $id);
-        $canManage = $owner === $uid || ($type === 'progress' && Auth::isAdmin());
+        $canManage = $owner === $uid || ($type === 'progress' && (Auth::isAdmin() || self::progressEditor($id, $uid)));
         return array_map(static fn($r) => [
             'id' => (int) $r['id'], 'title' => $r['title'] !== '' ? $r['title'] : 'Untitled',
             'excerpt' => (int) $r['is_locked'] ? '' : mb_substr(trim((string) $r['excerpt']), 0, 140),
@@ -124,7 +131,7 @@ final class ItemNotesController
             throw new HttpException('This note is not listed here.', 404);
         }
         $owner = self::ownerOf($type, $id);
-        if ((int) $row['added_by'] !== $uid && $owner !== $uid && !($type === 'progress' && Auth::isAdmin())) {
+        if ((int) $row['added_by'] !== $uid && $owner !== $uid && !($type === 'progress' && (Auth::isAdmin() || self::progressEditor($id, $uid)))) {
             throw new HttpException('Only the person who added the note or the owner can remove it.', 403);
         }
         DB::run('DELETE FROM item_notes WHERE item_type = ? AND item_id = ? AND note_id = ?', [$type, $id, $noteId]);

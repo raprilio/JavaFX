@@ -76,7 +76,7 @@ function card(it) {
     <div class="pg-card-meta"><span class="pg-stage">${icon('milestone', 'sm')} ${it.stage || '—'}</span>${statusBadge(it.status)}
       ${it.priority === 'high' || it.priority === 'urgent' ? html`<span class="badge prio prio-${it.priority}">${icon('flag', 'sm')} ${PRIORITY[it.priority]}</span>` : ''}${dueHtml(it)}</div>
     ${it.last ? html`<p class="pg-last small"><b>${it.last.by || 'Someone'}</b> ${it.last.part ? html`<span class="pg-part-tag">${it.last.part}</span> ` : ''}${it.last.percent_from}% → ${it.last.percent}% · ${timeAgo(it.last.at)}<span class="truncate block subtle">${it.last.reason}</span></p>` : html`<p class="pg-last small subtle">No updates yet</p>`}
-    <div class="pg-card-foot">${people(it.updaters)}<span class="tiny subtle">${it.can_update ? html`<span class="badge success">${icon('pencil', 'xs')} You update this</span>` : `by ${it.creator.name || '—'}`}</span></div>
+    <div class="pg-card-foot">${people(it.updaters)}<span class="tiny subtle">${it.can_update ? html`<span class="badge success">${icon('pencil', 'xs')} You update this</span>` : it.can_edit && !it.can_manage ? html`<span class="badge info">${icon('settings-2', 'xs')} You can edit</span>` : `by ${it.creator.name || '—'}`}</span></div>
   </a>`;
 }
 
@@ -101,12 +101,20 @@ async function openEditor(it = null) {
     <div class="field" style="margin:0" data-who><label>Who can update the progress</label><div data-picker></div>
       <label class="check small mt-1"><input type="checkbox" name="me" ${meIn ? 'checked' : ''}> Me too</label>
       <span class="hint">Everyone can see the item; only these people can post progress.</span></div>
+    ${it ? (it.can_set_editors ? html`<div class="field" style="margin:0"><label>Who can edit this item <span class="subtle">(administrators choose)</span></label><div data-editors></div>
+      <span class="hint">These people can customise the item like its creator — stages, fields, parts, who updates, dates. Only the creator or an administrator can delete it.</span></div>` : '')
+      : state.user.role === 'admin' ? html`<div class="field" style="margin:0"><label>Who can edit this item <span class="subtle">(optional)</span></label><div data-editors></div>
+      <span class="hint">These people can customise the item like its creator. Only the creator or an administrator can delete it.</span></div>` : ''}
     <div class="form-grid"><div class="field" style="margin:0"><label>Priority</label><select class="select" name="priority">${Object.entries(PRIORITY).map(([k, l]) => html`<option value="${k}" ${(it?.priority || 'medium') === k ? 'selected' : ''}>${l}</option>`)}</select></div>
       <div class="field" style="margin:0"><label>Target date</label><input class="input" type="date" name="due_date" value="${it?.due_date || ''}"></div></div>
     <div class="field" style="margin:0"><label>Colour</label><div class="swatches" style="padding:0;grid-template-columns:repeat(11,26px)">${COLORS.map((c) => html`<button type="button" class="swatch ${color === c ? 'active' : ''}" data-color="${c}" style="--sw:${c || 'var(--bg-soft)'};width:26px;height:26px">${c ? '' : icon('slash', 'sm')}</button>`)}</div></div>
   </form>`));
   const picker = userPicker({ value: (it?.updaters || []).filter((u) => u.id !== state.user.id), placeholder: 'Type a name… (programmers, designers)' });
   body.querySelector('[data-picker]').appendChild(picker.el);
+  // v1.28: administrators choose who may edit the item
+  const editorBox = body.querySelector('[data-editors]');
+  const editorPicker = editorBox ? userPicker({ value: it?.editors || [], placeholder: 'Type a name… (people who may customise this item)' }) : null;
+  if (editorPicker) editorBox.appendChild(editorPicker.el);
   // v1.25 parts: [{id?, title, weight, people}] — one people picker per part
   let parts = (it?.parts || []).map((x) => ({ id: x.id, title: x.title, weight: x.weight, people: x.people.map((u) => ({ ...u })), percent: x.percent }));
   let partPickers = [];
@@ -208,6 +216,7 @@ async function openEditor(it = null) {
           title, description: String(f.get('description') || ''), priority: f.get('priority'), due_date: f.get('due_date') || null, color: color || null,
           stages: stages.filter((s) => s.name.trim()), fields: fields.filter((x) => x.label.trim()),
           ...(useParts.length ? {} : { updater_ids: ids }),
+          ...(editorPicker ? { editor_ids: editorPicker.get() } : {}),
           ...(useParts.length || it?.parts?.length ? { parts: useParts.map((x) => ({ id: x.id || undefined, title: x.title.trim(), weight: x.weight, user_ids: x.people.map((u) => u.id) })) } : {}),
         };
         try {
@@ -270,8 +279,9 @@ async function renderDetail(el, ctx, id) {
         <div><h1 class="pg-h1">${it.title}</h1><p class="row wrap" style="gap:8px">${statusBadge(it.status)}<span class="badge prio prio-${it.priority}">${icon('flag', 'sm')} ${PRIORITY[it.priority]}</span>${dueHtml(it)}<span class="small subtle">by ${it.creator.name || '—'} · ${timeAgo(it.created_at)}</span>${it.pinned_global ? html`<span class="badge warning">${icon('megaphone', 'sm')} Pinned by ${it.pinned_by?.name || 'admin'} · for everyone</span>` : ''}${it.deleted_at ? html`<span class="badge danger">Deleted</span>` : ''}</p></div></div>
         <div class="row">${it.deleted_at ? '' : html`<button class="btn ${it.pinned ? 'active' : ''}" data-a="pin" data-tip="${it.pinned ? 'Unpin' : 'Pin to the top of my list'}">${icon(it.pinned ? 'pin-off' : 'pin', 'sm')}<span class="hide-sm">${it.pinned ? 'Pinned' : 'Pin'}</span></button>
           ${canPinAll() ? html`<button class="btn ${it.pinned_global ? 'active' : ''}" data-a="pin-global" data-tip="${it.pinned_global ? 'Unpin for everyone' : 'Pin on top for every user'}">${icon('megaphone', 'sm')}<span class="hide-sm">${it.pinned_global ? 'Pinned for all' : 'Pin for everyone'}</span></button>` : ''}`}
-          ${it.can_manage ? (it.deleted_at ? html`<button class="btn" data-a="restore">${icon('rotate-ccw', 'sm')} Restore</button>`
-          : html`<button class="btn" data-a="edit">${icon('settings-2', 'sm')}<span class="hide-sm">Customise</span></button><button class="btn ghost icon" data-a="delete" data-tip="Delete" aria-label="Delete">${icon('trash-2', 'sm')}</button>`) : ''}</div></div>
+          ${it.can_manage && it.deleted_at ? html`<button class="btn" data-a="restore">${icon('rotate-ccw', 'sm')} Restore</button>` : ''}
+          ${it.can_edit ? html`<button class="btn" data-a="edit">${icon('settings-2', 'sm')}<span class="hide-sm">Customise</span></button>` : ''}
+          ${it.can_manage && !it.deleted_at ? html`<button class="btn ghost icon" data-a="delete" data-tip="Delete" aria-label="Delete">${icon('trash-2', 'sm')}</button>` : ''}</div></div>
       <div class="card card-pad pg-hero"><div class="row between"><div><div class="pg-big">${it.percent}<small>%</small></div><div class="small muted">${it.percent === 100 ? html`Published ${it.published_at ? fmtDateTime(it.published_at) : ''}` : html`Stage: <b>${it.stage || '—'}</b>`}</div></div>
         <div class="right small muted">${people(it.updaters, 6)}<div class="mt-1">${it.last_update_at ? `Last update ${timeAgo(it.last_update_at)}` : 'No updates yet'}</div></div></div>
         ${stageBar(it, true)}</div>
@@ -304,6 +314,7 @@ async function renderDetail(el, ctx, id) {
           ${it.deleted_at ? '' : html`<div class="card card-pad pg-notes" data-pg-notes></div>`}
           ${it.description ? html`<div class="card card-pad"><h3>About</h3><p class="small" style="white-space:pre-wrap;margin:0">${it.description}</p></div>` : ''}
           ${it.fields.length ? html`<div class="card card-pad"><h3>Details</h3><dl class="kv small pg-kv">${it.fields.map((f) => html`<dt>${f.label}</dt><dd>${isUrl(f.value) ? html`<a href="${f.value}" target="_blank" rel="noopener noreferrer">${f.value.replace(/^https?:\/\//, '')}</a>` : f.value || '—'}</dd>`)}</dl></div>` : ''}
+          ${it.editors?.length ? html`<div class="card card-pad" data-editors-card><h3>Can edit</h3><div class="row pg-person">${icon('crown', 'sm')}<span>${it.creator.name || '—'} <span class="subtle">(creator)</span></span></div>${it.editors.map((u) => html`<div class="row pg-person">${avatarHtml(u, 'sm')}<span>${u.name}${u.id === state.user.id ? html` <span class="subtle">(you)</span>` : ''}</span></div>`)}</div>` : ''}
           <div class="card card-pad"><h3>${it.parts?.length ? 'Who works on what' : 'Can update'}</h3>${it.updaters.map((u) => html`<div class="row pg-person">${avatarHtml(u, 'sm')}<span>${u.name}${u.id === state.user.id ? html` <span class="subtle">(you)</span>` : ''}${it.parts?.length ? html`<span class="block tiny subtle">${it.parts.filter((p) => p.people.some((x) => x.id === u.id)).map((p) => p.title).join(' · ')}</span>` : ''}</span></div>`)}</div>
           <div class="card card-pad small"><dl class="kv"><dt>Started</dt><dd>${it.start_date ? fmtDay(it.start_date) : '—'}</dd><dt>Target</dt><dd>${it.due_date ? fmtDay(it.due_date) : '—'}</dd><dt>Published</dt><dd>${it.published_at ? fmtDay(it.published_at.slice(0, 10)) : '—'}</dd></dl></div>
         </aside>

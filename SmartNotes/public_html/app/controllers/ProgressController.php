@@ -36,6 +36,39 @@ final class ProgressController
         return $it;
     }
 
+    /** May customise the item (v1.28): its creator, an administrator, or someone an administrator made an editor. */
+    public static function canEdit(array $it, int $uid): bool
+    {
+        return self::canManage($it, $uid) || (bool) DB::val('SELECT 1 FROM progress_editors WHERE item_id = ? AND user_id = ?', [$it['id'], $uid]);
+    }
+
+    private static function editorsFor(int $id): array
+    {
+        return array_map(static fn($r) => ['id' => (int) $r['id'], 'name' => $r['name'], 'email' => $r['email']], DB::all(
+            'SELECT u.id, u.name, u.email FROM progress_editors e JOIN users u ON u.id = e.user_id WHERE e.item_id = ? ORDER BY u.name', [$id]
+        ));
+    }
+
+    /** Administrators choose who may edit an item (v1.28). New editors are told about it. */
+    private static function setEditors(int $id, mixed $ids, array $by, string $title): void
+    {
+        $want = array_slice(V::ids($ids), 0, self::MAX_UPDATERS);
+        if ($want) {
+            $want = array_map('intval', DB::col("SELECT id FROM users WHERE status = 'active' AND deleted_at IS NULL AND id IN (" . DB::in($want) . ')', $want));
+        }
+        $have = array_map('intval', DB::col('SELECT user_id FROM progress_editors WHERE item_id = ?', [$id]));
+        $gone = array_values(array_diff($have, $want));
+        if ($gone) {
+            DB::run('DELETE FROM progress_editors WHERE item_id = ? AND user_id IN (' . DB::in($gone) . ')', [$id, ...$gone]);
+        }
+        foreach (array_diff($want, $have) as $uid) {
+            DB::run('INSERT IGNORE INTO progress_editors (item_id, user_id, added_by) VALUES (?, ?, ?)', [$id, $uid, $by['id']]);
+            if ($uid !== (int) $by['id']) {
+                Notify::create($uid, 'progress', "{$by['name']} memberi Anda akses edit Product progress \"{$title}\"", 'Anda bisa mengubah tahap, kolom, bagian dan siapa yang meng-update item ini.', '#/progress/' . $id);
+            }
+        }
+    }
+
     private static function canManage(array $it, int $uid): bool
     {
         return (int) $it['user_id'] === $uid || Auth::isAdmin();
@@ -155,6 +188,11 @@ final class ProgressController
             }
         }
         $items = array_map(static fn($r) => self::row($r, $people[(int) $r['id']] ?? [], $uid, $parts[(int) $r['id']] ?? []) + ['last' => $last[(int) $r['id']] ?? null], $rows);
+        $editable = array_flip(array_map('intval', DB::col('SELECT item_id FROM progress_editors WHERE user_id = ?', [$uid])));
+        foreach ($items as &$x) {
+            $x['can_edit'] = !$x['deleted_at'] && ($x['can_manage'] || isset($editable[$x['id']])); // v1.28
+        }
+        unset($x);
         $summary = DB::one(
             "SELECT COUNT(*) AS total, SUM(percent = 100) AS published, SUM(status = 'blocked' AND percent < 100) AS blocked,
                     SUM(status = 'at_risk' AND percent < 100) AS at_risk, SUM(status = 'on_track' AND percent < 100) AS on_track,
@@ -312,6 +350,7 @@ final class ProgressController
             'my_parts' => $mine,
             'can_update' => !$r['deleted_at'] && ($parts ? (bool) $mine : in_array($uid, array_column($updaters, 'id'), true)),
             'can_manage' => (int) $r['user_id'] === $uid || $isAdmin,
+            'can_set_editors' => $isAdmin,
             'pinned' => !empty($r['my_pin']),
             'pin_pos' => isset($r['my_pin_pos']) ? (int) $r['my_pin_pos'] : null,
             'order_pos' => isset($r['my_order']) ? (int) $r['my_order'] : null,
@@ -336,6 +375,8 @@ final class ProgressController
         $it += DB::one('SELECT ' . self::PIN_COLS . ' FROM progress_items p ' . self::pinJoins($uid) . ' WHERE p.id = ?', [$id]) ?: [];
         $it['creator_name'] = $it['user_id'] ? DB::val('SELECT name FROM users WHERE id = ?', [$it['user_id']]) : null;
         $out = self::row($it, self::updatersFor([$id])[$id] ?? [], $uid, self::partsFor([$id])[$id] ?? []);
+        $out['editors'] = self::editorsFor($id);
+        $out['can_edit'] = !$it['deleted_at'] && ($out['can_manage'] || in_array($uid, array_column($out['editors'], 'id'), true));
         $out['updates'] = array_map(static fn($r) => [
             'id' => (int) $r['id'], 'percent_from' => (int) $r['percent_from'], 'percent' => (int) $r['percent'], 'stage' => $r['stage'],
             'part' => $r['part_title'] !== null ? ['id' => $r['part_id'] !== null ? (int) $r['part_id'] : null, 'title' => $r['part_title']] : null,
@@ -345,7 +386,7 @@ final class ProgressController
         ], DB::all('SELECT u.*, us.name FROM progress_updates u LEFT JOIN users us ON us.id = u.user_id WHERE u.item_id = ? ORDER BY u.id DESC LIMIT 300', [$id]));
         // v1.22: reference notes of the project (everyone opens them read-only); creator / admin / updaters add them
         $out['notes'] = $it['deleted_at'] ? [] : ItemNotesController::listFor('progress', $id, $uid);
-        $out['can_add_notes'] = !$it['deleted_at'] && ($out['can_manage'] || $out['can_update']);
+        $out['can_add_notes'] = !$it['deleted_at'] && ($out['can_edit'] || $out['can_update']);
         return $out;
     }
 
@@ -360,6 +401,9 @@ final class ProgressController
                 'user_id' => $u['id'], 'percent' => 0, 'stage' => $stages[0]['name'],
             ]);
             self::setUpdaters($id, $in['updater_ids'] ?? [$u['id']], $u, (string) $in['title']);
+            if (!empty($in['editor_ids']) && Auth::isAdmin()) {
+                self::setEditors($id, $in['editor_ids'], $u, (string) $in['title']);
+            }
             if (!empty($in['parts']) && is_array($in['parts'])) {
                 self::setParts($id, $in['parts'], $u);
             }
@@ -512,10 +556,13 @@ final class ProgressController
     {
         $u = Auth::require();
         $it = self::item($id);
-        if (!self::canManage($it, (int) $u['id'])) {
-            throw new HttpException('Only the creator or an administrator can change this item.', 403);
+        if (!self::canEdit($it, (int) $u['id'])) {
+            throw new HttpException('Only the creator, an administrator or the people allowed to edit can change this item.', 403);
         }
         $in = Http::body();
+        if (array_key_exists('editor_ids', $in) && !Auth::isAdmin()) {
+            throw new HttpException('Only administrators choose who can edit this item.', 403);
+        }
         $stages = array_key_exists('stages', $in) ? self::stages($in['stages']) : self::stages(json_decode_array($it['stages']));
         $data = array_intersect_key(self::fieldsFrom($in + ['title' => $it['title']], $stages), array_flip(array_merge(['stages'], array_keys($in))));
         if (array_key_exists('stages', $in)) {
@@ -527,6 +574,9 @@ final class ProgressController
             }
             if (array_key_exists('updater_ids', $in)) {
                 self::setUpdaters($id, $in['updater_ids'], $u, (string) ($data['title'] ?? $it['title']));
+            }
+            if (array_key_exists('editor_ids', $in)) {
+                self::setEditors($id, $in['editor_ids'], $u, (string) ($data['title'] ?? $it['title']));
             }
             if (array_key_exists('parts', $in)) {
                 self::setParts($id, is_array($in['parts']) ? $in['parts'] : [], $u);

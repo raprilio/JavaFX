@@ -9,7 +9,7 @@ defined('SN_APP') || exit;
  */
 final class Migrator
 {
-    public const VERSION = 20;
+    public const VERSION = 21;
 
     public static function run(): void
     {
@@ -81,6 +81,9 @@ final class Migrator
                 self::addColumn('mindmaps', 'pinned_global', "TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Pinned for everyone (v1.27)'");
                 self::addColumn('mindmaps', 'pinned_global_at', 'DATETIME NULL');
                 self::addColumn('mindmaps', 'pinned_global_by', 'INT UNSIGNED NULL');
+            }
+            if ($current < 21 && !self::hasTable('progress_editors')) {
+                DB::pdo()->exec(self::PROGRESS_EDITORS_SQL);
             }
             Settings::set('schema_version', (string) self::VERSION);
         } finally {
@@ -311,6 +314,20 @@ final class Migrator
             DB::pdo()->exec("ALTER TABLE `note_attachments` ADD COLUMN `ptask_id` INT UNSIGNED NULL COMMENT 'Handed in for a progress task (v1.22)', ADD KEY `idx_att_ptask` (`ptask_id`)");
         }
     }
+
+    /** v1.28: people an administrator allows to edit (customise) one Product progress item. */
+    public const PROGRESS_EDITORS_SQL = "CREATE TABLE `progress_editors` (
+  `item_id`     INT UNSIGNED NOT NULL,
+  `user_id`     INT UNSIGNED NOT NULL COMMENT 'May customise this item like its creator (not delete it)',
+  `added_by`    INT UNSIGNED NULL,
+  `created_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`item_id`, `user_id`),
+  KEY `idx_progress_editors_user` (`user_id`),
+  KEY `fk_progress_editors_by` (`added_by`),
+  CONSTRAINT `fk_progress_editors_item` FOREIGN KEY (`item_id`) REFERENCES `progress_items` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_progress_editors_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_progress_editors_by` FOREIGN KEY (`added_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
 
     /** v1.26: pin flowcharts for me / for everyone / for chosen people. */
     private static function v19(): void
