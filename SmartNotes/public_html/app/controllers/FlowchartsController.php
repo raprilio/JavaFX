@@ -33,14 +33,15 @@ final class FlowchartsController
     public static function index(): void
     {
         $u = Auth::require();
-        // Own items plus items other users shared with me (scope: mine | shared).
+        // Own items plus items other users shared with me (scope: mine | shared); All also lists the flowcharts an
+        // administrator pinned for everyone or for me (v1.26).
         $sharedSql = "EXISTS (SELECT 1 FROM item_shares s WHERE s.item_type = 'flowchart' AND s.item_id = f.id AND s.user_id = ?)";
         $where = match (Http::query('scope')) {
             'mine' => 'f.user_id = ?',
             'shared' => $sharedSql,
-            default => "(f.user_id = ? OR $sharedSql)",
+            default => "(f.user_id = ? OR $sharedSql OR " . ItemPins::visibleSql('f') . ')',
         } . ' AND f.deleted_at IS NULL';
-        $params = Http::query('scope') === 'mine' || Http::query('scope') === 'shared' ? [$u['id']] : [$u['id'], $u['id']];
+        $params = Http::query('scope') === 'mine' || Http::query('scope') === 'shared' ? [$u['id']] : [$u['id'], $u['id'], 'flowchart', $u['id']];
         if ($q = V::str(Http::query('q'), 100)) {
             $where .= ' AND (f.title LIKE ? OR f.description LIKE ?)';
             $like = '%' . addcslashes($q, '%_\\') . '%';
@@ -56,10 +57,13 @@ final class FlowchartsController
              FROM flowcharts f JOIN users o ON o.id = f.user_id WHERE $where ORDER BY f.updated_at DESC LIMIT 500",
             array_merge([$u['id']], $params)
         );
+        $pins = ItemPins::forList('flowchart', array_map(static fn($r) => (int) $r['id'], $rows), (int) $u['id']);
         foreach ($rows as &$r) {
             $r['id'] = (int) $r['id'];
+            $r += $pins[$r['id']] ?? [];
             $r['shared'] = (int) $r['owner_id'] !== $u['id'];
             $r['access'] = $r['shared'] ? ($r['my_permission'] ?: 'view') : 'owner';
+            $r['in_shares'] = $r['my_permission'] !== null; // shared with me (not only visible through a pin)
             $r['share_count'] = (int) $r['share_count'];
             if (!$r['shared']) {
                 $r['owner_name'] = null;
@@ -125,6 +129,7 @@ final class FlowchartsController
             'owner' => DB::one('SELECT id, name FROM users WHERE id = ?', [$f['user_id']]),
             'updated_by_name' => $f['updated_by'] && (int) $f['updated_by'] !== $userId ? DB::val('SELECT name FROM users WHERE id = ?', [$f['updated_by']]) : null,
             'shares' => $role === 'owner' ? Shares::list('flowchart', $id) : [],
+            'pins' => ItemPins::state('flowchart', $id, $userId),
             'nodes' => $nodes,
             'edges' => $edges,
         ];

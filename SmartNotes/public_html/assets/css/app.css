@@ -1820,3 +1820,16 @@ svg .fc-node .frame { pointer-events: none; }
 .pg-part-row .pg-row { margin-bottom: 6px; }
 .pg-part-people { margin: 0 0 6px 26px; }
 .pg-partpick { flex-wrap: wrap; }
+
+/* ---------- v1.26 empty states span the whole list (centred on desktop); flowchart pins ---------- */
+.empty { grid-column: 1 / -1; }
+.board-sec-head { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-3); margin: 4px 0 -4px; }
+.board-sec-head:not(:first-child) { margin-top: 12px; }
+.board-sec-head.global { color: #d97706; }
+.board-sec-head.people { color: var(--accent); }
+.board-sec-head .subtle { font-weight: 600; }
+.bd-item.pin-global { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, #f59e0b 55%, transparent); }
+.bd-item.pin-forme { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 50%, transparent); }
+.board-pin.on { color: var(--accent); }
+.bd-item .board-pin { opacity: .55; }
+.bd-item:hover .board-pin, .bd-item .board-pin.on, .bd-item .board-pin:focus-visible { opacity: 1; }

@@ -53,6 +53,9 @@ final class Shares
         if ($type === 'folder' && $row['parent_id'] && self::folderShared((int) $row['parent_id'], $userId)) {
             return 'view';
         }
+        if (ItemPins::grants($type, $id, $userId)) {
+            return 'view'; // pinned by an administrator for everyone / for me (v1.26): read-only
+        }
         return null;
     }
 
@@ -153,6 +156,9 @@ final class Shares
     public static function purge(string $type, int $id): void
     {
         DB::run('DELETE FROM item_shares WHERE item_type = ? AND item_id = ?', [$type, $id]);
+        if (isset(ItemPins::TYPES[$type])) {
+            ItemPins::purge($type, $id);
+        }
     }
 
     /** Recipients with notification preferences (for reminders). */

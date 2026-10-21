@@ -433,6 +433,19 @@ CREATE TABLE IF NOT EXISTS `progress_updaters` (
   CONSTRAINT `fk_progress_updaters_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `item_pin_targets` (
+  `item_type`   VARCHAR(20) NOT NULL COMMENT 'flowchart',
+  `item_id`     INT UNSIGNED NOT NULL,
+  `user_id`     INT UNSIGNED NOT NULL COMMENT 'Sees the item pinned at the top, read-only',
+  `pinned_by`   INT UNSIGNED NULL,
+  `created_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`item_type`, `item_id`, `user_id`),
+  KEY `idx_item_pin_targets_user` (`user_id`, `item_type`),
+  KEY `fk_item_pin_targets_by` (`pinned_by`),
+  CONSTRAINT `fk_item_pin_targets_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_item_pin_targets_by` FOREIGN KEY (`pinned_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `progress_parts` (
   `id`              INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `item_id`         INT UNSIGNED NOT NULL,
@@ -835,6 +848,9 @@ CREATE TABLE IF NOT EXISTS `flowcharts` (
   `created_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `deleted_at`      DATETIME NULL,
+  `pinned_global`   TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Pinned by an admin for everyone (v1.26)',
+  `pinned_global_at` DATETIME NULL,
+  `pinned_global_by` INT UNSIGNED NULL,
   PRIMARY KEY (`id`),
   KEY `idx_fc_user` (`user_id`, `deleted_at`, `updated_at`),
   CONSTRAINT `fk_fc_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
@@ -1051,7 +1067,7 @@ INSERT IGNORE INTO `settings` (`setting_key`, `setting_value`) VALUES
 ('smtp_encryption', 'tls'),
 ('smtp_from_name', 'SmartNotes'),
 ('smtp_from_email', ''),
-('schema_version', '18'),
+('schema_version', '19'),
 ('allow_note_sharing', '1'),
 ('logo_display', 'logo'),
 ('logo_height', '34'),

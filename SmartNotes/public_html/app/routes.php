@@ -75,6 +75,9 @@ return [
     ['POST', 'shares/{type}/{id}', 'ItemSharesController::store', 'auth'],
     ['POST', 'shares/{type}/{id}/{id}/remove', 'ItemSharesController::remove', 'auth'],
     ['POST', 'shares/{type}/{id}/leave', 'ItemSharesController::leave', 'auth'],
+    // Pins for flowcharts (v1.26): for me, for everyone (admin), for chosen people (admin)
+    ['POST', 'pins/{type}/{id}', 'ItemPins::pin', 'auth'],
+    ['POST', 'pins/{type}/{id}/people', 'ItemPins::people', 'auth'],
     ['GET', 'drive', 'DriveController::index', 'auth'],
     ['GET', 'drive/folders', 'DriveController::folders', 'auth'],
     ['POST', 'drive/folders', 'DriveController::createFolder', 'auth'],

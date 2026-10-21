@@ -9,7 +9,7 @@ defined('SN_APP') || exit;
  */
 final class Migrator
 {
-    public const VERSION = 18;
+    public const VERSION = 19;
 
     public static function run(): void
     {
@@ -72,6 +72,9 @@ final class Migrator
             }
             if ($current < 18) {
                 self::v18();
+            }
+            if ($current < 19) {
+                self::v19();
             }
             Settings::set('schema_version', (string) self::VERSION);
         } finally {
@@ -302,6 +305,31 @@ final class Migrator
             DB::pdo()->exec("ALTER TABLE `note_attachments` ADD COLUMN `ptask_id` INT UNSIGNED NULL COMMENT 'Handed in for a progress task (v1.22)', ADD KEY `idx_att_ptask` (`ptask_id`)");
         }
     }
+
+    /** v1.26: pin flowcharts for me / for everyone / for chosen people. */
+    private static function v19(): void
+    {
+        if (!self::hasTable('item_pin_targets')) {
+            DB::pdo()->exec(self::ITEM_PIN_TARGETS_SQL);
+        }
+        self::addColumn('flowcharts', 'pinned_global', "TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Pinned by an admin for everyone (v1.26)'");
+        self::addColumn('flowcharts', 'pinned_global_at', 'DATETIME NULL');
+        self::addColumn('flowcharts', 'pinned_global_by', 'INT UNSIGNED NULL');
+    }
+
+    /** v1.26: an administrator pins an item (a flowchart) for chosen people. */
+    public const ITEM_PIN_TARGETS_SQL = "CREATE TABLE `item_pin_targets` (
+  `item_type`   VARCHAR(20) NOT NULL COMMENT 'flowchart',
+  `item_id`     INT UNSIGNED NOT NULL,
+  `user_id`     INT UNSIGNED NOT NULL COMMENT 'Sees the item pinned at the top, read-only',
+  `pinned_by`   INT UNSIGNED NULL,
+  `created_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`item_type`, `item_id`, `user_id`),
+  KEY `idx_item_pin_targets_user` (`user_id`, `item_type`),
+  KEY `fk_item_pin_targets_by` (`pinned_by`),
+  CONSTRAINT `fk_item_pin_targets_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_item_pin_targets_by` FOREIGN KEY (`pinned_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
 
     /** v1.25: Product progress parts worked on in parallel. */
     private static function v18(): void
