@@ -4,6 +4,7 @@
 import { svgEl, renderPng } from './canvas.js';
 import { html, downloadBlob } from '../core/dom.js';
 import { modal } from '../core/ui.js';
+import { muxFeeder } from './mp4Feed.js';
 
 /**
  * A flow: { d: SVG path data of the line in world coordinates, color, delay: s, dur: s, r: pulse radius,
@@ -211,7 +212,8 @@ export async function exportFlowVideo({ stage, bbox, background, getFlows, name,
       const target = new ArrayBufferTarget();
       const muxer = new Muxer({ target, video: { codec: codec.muxCodec, width: W, height: H, frameRate: fps }, fastStart: 'in-memory' });
       let failure = null;
-      const enc = new VideoEncoder({ output: (chunk, meta) => muxer.addVideoChunk(chunk, meta), error: (e) => { failure = e; } });
+      const feed = muxFeeder(muxer, codec);
+      const enc = new VideoEncoder({ output: (chunk, meta) => { try { feed(chunk, meta); } catch (e) { failure = e; } }, error: (e) => { failure = e; } });
       enc.configure(codec.cfg);
       for (let i = 0; i < frames; i++) {
         if (cancelled) { enc.close(); return null; }
