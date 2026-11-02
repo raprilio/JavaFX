@@ -190,7 +190,7 @@ async function poll(first = false) {
     const r = await api.get('notifications');
     setUnread(r.unread);
     const newest = r.items[0]?.id || 0;
-    const popped = new Set((r.popups || []).filter((p) => p.kind === 'reminder').map((p) => p.id));
+    const popped = new Set((r.popups || []).filter((p) => p.kind === 'reminder' || p.kind === 'share').map((p) => p.id));
     if (r.popups?.length) queuePopups(r.popups);
     if (!first && newest > lastSeenId) {
       // Announcements and reminders that pop up get no extra toast.
@@ -224,15 +224,16 @@ async function showNextPopup() {
   popupOpen = true;
   const p = popupQueue.shift();
   const ann = p.kind === 'announcement';
+  const shared = p.kind === 'share'; // v1.29: something was shared with me
   const important = ann && p.level === 'important';
   const ack = () => api.post('popups/ack', { kind: p.kind, id: p.id }).catch(() => {});
   const m = modal({
     title: null,
     size: 'sm',
-    className: `popup-modal ${ann ? 'announce' : 'reminder'} ${important ? 'important' : ''}`,
+    className: `popup-modal ${ann ? 'announce' : shared ? 'shared' : 'reminder'} ${important ? 'important' : ''}`,
     dismissible: !ann,
-    body: html`<div class="popup-ic">${icon(ann ? (important ? 'alert-triangle' : 'megaphone') : 'bell-ring', 'lg')}</div>
-      <div class="popup-kind">${ann ? (important ? 'Important announcement' : 'Announcement') : 'Reminder'}${popupQueue.length ? html` <span class="subtle">· ${popupQueue.length} more</span>` : ''}</div>
+    body: html`<div class="popup-ic">${icon(ann ? (important ? 'alert-triangle' : 'megaphone') : shared ? 'share-2' : 'bell-ring', 'lg')}</div>
+      <div class="popup-kind">${ann ? (important ? 'Important announcement' : 'Announcement') : shared ? 'Shared with you' : 'Reminder'}${popupQueue.length ? html` <span class="subtle">· ${popupQueue.length} more</span>` : ''}</div>
       <h2 class="popup-title">${ann ? p.title : String(p.title || '').replace(/^⏰\s*/, '')}</h2>
       ${p.body ? html`<div class="popup-body">${p.body}</div>` : ''}
       <div class="popup-meta">${ann ? html`${icon('user', 'xs')} ${p.author || 'Administrator'} · ${timeAgo(p.created_at)}` : html`${icon('clock', 'xs')} ${timeAgo(p.created_at)}`}</div>`,

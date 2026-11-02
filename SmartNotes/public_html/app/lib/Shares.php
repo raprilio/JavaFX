@@ -99,7 +99,7 @@ final class Shares
         $rows = DB::all(
             'SELECT s.user_id, s.permission, s.created_at, u.name, u.email, p.avatar_path
              FROM item_shares s JOIN users u ON u.id = s.user_id LEFT JOIN user_profiles p ON p.user_id = u.id
-             WHERE s.item_type = ? AND s.item_id = ? ORDER BY u.name',
+             WHERE s.item_type = ? AND s.item_id = ? AND s.via_everyone = 0 ORDER BY u.name',
             [$type, $id]
         );
         return array_map(static fn($r) => [
@@ -123,7 +123,7 @@ final class Shares
             $exists = DB::val('SELECT id FROM item_shares WHERE item_type = ? AND item_id = ? AND user_id = ?', [$type, $id, $rid]);
             DB::run(
                 'INSERT INTO item_shares (item_type, item_id, owner_id, user_id, permission) VALUES (?, ?, ?, ?, ?)
-                 ON DUPLICATE KEY UPDATE permission = VALUES(permission)',
+                 ON DUPLICATE KEY UPDATE permission = VALUES(permission), via_everyone = 0',
                 [$type, $id, (int) $owner['id'], $rid, $perm]
             );
             if (!$exists) {
@@ -156,6 +156,7 @@ final class Shares
     public static function purge(string $type, int $id): void
     {
         DB::run('DELETE FROM item_shares WHERE item_type = ? AND item_id = ?', [$type, $id]);
+        EveryoneShares::purge($type, $id);
         if (isset(ItemPins::TYPES[$type])) {
             ItemPins::purge($type, $id);
         }

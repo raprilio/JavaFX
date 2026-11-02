@@ -263,7 +263,7 @@ async function renderDetail(el, ctx, id) {
   }
   // v1.25: with parts, the update form works on one of my parts (the first unfinished one by default)
   let pick = { stage: null, status: null, part: null };
-  const myParts = () => (it.parts || []).filter((p) => it.my_parts.includes(p.id));
+  const myParts = () => (it.parts || []).filter((p) => (it.updatable_parts || it.my_parts).includes(p.id)); // v1.29: the creator updates any part
   const target = () => {
     if (!it.parts?.length) return it;
     const mine = myParts();
@@ -294,7 +294,7 @@ async function renderDetail(el, ctx, id) {
               <div class="pg-pm-bar big"><i class="pg-${p.status}" style="width:${p.percent}%"></i></div>
               <div class="row between wrap small muted" style="gap:6px"><span class="row" style="gap:6px">${people(p.people, 5)}<span class="truncate">${p.people.map((u) => u.name).join(', ')}</span></span>
                 <span>${icon('milestone', 'sm')} ${p.stage || '—'}${p.last_update_at ? ` · ${timeAgo(p.last_update_at)}` : ' · not started'}</span></div></div>`)}</div>` : ''}
-          ${it.can_update && cur ? html`<form class="card card-pad pg-update" data-update novalidate><h3>${icon('trending-up', 'sm')} Update progress${it.parts?.length ? html` <span class="subtle">· ${cur.title}</span>` : ''}</h3>
+          ${it.can_update && cur ? html`<form class="card card-pad pg-update" data-update novalidate><h3>${icon('trending-up', 'sm')} Update progress${it.parts?.length ? html` <span class="subtle pg-up-part">${cur.title}</span>` : ''}</h3>
             ${myParts().length > 1 ? html`<div class="seg pg-partpick">${myParts().map((p) => html`<button type="button" class="btn xs ${p.id === cur.id ? 'active' : ''}" data-part="${p.id}">${p.title} <span class="subtle">${p.percent}%</span></button>`)}</div>` : ''}
             <div class="pg-range"><input type="range" min="0" max="100" step="1" value="${cur.percent}" data-range aria-label="Percent"><span class="input-suffix"><input class="input sm" type="number" min="0" max="100" value="${cur.percent}" data-num aria-label="Percent"><span>%</span></span></div>
             <div class="seg pg-stagepick">${it.stages.map((s) => html`<button type="button" class="btn xs ${s.name === cur.stage ? 'active' : ''}" data-stage="${s.name}" data-pct="${s.percent}">${s.name} <span class="subtle">${s.percent}%</span></button>`)}</div>

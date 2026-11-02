@@ -705,6 +705,7 @@ CREATE TABLE IF NOT EXISTS `note_shares` (
   `last_opened_at`  DATETIME NULL,
   `created_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `via_everyone`    TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Added by Share with everyone (v1.29)',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_share_note_user` (`note_id`, `user_id`),
   KEY `idx_share_user` (`user_id`, `is_pinned`),
@@ -712,6 +713,17 @@ CREATE TABLE IF NOT EXISTS `note_shares` (
   CONSTRAINT `fk_share_note` FOREIGN KEY (`note_id`) REFERENCES `notes` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_share_owner` FOREIGN KEY (`owner_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_share_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `everyone_shares` (
+  `item_type`   VARCHAR(20) NOT NULL COMMENT 'note, audio, mindmap, flowchart, file or folder',
+  `item_id`     INT UNSIGNED NOT NULL,
+  `permission`  ENUM('view','edit') NOT NULL DEFAULT 'view',
+  `shared_by`   INT UNSIGNED NULL,
+  `created_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`item_type`, `item_id`),
+  KEY `fk_everyone_shares_by` (`shared_by`),
+  CONSTRAINT `fk_everyone_shares_by` FOREIGN KEY (`shared_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `item_shares` (
@@ -722,6 +734,7 @@ CREATE TABLE IF NOT EXISTS `item_shares` (
   `user_id`     INT UNSIGNED NOT NULL COMMENT 'Recipient / tagged user',
   `permission`  ENUM('view','edit') NOT NULL DEFAULT 'view',
   `created_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `via_everyone` TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Added by Share with everyone (v1.29)',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_item_share` (`item_type`, `item_id`, `user_id`),
   KEY `idx_item_share_user` (`user_id`, `item_type`),
@@ -1083,7 +1096,7 @@ INSERT IGNORE INTO `settings` (`setting_key`, `setting_value`) VALUES
 ('smtp_encryption', 'tls'),
 ('smtp_from_name', 'SmartNotes'),
 ('smtp_from_email', ''),
-('schema_version', '21'),
+('schema_version', '22'),
 ('allow_note_sharing', '1'),
 ('logo_display', 'logo'),
 ('logo_height', '34'),

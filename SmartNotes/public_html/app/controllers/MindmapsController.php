@@ -33,7 +33,7 @@ final class MindmapsController
                     (SELECT COUNT(*) FROM mindmap_nodes n WHERE n.mindmap_id = m.id) AS node_count,
                     (SELECT n.label FROM mindmap_nodes n WHERE n.mindmap_id = m.id AND n.parent_id IS NULL ORDER BY n.id LIMIT 1) AS root_label
                     , m.user_id AS owner_id, o.name AS owner_name,
-                    (SELECT COUNT(*) FROM item_shares s2 WHERE s2.item_type = 'mindmap' AND s2.item_id = m.id) AS share_count,
+                    (SELECT COUNT(*) FROM item_shares s2 WHERE s2.item_type = 'mindmap' AND s2.item_id = m.id AND s2.via_everyone = 0) AS share_count, (SELECT COUNT(*) FROM everyone_shares e WHERE e.item_type = 'mindmap' AND e.item_id = m.id) AS shared_all,
                     (SELECT s3.permission FROM item_shares s3 WHERE s3.item_type = 'mindmap' AND s3.item_id = m.id AND s3.user_id = ?) AS my_permission
              FROM mindmaps m JOIN users o ON o.id = m.user_id WHERE $where ORDER BY m.updated_at DESC LIMIT 500",
             array_merge([$u['id']], $params)
@@ -46,6 +46,7 @@ final class MindmapsController
             $r['access'] = $r['shared'] ? ($r['my_permission'] ?: 'view') : 'owner';
             $r['in_shares'] = $r['my_permission'] !== null; // shared with me (not only visible through a pin)
             $r['share_count'] = (int) $r['share_count'];
+            $r['shared_all'] = (bool) (int) $r['shared_all'];
             if (!$r['shared']) {
                 $r['owner_name'] = null;
             }

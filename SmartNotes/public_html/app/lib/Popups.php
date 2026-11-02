@@ -5,11 +5,13 @@ defined('SN_APP') || exit;
 
 /**
  * In-app pop-ups (v1.9): admin announcements until the user confirms them, and reminders when they fire.
+ * v1.29: something shared with me (a file, note, recording, …) pops up too — also when it arrived while I was away.
  * Delivered with the regular notification poll (every minute while the app is open).
  */
 final class Popups
 {
     private const REMINDER_WINDOW_HOURS = 12;
+    private const SHARE_WINDOW_DAYS = 14;
 
     public static function forUser(int $userId): array
     {
@@ -37,6 +39,14 @@ final class Popups
                 $out[] = ['kind' => 'reminder', 'id' => (int) $n['id'], 'title' => $n['title'], 'body' => $n['message'], 'link' => $n['link'], 'created_at' => $n['created_at']];
             }
         }
+        foreach (DB::all(
+            "SELECT id, title, message, link, created_at FROM notifications
+             WHERE user_id = ? AND type = 'share' AND is_read = 0 AND popped_at IS NULL AND created_at > ?
+             ORDER BY id LIMIT 5",
+            [$userId, date('Y-m-d H:i:s', time() - self::SHARE_WINDOW_DAYS * 86400)]
+        ) as $n) {
+            $out[] = ['kind' => 'share', 'id' => (int) $n['id'], 'title' => $n['title'], 'body' => $n['message'], 'link' => $n['link'], 'created_at' => $n['created_at']];
+        }
         return $out;
     }
 
@@ -47,7 +57,7 @@ final class Popups
             DB::run('INSERT IGNORE INTO announcement_reads (announcement_id, user_id) VALUES (?, ?)', [$id, $userId]);
             return;
         }
-        if ($kind === 'reminder') {
+        if ($kind === 'reminder' || $kind === 'share') {
             DB::run('UPDATE notifications SET popped_at = NOW(), is_read = 1 WHERE id = ? AND user_id = ?', [$id, $userId]);
             return;
         }

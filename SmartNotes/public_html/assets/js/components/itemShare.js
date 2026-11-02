@@ -2,6 +2,7 @@
 import { html, icon, h, debounce, timeAgo } from '../core/dom.js';
 import { api } from '../core/api.js';
 import { modal, toast, toastError, avatarHtml } from '../core/ui.js';
+import { shareAllRow } from './shareAll.js';
 
 const LABELS = { audio: 'recording', mindmap: 'mind map', flowchart: 'flowchart', file: 'file', folder: 'folder' };
 const HELP = {
@@ -27,6 +28,7 @@ export async function openItemShare({ type, id, title = '' }) {
   const canEdit = perms.includes('edit');
   const body = h(String(html`<div class="col" style="gap:14px">
     ${title ? html`<div class="share-item-title">${icon({ audio: 'mic', mindmap: 'network', flowchart: 'workflow', file: 'file', folder: 'folder' }[type], 'sm')}<b class="truncate">${title}</b></div>` : ''}
+    <div data-all-slot></div>
     <div><div class="label mb-1">People with access</div><div data-list></div></div>
     <div><div class="label mb-1">Add people</div>
       <div class="input-icon mb-2">${icon('search', 'sm')}<input class="input sm" type="search" placeholder="Search by name or e-mail" data-q></div>
@@ -35,6 +37,8 @@ export async function openItemShare({ type, id, title = '' }) {
         <div class="grow"></div><button class="btn primary sm" data-add disabled>${icon('send', 'sm')} Share</button></div>
       <p class="tiny subtle mt-1">${HELP[type]} Recipients get a notification (and an e-mail when SMTP is set up).</p></div>
   </div>`));
+  let allOn = false;
+  body.querySelector('[data-all-slot]').replaceWith(shareAllRow({ type, id, onChange: (st, initial) => { allOn = !!st; if (!initial) changed = true; paint(); } }));
   const listEl = body.querySelector('[data-list]');
   const peopleEl = body.querySelector('[data-people]');
   const addBtn = body.querySelector('[data-add]');
@@ -44,7 +48,7 @@ export async function openItemShare({ type, id, title = '' }) {
       <div class="grow" style="min-width:0"><div class="truncate" style="font-weight:600">${s.name}</div><div class="tiny subtle truncate">${s.email} · since ${timeAgo(s.created_at)}</div></div>
       ${canEdit ? html`<select class="select sm" style="width:auto" data-change><option value="view" ${s.permission === 'view' ? 'selected' : ''}>Can view</option><option value="edit" ${s.permission === 'edit' ? 'selected' : ''}>Can edit</option></select>` : ''}
       <button class="btn ghost icon sm" data-remove aria-label="Remove">${icon('x', 'sm')}</button></div>`)).join('')
-      : `<p class="small subtle">Only you can see this ${LABELS[type]}.</p>`;
+      : `<p class="small subtle">${allOn ? 'Nobody added one by one — everyone can open it through “Everyone”.' : `Only you can see this ${LABELS[type]}.`}</p>`;
     const ids = new Set(shares.map((s) => s.user_id));
     const list = people.filter((p) => !ids.has(p.id));
     peopleEl.innerHTML = list.length ? list.map((p) => String(html`<label><input type="checkbox" value="${p.id}" ${chosen.has(p.id) ? 'checked' : ''}>

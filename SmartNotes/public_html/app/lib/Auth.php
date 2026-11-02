@@ -451,7 +451,7 @@ final class Auth
         if (DB::val('SELECT id FROM users WHERE email = ?', [$email])) {
             throw new HttpException('This e-mail address is already registered.', 422, ['email' => 'taken']);
         }
-        return DB::tx(static function () use ($name, $email, $password, $role, $permissions, $mustChange) {
+        $id = DB::tx(static function () use ($name, $email, $password, $role, $permissions, $mustChange) {
             $id = DB::insert('users', [
                 'must_change_password' => $mustChange ? 1 : 0,
                 'name' => $name,
@@ -478,5 +478,9 @@ final class Auth
             }
             return $id;
         });
+        if ((int) Settings::get('schema_version', '1') >= 22) {
+            EveryoneShares::grantTo($id); // v1.29: what is shared with everyone reaches new colleagues too
+        }
+        return $id;
     }
 }

@@ -40,7 +40,7 @@ export function boardsView(kind) {
                 ${m.pinned_global ? html`<span class="badge warning bc-global">${icon('megaphone', 'sm')} ${m.pinned_global_by || 'Admin'} · for everyone</span>` : ''}
                 ${!m.pinned_global && m.pinned_for_me ? html`<span class="badge accent bc-forme">${icon('user-check', 'sm')} ${m.pinned_for_me_by || 'Admin'} · for you</span>` : ''}
                 ${m.pin_target_count ? html`<span class="badge accent bc-people" data-tip="Pinned for ${m.pin_target_count} ${m.pin_target_count === 1 ? 'person' : 'people'}">${icon('user-check', 'sm')} ${m.pin_target_count}</span>` : ''}
-                ${m.shared ? html`<span class="badge info">${icon('user', 'sm')} ${m.owner_name} · ${m.access === 'edit' ? 'can edit' : 'view'}</span>` : m.share_count ? html`<span class="badge info" data-tip="Shared with ${m.share_count}">${icon('users', 'sm')} ${m.share_count}</span>` : ''}</div></div></a>`;
+                ${m.shared ? html`<span class="badge info">${icon('user', 'sm')} ${m.owner_name} · ${m.access === 'edit' ? 'can edit' : 'view'}</span>` : m.shared_all ? html`<span class="badge info bc-all" data-tip="Shared with everyone">${icon('globe', 'sm')} Everyone</span>` : m.share_count ? html`<span class="badge info" data-tip="Shared with ${m.share_count}">${icon('users', 'sm')} ${m.share_count}</span>` : ''}</div></div></a>`;
       function paint() {
         if (!items.length) {
           list.innerHTML = String(html`<div style="grid-column:1/-1">${empty({ icon: cfg.icon, title: q ? 'Nothing found' : `No ${cfg.title.toLowerCase()} yet`, text: cfg.emptyText, action: `<button class="btn primary" data-act="new">Create ${kind === 'mindmap' ? 'a mind map' : 'a flowchart'}</button>` })}</div>`);

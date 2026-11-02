@@ -101,7 +101,7 @@ final class NotesController
                     (SELECT a.id FROM note_attachments a WHERE a.note_id = n.id AND a.file_kind = 'image' AND a.deleted_at IS NULL ORDER BY a.id LIMIT 1) AS cover_id,
                     (SELECT COUNT(*) FROM note_attachments a WHERE a.note_id = n.id AND a.deleted_at IS NULL) AS attachment_count,
                     (SELECT COUNT(*) FROM audio_notes au WHERE au.note_id = n.id AND au.deleted_at IS NULL) AS audio_count,
-                    (SELECT COUNT(*) FROM note_shares s WHERE s.note_id = n.id) AS share_count,
+                    (SELECT COUNT(*) FROM note_shares s WHERE s.note_id = n.id AND s.via_everyone = 0) AS share_count, (SELECT COUNT(*) FROM everyone_shares e WHERE e.item_type = 'note' AND e.item_id = n.id) AS shared_all,
                     (SELECT d.id FROM note_drawings d WHERE d.note_id = n.id AND d.deleted_at IS NULL ORDER BY d.id LIMIT 1) AS drawing_id,
                     (SELECT d.version FROM note_drawings d WHERE d.note_id = n.id AND d.deleted_at IS NULL ORDER BY d.id LIMIT 1) AS drawing_v
              FROM $from LEFT JOIN users pb ON pb.id = pt.pinned_by WHERE $whereSql ORDER BY $order LIMIT $perPage OFFSET " . (($page - 1) * $perPage),
@@ -159,7 +159,7 @@ final class NotesController
                 $r[$k] = (int) $r[$k];
             }
         }
-        foreach (['is_pinned', 'is_favorite', 'is_archived', 'is_locked', 'share_pinned', 'pinned_global', 'pinned_for_me'] as $k) {
+        foreach (['is_pinned', 'is_favorite', 'is_archived', 'is_locked', 'share_pinned', 'pinned_global', 'pinned_for_me', 'shared_all'] as $k) {
             if (array_key_exists($k, $r)) {
                 $r[$k] = (bool) $r[$k];
             }
@@ -388,6 +388,7 @@ final class NotesController
         $n['updated_by_name'] = $row['updated_by'] ? DB::val('SELECT name FROM users WHERE id = ?', [$row['updated_by']]) : null;
         if ($role === 'owner') {
             $n['shares'] = SharesController::listFor($id);
+            $n['shared_all'] = (bool) DB::val("SELECT 1 FROM everyone_shares WHERE item_type = 'note' AND item_id = ?", [$id]); // v1.29
             $n['pin_targets'] = self::pinTargets($id);
             $n['mentions'] = Mentions::forNotes([$id])[$id] ?? [];
         } else {

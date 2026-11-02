@@ -52,7 +52,7 @@ final class FlowchartsController
                     (SELECT COUNT(*) FROM flowchart_nodes n WHERE n.flowchart_id = f.id) AS node_count,
                     (SELECT COUNT(*) FROM flowchart_edges e WHERE e.flowchart_id = f.id) AS edge_count
                     , f.user_id AS owner_id, o.name AS owner_name,
-                    (SELECT COUNT(*) FROM item_shares s2 WHERE s2.item_type = 'flowchart' AND s2.item_id = f.id) AS share_count,
+                    (SELECT COUNT(*) FROM item_shares s2 WHERE s2.item_type = 'flowchart' AND s2.item_id = f.id AND s2.via_everyone = 0) AS share_count, (SELECT COUNT(*) FROM everyone_shares e WHERE e.item_type = 'flowchart' AND e.item_id = f.id) AS shared_all,
                     (SELECT s3.permission FROM item_shares s3 WHERE s3.item_type = 'flowchart' AND s3.item_id = f.id AND s3.user_id = ?) AS my_permission
              FROM flowcharts f JOIN users o ON o.id = f.user_id WHERE $where ORDER BY f.updated_at DESC LIMIT 500",
             array_merge([$u['id']], $params)
@@ -65,6 +65,7 @@ final class FlowchartsController
             $r['access'] = $r['shared'] ? ($r['my_permission'] ?: 'view') : 'owner';
             $r['in_shares'] = $r['my_permission'] !== null; // shared with me (not only visible through a pin)
             $r['share_count'] = (int) $r['share_count'];
+            $r['shared_all'] = (bool) (int) $r['shared_all'];
             if (!$r['shared']) {
                 $r['owner_name'] = null;
             }

@@ -75,6 +75,9 @@ return [
     ['POST', 'shares/{type}/{id}', 'ItemSharesController::store', 'auth'],
     ['POST', 'shares/{type}/{id}/{id}/remove', 'ItemSharesController::remove', 'auth'],
     ['POST', 'shares/{type}/{id}/leave', 'ItemSharesController::leave', 'auth'],
+    // Share with everyone (v1.29): notes, audio, mind maps, flowcharts, Drive files and folders
+    ['GET', 'shares-all/{type}/{id}', 'EveryoneShares::show', 'auth'],
+    ['POST', 'shares-all/{type}/{id}', 'EveryoneShares::set', 'auth'],
     // Pins for flowcharts (v1.26): for me, for everyone (admin), for chosen people (admin)
     ['POST', 'pins/{type}/{id}', 'ItemPins::pin', 'auth'],
     ['POST', 'pins/{type}/{id}/people', 'ItemPins::people', 'auth'],

@@ -28,7 +28,7 @@ final class SharesController
         ], DB::all(
             'SELECT s.user_id, s.permission, s.last_opened_at, s.created_at, u.name, u.email, p.avatar_path
              FROM note_shares s JOIN users u ON u.id = s.user_id LEFT JOIN user_profiles p ON p.user_id = u.id
-             WHERE s.note_id = ? ORDER BY u.name',
+             WHERE s.note_id = ? AND s.via_everyone = 0 ORDER BY u.name',
             [$noteId]
         ));
     }
@@ -93,7 +93,7 @@ final class SharesController
             $exists = DB::val('SELECT id FROM note_shares WHERE note_id = ? AND user_id = ?', [$noteId, $rid]);
             DB::run(
                 'INSERT INTO note_shares (note_id, owner_id, user_id, permission) VALUES (?, ?, ?, ?)
-                 ON DUPLICATE KEY UPDATE permission = VALUES(permission)',
+                 ON DUPLICATE KEY UPDATE permission = VALUES(permission), via_everyone = 0',
                 [$noteId, $u['id'], $rid, $perm]
             );
             if (!$exists) {

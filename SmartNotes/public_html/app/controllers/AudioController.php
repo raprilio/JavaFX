@@ -21,6 +21,7 @@ final class AudioController
             'updated_at' => $r['updated_at'],
             'url' => "api/index.php?route=audio/$id/raw",
             'share_count' => (int) ($r['share_count'] ?? 0),
+            'shared_all' => !empty($r['shared_all']),
             'shared' => !empty($r['shared']),
             'owner_name' => $r['owner_name'] ?? null,
         ];
@@ -57,7 +58,7 @@ final class AudioController
         $total = (int) DB::val("SELECT COUNT(*) FROM audio_notes a WHERE $w", $params);
         $rows = DB::all(
             "SELECT a.*, " . ($shared ? "NULL AS note_title, 1 AS shared, o.name AS owner_name" : 'n.title AS note_title') . ",
-                    (SELECT COUNT(*) FROM item_shares s2 WHERE s2.item_type = 'audio' AND s2.item_id = a.id) AS share_count
+                    (SELECT COUNT(*) FROM item_shares s2 WHERE s2.item_type = 'audio' AND s2.item_id = a.id AND s2.via_everyone = 0) AS share_count, (SELECT COUNT(*) FROM everyone_shares e WHERE e.item_type = 'audio' AND e.item_id = a.id) AS shared_all
              FROM audio_notes a LEFT JOIN notes n ON n.id = a.note_id LEFT JOIN users o ON o.id = a.user_id
              WHERE $w ORDER BY a.created_at DESC, a.id DESC LIMIT $perPage OFFSET " . (($page - 1) * $perPage),
             $params

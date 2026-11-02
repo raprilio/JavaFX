@@ -1582,9 +1582,9 @@ svg .fc-node .frame { pointer-events: none; }
 .pg-big { font-size: 46px; font-weight: 800; line-height: 1; color: var(--pc); }
 .pg-big small { font-size: 22px; margin-left: 2px; }
 .pg-cols { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 14px; align-items: start; }
-.pg-main, .pg-side { display: flex; flex-direction: column; gap: 14px; }
-@media (max-width: 960px) { .pg-cols { grid-template-columns: 1fr; } }
-.pg-detail h3 { display: flex; align-items: center; gap: 6px; font-size: 14px; margin: 0 0 10px; }
+.pg-main, .pg-side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+@media (max-width: 960px) { .pg-cols { grid-template-columns: minmax(0, 1fr); } } /* v1.29: minmax — wide content (sliders) no longer stretches the cards */
+.pg-detail h3 { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 14px; margin: 0 0 10px; }
 .pg-update { display: flex; flex-direction: column; gap: 10px; border-color: color-mix(in srgb, var(--pc) 40%, var(--border)); }
 .pg-range { display: flex; align-items: center; gap: 12px; }
 .pg-range input[type=range] { flex: 1; accent-color: var(--pc); }
@@ -1812,6 +1812,7 @@ svg .fc-node .frame { pointer-events: none; }
 .pg-pm-bar i.pg-blocked { background: var(--danger); }
 .pg-pm-bar i.pg-done { background: var(--success); }
 .pg-parts h3 .subtle { font-weight: 500; font-size: 12px; }
+.pg-up-part::before { content: '· '; }
 .pg-part { padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; margin-top: 8px; }
 .pg-part.mine { border-color: color-mix(in srgb, var(--pc, var(--accent)) 45%, var(--border)); background: color-mix(in srgb, var(--pc, var(--accent)) 5%, transparent); }
 .pg-part-pct { font-weight: 700; font-variant-numeric: tabular-nums; }
@@ -1833,3 +1834,43 @@ svg .fc-node .frame { pointer-events: none; }
 .board-pin.on { color: var(--accent); }
 .bd-item .board-pin { opacity: .55; }
 .bd-item:hover .board-pin, .bd-item .board-pin.on, .bd-item .board-pin:focus-visible { opacity: 1; }
+
+/* ---------- v1.29 phones: Product progress and Team progress ---------- */
+@media (max-width: 600px) {
+  /* summary tiles become one compact row you can swipe */
+  .pg-summary { display: flex; overflow-x: auto; gap: 8px; scrollbar-width: none; margin-left: -2px; padding: 2px; }
+  .pg-summary::-webkit-scrollbar { display: none; }
+  .pg-stat { flex: none; min-width: 92px; padding: 8px 12px; flex-direction: row; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .pg-stat b { font-size: 18px; }
+  .pg-stat span { font-size: 11.5px; width: 100%; }
+  .pt-summary { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .pt-stat { flex: none; }
+  /* stage names under the big bar: only the current one (the rest no longer collide) */
+  .pg-bar.big .pg-seg:not(.now) b { display: none; }
+  .pg-bar.big .pg-seg.now { overflow: visible; z-index: 1; }
+  .pg-bar.big .pg-seg.now b { overflow: visible; max-width: none; font-size: 12px; }
+  .pg-bar.big { margin-bottom: 30px; }
+  /* card titles: the explanation goes on its own line */
+  .pg-parts h3 > .subtle, .pg-update h3 > .subtle { flex-basis: 100%; font-size: 12px; font-weight: 500; }
+  .pg-up-part::before { content: none; }
+  .pg-part > .row.small { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .pt-part b.truncate { white-space: normal; overflow: visible; }
+  .pt-detail .card > h3 > .subtle { display: block; margin-top: 2px; font-weight: 500; }
+  /* part header: the percentage stays top-right, badges wrap under the name */
+  .pg-part > .row.between, .pt-part > .row.between { flex-wrap: nowrap; align-items: flex-start; }
+  .pg-part > .row.between > .row { flex-wrap: wrap; row-gap: 4px; }
+  .pt-part > .row.between > .row:last-child { flex-direction: column-reverse; align-items: flex-end; gap: 4px; flex: none; }
+  /* update forms: one swipeable row per choice instead of many wrapped rows */
+  .pg-update .seg { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+  .pg-update .seg::-webkit-scrollbar { display: none; }
+  .pg-update .seg .btn { flex: none; }
+  .pt-update input[type=range] { flex: 1 1 120px; min-width: 0; }
+  .pt-update [data-note] { flex: 1 1 100%; }
+  .pt-update .btn[type=submit] { margin-left: auto; }
+}
+
+/* ---------- v1.29 share with everyone ---------- */
+.share-all { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg-soft); }
+.share-all-ic { width: 32px; height: 32px; flex: none; border-radius: 50%; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); }
+.share-all .switch { gap: 0; }
+.popup-modal.shared .popup-ic { background: color-mix(in srgb, #10b981 15%, transparent); color: #059669; }

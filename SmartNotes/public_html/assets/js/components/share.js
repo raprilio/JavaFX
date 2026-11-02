@@ -2,12 +2,14 @@
 import { html, icon, h, debounce, timeAgo } from '../core/dom.js';
 import { api } from '../core/api.js';
 import { modal, toast, toastError, avatarHtml } from '../core/ui.js';
+import { shareAllRow } from './shareAll.js';
 
 export async function openShareDialog(note) {
   let shares = note.shares || [];
   let people = [];
   const chosen = new Set();
   const body = h(String(html`<div class="col" style="gap:14px">
+    <div data-all-slot></div>
     <div><div class="label mb-1">People with access</div><div data-list></div></div>
     <div><div class="label mb-1">Add people</div>
       <div class="input-icon mb-2">${icon('search', 'sm')}<input class="input sm" type="search" placeholder="Search by name or e-mail" data-q></div>
@@ -16,6 +18,8 @@ export async function openShareDialog(note) {
         <div class="grow"></div><button class="btn primary sm" data-add disabled>${icon('send', 'sm')} Share</button></div>
       <p class="tiny subtle mt-1">Recipients get an in-app notification (and an e-mail when SMTP is configured). They can pin the note for themselves. Editors can change the title & text only; category, tags, colour and deletion stay with you.</p></div>
   </div>`));
+  let allOn = !!note.shared_all;
+  body.querySelector('[data-all-slot]').replaceWith(shareAllRow({ type: 'note', id: note.id, onChange: (st) => { note.shared_all = allOn = !!st; paintShares(); } }));
   const listEl = body.querySelector('[data-list]');
   const peopleEl = body.querySelector('[data-people]');
   const addBtn = body.querySelector('[data-add]');
@@ -26,7 +30,7 @@ export async function openShareDialog(note) {
       <div class="grow" style="min-width:0"><div class="truncate" style="font-weight:600">${s.name}</div><div class="tiny subtle truncate">${s.email}${s.last_opened_at ? ` · opened ${timeAgo(s.last_opened_at)}` : ' · not opened yet'}</div></div>
       <select class="select sm" style="width:auto" data-change><option value="view" ${s.permission === 'view' ? 'selected' : ''}>Can view</option><option value="edit" ${s.permission === 'edit' ? 'selected' : ''}>Can edit</option></select>
       <button class="btn ghost icon sm" data-remove aria-label="Remove">${icon('x', 'sm')}</button></div>`)).join('')
-      : '<p class="small subtle">Only you can see this note.</p>';
+      : `<p class="small subtle">${allOn ? 'Nobody added one by one — everyone can open it through “Everyone”.' : 'Only you can see this note.'}</p>`;
   };
   const paintPeople = () => {
     const ids = new Set(shares.map((s) => s.user_id));

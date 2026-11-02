@@ -9,7 +9,7 @@ defined('SN_APP') || exit;
  */
 final class Migrator
 {
-    public const VERSION = 21;
+    public const VERSION = 22;
 
     public static function run(): void
     {
@@ -84,6 +84,14 @@ final class Migrator
             }
             if ($current < 21 && !self::hasTable('progress_editors')) {
                 DB::pdo()->exec(self::PROGRESS_EDITORS_SQL);
+            }
+            if ($current < 22) {
+                // v1.29: share with everyone
+                if (!self::hasTable('everyone_shares')) {
+                    DB::pdo()->exec(self::EVERYONE_SHARES_SQL);
+                }
+                self::addColumn('note_shares', 'via_everyone', "TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Added by Share with everyone (v1.29)'");
+                self::addColumn('item_shares', 'via_everyone', "TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Added by Share with everyone (v1.29)'");
             }
             Settings::set('schema_version', (string) self::VERSION);
         } finally {
@@ -314,6 +322,18 @@ final class Migrator
             DB::pdo()->exec("ALTER TABLE `note_attachments` ADD COLUMN `ptask_id` INT UNSIGNED NULL COMMENT 'Handed in for a progress task (v1.22)', ADD KEY `idx_att_ptask` (`ptask_id`)");
         }
     }
+
+    /** v1.29: items shared with everyone (every user gets a share row marked via_everyone, new users too). */
+    public const EVERYONE_SHARES_SQL = "CREATE TABLE `everyone_shares` (
+  `item_type`   VARCHAR(20) NOT NULL COMMENT 'note, audio, mindmap, flowchart, file or folder',
+  `item_id`     INT UNSIGNED NOT NULL,
+  `permission`  ENUM('view','edit') NOT NULL DEFAULT 'view',
+  `shared_by`   INT UNSIGNED NULL,
+  `created_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`item_type`, `item_id`),
+  KEY `fk_everyone_shares_by` (`shared_by`),
+  CONSTRAINT `fk_everyone_shares_by` FOREIGN KEY (`shared_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
 
     /** v1.28: people an administrator allows to edit (customise) one Product progress item. */
     public const PROGRESS_EDITORS_SQL = "CREATE TABLE `progress_editors` (

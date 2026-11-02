@@ -338,6 +338,8 @@ final class ProgressController
     {
         $isAdmin = Auth::isAdmin();
         $mine = array_values(array_map(static fn($p) => $p['id'], array_filter($parts, static fn($p) => in_array($uid, array_column($p['people'], 'id'), true))));
+        // v1.29: the creator may post progress for any part of their item
+        $updatable = $r['user_id'] !== null && (int) $r['user_id'] === $uid ? array_column($parts, 'id') : $mine;
         return [
             'id' => (int) $r['id'], 'title' => $r['title'], 'description' => $r['description'],
             'stages' => self::stages(json_decode_array($r['stages'])), 'fields' => self::fields(json_decode_array($r['fields'])),
@@ -348,7 +350,8 @@ final class ProgressController
             'updaters' => $updaters,
             'parts' => $parts,
             'my_parts' => $mine,
-            'can_update' => !$r['deleted_at'] && ($parts ? (bool) $mine : in_array($uid, array_column($updaters, 'id'), true)),
+            'updatable_parts' => $updatable,
+            'can_update' => !$r['deleted_at'] && ($parts ? (bool) $updatable : in_array($uid, array_column($updaters, 'id'), true)),
             'can_manage' => (int) $r['user_id'] === $uid || $isAdmin,
             'can_set_editors' => $isAdmin,
             'pinned' => !empty($r['my_pin']),
@@ -594,7 +597,8 @@ final class ProgressController
         $u = Auth::require();
         $uid = (int) $u['id'];
         $it = self::item($id);
-        if (!self::isUpdater($id, $uid)) {
+        $creatorOfParts = (int) $it['user_id'] === $uid && DB::val('SELECT 1 FROM progress_parts WHERE item_id = ? LIMIT 1', [$id]);
+        if (!self::isUpdater($id, $uid) && !$creatorOfParts) {
             throw new HttpException('Only the people chosen for this item can update its progress.', 403);
         }
         $raw = Http::input('percent');
@@ -613,11 +617,13 @@ final class ProgressController
         // v1.25: an item with parts is updated part by part, each by the people working on it
         $part = null;
         if (DB::val('SELECT 1 FROM progress_parts WHERE item_id = ? LIMIT 1', [$id])) {
-            $mine = DB::all('SELECT p.* FROM progress_parts p JOIN progress_part_people x ON x.part_id = p.id AND x.user_id = ? WHERE p.item_id = ? ORDER BY p.position', [$uid, $id]);
+            $mine = (int) $it['user_id'] === $uid // v1.29: the creator updates any part
+                ? DB::all('SELECT p.* FROM progress_parts p WHERE p.item_id = ? ORDER BY p.position', [$id])
+                : DB::all('SELECT p.* FROM progress_parts p JOIN progress_part_people x ON x.part_id = p.id AND x.user_id = ? WHERE p.item_id = ? ORDER BY p.position', [$uid, $id]);
             $want = V::id(Http::input('part_id'));
             $part = $want ? (array_values(array_filter($mine, static fn($p) => (int) $p['id'] === $want))[0] ?? null) : (count($mine) === 1 ? $mine[0] : null);
             if (!$part) {
-                throw new HttpException($want ? 'Only the people working on this part can update it.' : 'Choose the part you are updating.', $want ? 403 : 422, ['part_id' => true]);
+                throw new HttpException($want ? 'Only the people working on this part (or the creator) can update it.' : 'Choose the part you are updating.', $want ? 403 : 422, ['part_id' => true]);
             }
             $status = $percent === 100 ? 'done' : V::enum(Http::input('status'), ['on_track', 'at_risk', 'blocked'], $part['status'] === 'done' ? 'on_track' : $part['status']);
             $itemPercent = DB::tx(static function () use ($id, $uid, $part, $percent, $stage, $status, $reason, $ts, $it) {

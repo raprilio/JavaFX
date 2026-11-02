@@ -58,7 +58,7 @@ export default {
             <span class="save-state" data-save><span class="d"></span><span data-save-text>Saved</span></span>
             <div class="grow"></div>
             ${trashed ? html`<span class="badge danger">${icon('trash-2', 'sm')} In trash</span><button class="btn sm" data-a="restore">${icon('rotate-ccw', 'sm')} Restore</button>` : ''}
-            ${isOwner && !trashed && state.branding?.allow_note_sharing !== false ? html`<button class="btn ghost sm ${(note.shares || []).length ? 'active' : ''}" data-a="share" data-tip="Share with users">${icon('users', 'sm')}<span class="hide-sm">Share</span><span data-share-count>${(note.shares || []).length || ''}</span></button>` : ''}
+            ${isOwner && !trashed && state.branding?.allow_note_sharing !== false ? html`<button class="btn ghost sm ${(note.shares || []).length || note.shared_all ? 'active' : ''}" data-a="share" data-tip="Share with users">${icon('users', 'sm')}<span class="hide-sm">Share</span><span data-share-count>${note.shared_all ? 'All' : (note.shares || []).length || ''}</span></button>` : ''}
             ${isOwner && note.is_locked && !trashed ? html`<button class="btn ghost icon sm active" data-a="lock-now" data-tip="Locked note · lock now">${icon('lock', 'sm')}</button>` : ''}
             ${isOwner ? html`<button class="btn ghost icon sm ${note.is_pinned ? 'active' : ''}" data-a="pin" data-tip="Pin">${icon('pin', 'sm')}</button>
             <button class="btn ghost icon sm ${note.is_favorite ? 'active' : ''}" data-a="favorite" data-tip="Favorite">${icon('star', 'sm')}</button>
@@ -477,10 +477,12 @@ export default {
       if (!a) return;
       const btn = e.target.closest('[data-a]');
       if (a === 'share') {
-        const shares = await openShareDialog({ ...note, id });
+        const copy = { ...note, id };
+        const shares = await openShareDialog(copy);
         note.shares = shares;
-        btn.classList.toggle('active', shares.length > 0);
-        btn.querySelector('[data-share-count]').textContent = shares.length || '';
+        note.shared_all = !!copy.shared_all; // v1.29: shared with everyone
+        btn.classList.toggle('active', shares.length > 0 || note.shared_all);
+        btn.querySelector('[data-share-count]').textContent = note.shared_all ? 'All' : shares.length || '';
       }
       if (a === 'spin') {
         try {

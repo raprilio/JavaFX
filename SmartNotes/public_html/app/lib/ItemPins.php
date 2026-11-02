@@ -134,7 +134,7 @@ final class ItemPins
         if ($on && !(int) $row['pinned_global']) {
             DB::run("UPDATE `{$cfg['table']}` SET pinned_global = 1, pinned_global_at = NOW(), pinned_global_by = ?, updated_at = updated_at WHERE id = ?", [$uid, $id]);
             foreach (DB::col("SELECT id FROM users WHERE status = 'active' AND deleted_at IS NULL AND id <> ?", [$uid]) as $to) {
-                Notify::create((int) $to, 'share', '📌 ' . $u['name'] . " menyematkan {$cfg['label']} untuk semua: \"{$row['title']}\"", null, sprintf($cfg['link'], $id));
+                Notify::create((int) $to, 'pin', '📌 ' . $u['name'] . " menyematkan {$cfg['label']} untuk semua: \"{$row['title']}\"", null, sprintf($cfg['link'], $id));
             }
         } elseif (!$on && (int) $row['pinned_global']) {
             DB::run("UPDATE `{$cfg['table']}` SET pinned_global = 0, pinned_global_at = NULL, pinned_global_by = NULL, updated_at = updated_at WHERE id = ?", [$id]);
@@ -169,7 +169,7 @@ final class ItemPins
             }
         });
         foreach ($new as $to) {
-            Notify::create($to, 'share', '📌 ' . $u['name'] . " menyematkan {$cfg['label']} untuk Anda: \"{$row['title']}\"", null, sprintf($cfg['link'], $id));
+            Notify::create($to, 'pin', '📌 ' . $u['name'] . " menyematkan {$cfg['label']} untuk Anda: \"{$row['title']}\"", null, sprintf($cfg['link'], $id));
         }
         if ($new || $gone) {
             Activity::log($want ? "$type.pin_people" : "$type.unpin_people", $type, $id, $want ? 'Pinned for ' . count($want) . ' people' : 'Unpinned for people');

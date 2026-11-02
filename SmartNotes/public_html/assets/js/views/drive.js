@@ -101,7 +101,7 @@ export default {
           ${x.preview === 'pdf' ? html`<span class="badge danger fc-type">PDF</span>` : ''}</div>
         <div class="fc-info"><div class="row" style="gap:6px"><div class="fc-name grow" title="${x.name}">${x.name}</div>${x.is_starred ? html`<span style="color:var(--warning)">${icon('star', 'sm')}</span>` : ''}</div>
           <div class="fc-sub">${fmtBytes(x.size)} · ${timeAgo(x.created_at)}${f.view !== 'drive' && x.folder_name ? html` · ${icon('folder', 'sm')} ${x.folder_name}` : ''}</div>
-          ${x.shared ? html`<div class="mt-1"><span class="badge info">${icon('user', 'sm')} ${x.owner_name}</span></div>` : x.share_count ? html`<div class="mt-1"><span class="badge info" data-tip="Shared with ${x.share_count}">${icon('users', 'sm')} ${x.share_count}</span></div>` : ''}
+          ${x.shared ? html`<div class="mt-1"><span class="badge info">${icon('user', 'sm')} ${x.owner_name}</span></div>` : x.shared_all ? html`<div class="mt-1"><span class="badge info" data-tip="Shared with everyone">${icon('globe', 'sm')} Everyone</span></div>` : x.share_count ? html`<div class="mt-1"><span class="badge info" data-tip="Shared with ${x.share_count}">${icon('users', 'sm')} ${x.share_count}</span></div>` : ''}
           ${x.tags?.length ? html`<div class="row wrap mt-1" style="gap:4px">${x.tags.slice(0, 3).map((t) => html`<span class="tag">#${t}</span>`)}</div>` : ''}</div>
         <button class="btn icon xs fc-menu" data-more aria-label="More">${icon('more-vertical', 'sm')}</button></div>`;
     }
@@ -133,7 +133,7 @@ export default {
           <div class="folder-card" data-folder="${d.id}" data-drop-folder="${d.id}" tabindex="0" style="--fc:${d.color || 'var(--accent)'}">
             <span class="folder-ic">${icon('folder', 'lg')}</span><div class="grow" style="min-width:0"><div class="truncate" style="font-weight:600">${d.name}</div>
             <div class="tiny subtle">${d.file_count} file${d.file_count === 1 ? '' : 's'}${d.folder_count ? ` · ${d.folder_count} folder${d.folder_count > 1 ? 's' : ''}` : ''}${d.shared ? ` · ${d.owner_name}` : ''}</div></div>
-            ${d.share_count ? html`<span class="badge info" data-tip="Shared with ${d.share_count}">${icon('users', 'sm')} ${d.share_count}</span>` : ''}
+            ${d.shared_all ? html`<span class="badge info" data-tip="Shared with everyone">${icon('globe', 'sm')} Everyone</span>` : d.share_count ? html`<span class="badge info" data-tip="Shared with ${d.share_count}">${icon('users', 'sm')} ${d.share_count}</span>` : ''}
             <button class="btn ghost icon xs" data-folder-more aria-label="More">${icon('more-vertical', 'sm')}</button></div>`)}</div>` : ''}
         ${data.items.length ? html`${folders.length ? html`<div class="label mb-1">Files</div>` : ''}
           ${f.layout === 'grid' ? html`<div class="file-grid">${data.items.map(fileCard)}</div>`

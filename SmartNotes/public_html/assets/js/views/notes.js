@@ -38,7 +38,7 @@ function card(n, selecting, selected) {
         ${n.pinned_global ? html`<span class="badge warning nc-global">${icon('megaphone', 'sm')} ${others ? n.owner_name : 'You'} · for everyone</span>` : ''}
         ${!n.pinned_global && n.pinned_for_me ? html`<span class="badge accent nc-forme">${icon('user-check', 'sm')} ${n.pinned_by_name || 'Admin'} · for you</span>` : ''}
         ${!others && n.pin_target_count ? html`<span class="badge accent nc-pinned-people" data-tip="Pinned for ${n.pin_target_count} tagged ${n.pin_target_count === 1 ? 'person' : 'people'}">${icon('user-check', 'sm')} ${n.pin_target_count}</span>` : ''}
-        ${n.shared ? html`<span class="badge info nc-owner" data-tip="Shared with you by ${n.owner_name}">${icon('share-2', 'sm')} Shared by ${n.owner_name}${n.permission === 'edit' ? ' · edit' : ''}</span>` : !others && n.share_count ? html`<span class="badge info" data-tip="Shared with ${n.share_count}">${icon('users', 'sm')} ${n.share_count}</span>` : ''}
+        ${n.shared ? html`<span class="badge info nc-owner" data-tip="Shared with you by ${n.owner_name}">${icon('share-2', 'sm')} Shared by ${n.owner_name}${n.permission === 'edit' ? ' · edit' : ''}</span>` : !others && n.shared_all ? html`<span class="badge info nc-all" data-tip="Shared with everyone">${icon('globe', 'sm')} Everyone</span>` : !others && n.share_count ? html`<span class="badge info" data-tip="Shared with ${n.share_count}">${icon('users', 'sm')} ${n.share_count}</span>` : ''}
         <span style="margin-left:auto" title="${n.updated_at}">${icon(TYPE_ICON[n.note_type] || 'file-text', 'sm')} ${timeAgo(n.updated_at)}</span>
       </div>
     </div>

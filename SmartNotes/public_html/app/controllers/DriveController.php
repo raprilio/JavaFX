@@ -191,7 +191,7 @@ final class DriveController
         $total = (int) DB::val("SELECT COUNT(*) FROM note_attachments a WHERE $w", $params);
         $rows = DB::all(
             "SELECT a.*, n.title AS note_title, f.name AS folder_name,
-                    (SELECT COUNT(*) FROM item_shares s WHERE s.item_type = 'file' AND s.item_id = a.id) AS share_count
+                    (SELECT COUNT(*) FROM item_shares s WHERE s.item_type = 'file' AND s.item_id = a.id AND s.via_everyone = 0) AS share_count, (SELECT COUNT(*) FROM everyone_shares e WHERE e.item_type = 'file' AND e.item_id = a.id) AS shared_all
              FROM note_attachments a
              LEFT JOIN notes n ON n.id = a.note_id LEFT JOIN drive_folders f ON f.id = a.folder_id
              WHERE $w ORDER BY a.is_starred DESC, $sort, a.id DESC LIMIT $perPage OFFSET " . (($page - 1) * $perPage),
@@ -201,6 +201,7 @@ final class DriveController
         foreach ($items as $i => &$it) {
             $it['folder_name'] = $rows[$i]['folder_name'];
             $it['share_count'] = (int) $rows[$i]['share_count'];
+            $it['shared_all'] = (bool) (int) $rows[$i]['shared_all'];
         }
         unset($it);
 
@@ -210,7 +211,8 @@ final class DriveController
                 'SELECT f.id, f.name, f.color, f.updated_at,
                         (SELECT COUNT(*) FROM note_attachments a WHERE a.folder_id = f.id AND a.deleted_at IS NULL) AS file_count,
                         (SELECT COUNT(*) FROM drive_folders c WHERE c.parent_id = f.id) AS folder_count,
-                        (SELECT COUNT(*) FROM item_shares s WHERE s.item_type = \'folder\' AND s.item_id = f.id) AS share_count
+                        (SELECT COUNT(*) FROM item_shares s WHERE s.item_type = \'folder\' AND s.item_id = f.id AND s.via_everyone = 0) AS share_count,
+                        (SELECT COUNT(*) FROM everyone_shares e WHERE e.item_type = \'folder\' AND e.item_id = f.id) AS shared_all
                  FROM drive_folders f WHERE f.user_id = ? AND ' . ($folderId ? 'f.parent_id = ?' : 'f.parent_id IS NULL') . ' ORDER BY f.name',
                 $folderId ? [$uid, $folderId] : [$uid]
             );
@@ -219,6 +221,7 @@ final class DriveController
                 $f['file_count'] = (int) $f['file_count'];
                 $f['folder_count'] = (int) $f['folder_count'];
                 $f['share_count'] = (int) $f['share_count'];
+                $f['shared_all'] = (bool) (int) $f['shared_all'];
             }
             unset($f);
         }
