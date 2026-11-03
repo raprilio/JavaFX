@@ -111,7 +111,7 @@ final class AnnouncementsController
     public static function ack(): void
     {
         $u = Auth::require();
-        Popups::ack($u['id'], (string) Http::input('kind'), (int) Http::input('id'));
+        Popups::ack($u['id'], (string) Http::input('kind'), (int) Http::input('id'), (bool) V::bool(Http::input('seen'))); // seen: shown in the corner, still unread
         Http::ok();
     }
 }

@@ -6,6 +6,7 @@ import { navigate } from './router.js';
 import { menu, popover, toast, avatarHtml, toastError, modal } from './ui.js';
 import { CREATE_ITEMS, newNote, newTask, newMeeting, newEvent } from './actions.js';
 import { openPalette } from './palette.js';
+import { pushNotif } from './notifStack.js';
 import { applyThemeMode, effectiveTheme } from './theme.js';
 
 const NAV = [
@@ -195,7 +196,8 @@ async function poll(first = false) {
     if (!first && newest > lastSeenId) {
       // Announcements and reminders that pop up get no extra toast.
       r.items.filter((n) => n.id > lastSeenId && !n.is_read && n.type !== 'announcement' && !popped.has(n.id)).slice(0, 3).forEach((n) => {
-        toast(n.title, 'info', { action: n.link ? 'Open' : '', onAction: () => n.link && navigate(n.link.replace(/^#/, '')) , timeout: 8000 });
+        // v1.30: new notifications slide in at the top right (not a toast at the bottom)
+        pushNotif({ kind: 'note', title: n.title, body: n.message, link: n.link, created_at: n.created_at, onClose: (how) => { if (how === 'open') { api.post('notifications/read', { ids: [n.id] }).then(() => poll(true)).catch(() => {}); navigate(n.link.replace(/^#/, '')); } } });
         if (window.Notification?.permission === 'granted' && document.hidden !== false) {
           try { new Notification(n.title, { body: n.message || '', tag: 'sn-' + n.id }); } catch { /* ignore */ }
         }
@@ -215,6 +217,19 @@ function queuePopups(list) {
     const key = p.kind + ':' + p.id;
     if (popupSeen.has(key)) return;
     popupSeen.add(key);
+    // v1.30: shares and reminders are corner cards (top right) — only announcements still need "Got it" in the middle
+    if (p.kind === 'share' || p.kind === 'reminder') {
+      pushNotif({ ...p, onShow: () => api.post('popups/ack', { kind: p.kind, id: p.id, seen: true }).catch(() => {}),
+        onClose: (how) => {
+          if (how !== 'open') { // closed or timed out: it does not slide in again, but stays unread in the bell
+            api.post('popups/ack', { kind: p.kind, id: p.id, seen: true }).catch(() => {});
+            return;
+          }
+          api.post('popups/ack', { kind: p.kind, id: p.id }).then(() => poll(true)).catch(() => {});
+          if (p.link) navigate(p.link.replace(/^#/, ''));
+        } });
+      return;
+    }
     popupQueue.push(p);
   });
   showNextPopup();
@@ -224,16 +239,15 @@ async function showNextPopup() {
   popupOpen = true;
   const p = popupQueue.shift();
   const ann = p.kind === 'announcement';
-  const shared = p.kind === 'share'; // v1.29: something was shared with me
   const important = ann && p.level === 'important';
   const ack = () => api.post('popups/ack', { kind: p.kind, id: p.id }).catch(() => {});
   const m = modal({
     title: null,
     size: 'sm',
-    className: `popup-modal ${ann ? 'announce' : shared ? 'shared' : 'reminder'} ${important ? 'important' : ''}`,
+    className: `popup-modal ${ann ? 'announce' : 'reminder'} ${important ? 'important' : ''}`,
     dismissible: !ann,
-    body: html`<div class="popup-ic">${icon(ann ? (important ? 'alert-triangle' : 'megaphone') : shared ? 'share-2' : 'bell-ring', 'lg')}</div>
-      <div class="popup-kind">${ann ? (important ? 'Important announcement' : 'Announcement') : shared ? 'Shared with you' : 'Reminder'}${popupQueue.length ? html` <span class="subtle">· ${popupQueue.length} more</span>` : ''}</div>
+    body: html`<div class="popup-ic">${icon(ann ? (important ? 'alert-triangle' : 'megaphone') : 'bell-ring', 'lg')}</div>
+      <div class="popup-kind">${ann ? (important ? 'Important announcement' : 'Announcement') : 'Reminder'}${popupQueue.length ? html` <span class="subtle">· ${popupQueue.length} more</span>` : ''}</div>
       <h2 class="popup-title">${ann ? p.title : String(p.title || '').replace(/^⏰\s*/, '')}</h2>
       ${p.body ? html`<div class="popup-body">${p.body}</div>` : ''}
       <div class="popup-meta">${ann ? html`${icon('user', 'xs')} ${p.author || 'Administrator'} · ${timeAgo(p.created_at)}` : html`${icon('clock', 'xs')} ${timeAgo(p.created_at)}`}</div>`,

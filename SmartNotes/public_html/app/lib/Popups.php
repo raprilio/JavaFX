@@ -51,10 +51,15 @@ final class Popups
     }
 
     /** The user closed a pop-up ("Got it" / "Open" / "Dismiss"). */
-    public static function ack(int $userId, string $kind, int $id): void
+    /** @param bool $seenOnly v1.30: shown as a corner card (do not show again) but not read yet — it stays unread in the bell */
+    public static function ack(int $userId, string $kind, int $id, bool $seenOnly = false): void
     {
         if ($kind === 'announcement') {
             DB::run('INSERT IGNORE INTO announcement_reads (announcement_id, user_id) VALUES (?, ?)', [$id, $userId]);
+            return;
+        }
+        if (($kind === 'reminder' || $kind === 'share') && $seenOnly) {
+            DB::run('UPDATE notifications SET popped_at = NOW() WHERE id = ? AND user_id = ?', [$id, $userId]);
             return;
         }
         if ($kind === 'reminder' || $kind === 'share') {

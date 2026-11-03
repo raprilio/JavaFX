@@ -1873,4 +1873,26 @@ svg .fc-node .frame { pointer-events: none; }
 .share-all { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg-soft); }
 .share-all-ic { width: 32px; height: 32px; flex: none; border-radius: 50%; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); }
 .share-all .switch { gap: 0; }
-.popup-modal.shared .popup-ic { background: color-mix(in srgb, #10b981 15%, transparent); color: #059669; }
+
+/* ---------- v1.30 notification cards, top right (phones and desktops) ---------- */
+.nstack { position: fixed; z-index: 470; top: calc(var(--tb, 62px) + 8px); right: 12px; /* just under the top bar: the bell stays reachable */ width: min(360px, calc(100vw - 24px)); display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+.ns-card { pointer-events: auto; position: relative; display: flex; align-items: flex-start; gap: 10px; padding: 12px 34px 12px 12px; border-radius: 14px; background: var(--bg-elev); border: 1px solid var(--border); box-shadow: var(--shadow-lg, 0 12px 32px rgb(0 0 0 / .18)); color: var(--text); animation: ns-in .28s var(--ease) both; }
+.ns-card.has-link { cursor: pointer; }
+.ns-card.has-link:hover { border-color: var(--border-strong); }
+.ns-card.out { animation: ns-out .2s ease-in both; }
+.ns-ic { width: 32px; height: 32px; flex: none; border-radius: 10px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); }
+.ns-share .ns-ic { background: color-mix(in srgb, #10b981 15%, transparent); color: #059669; }
+.ns-reminder .ns-ic { background: color-mix(in srgb, #0ea5e9 15%, transparent); color: #0284c7; }
+.ns-body { min-width: 0; flex: 1; }
+.ns-kind { font-size: 11px; font-weight: 650; letter-spacing: .02em; color: var(--text-3); text-transform: uppercase; }
+.ns-title { font-size: 13.5px; font-weight: 600; line-height: 1.35; margin-top: 1px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
+.ns-text { font-size: 12.5px; color: var(--text-2); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ns-open { display: inline-flex; align-items: center; gap: 4px; margin-top: 6px; font-size: 12px; font-weight: 650; color: var(--accent); }
+.ns-x { position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; border: 0; border-radius: 8px; background: none; color: var(--text-3); display: grid; place-items: center; cursor: pointer; }
+.ns-x:hover { background: var(--bg-soft); color: var(--text); }
+.ns-more { pointer-events: auto; align-self: flex-end; display: inline-flex; align-items: center; gap: 10px; padding: 6px 8px 6px 12px; border-radius: 999px; background: var(--bg-elev); border: 1px solid var(--border); box-shadow: var(--shadow-sm, 0 2px 8px rgb(0 0 0 / .1)); font-size: 12px; color: var(--text-2); }
+.ns-more button { border: 0; background: var(--bg-soft); color: var(--text); font: inherit; font-weight: 650; padding: 3px 10px; border-radius: 999px; cursor: pointer; }
+@keyframes ns-in { from { opacity: 0; transform: translateX(24px); } }
+@keyframes ns-out { to { opacity: 0; transform: translateX(24px); } }
+@media (max-width: 600px) { .nstack { right: 8px; left: 8px; width: auto; top: calc(var(--tb, 56px) + 6px); } }
+@media (prefers-reduced-motion: reduce) { .ns-card, .ns-card.out { animation: none; } }
