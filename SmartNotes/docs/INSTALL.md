@@ -196,6 +196,8 @@ File backup disimpan di `storage/backups/` (tidak bisa diakses publik). Simpan s
 2. Upload ulang semua file **kecuali** `app/config.php`, `uploads/`, dan `storage/`.
 3. Buka aplikasi. Perubahan skema dijalankan **otomatis** oleh migrator saat request pertama (tidak perlu phpMyAdmin). Versi skema tersimpan di tabel `settings` (`schema_version`).
 
+**Upgrade ke v1.31** (link file Drive / progress ke meeting & jadwal, action item ke progress): timpa file. Database diperbarui **otomatis** ke skema 23 (tabel baru `item_links`, kolom `tasks.progress_id` dan `tasks.ptask_id`).
+
 **Upgrade ke v1.30** (notifikasi sebagai kartu di pojok kanan atas): timpa file. Tidak ada perubahan database.
 
 **Upgrade ke v1.29** (share with everyone, pop-up share, pembuat meng-update semua bagian, tampilan HP progress): timpa file. Database diperbarui **otomatis** ke skema 22 (tabel baru `everyone_shares`, kolom `note_shares.via_everyone` dan `item_shares.via_everyone`).

@@ -1896,3 +1896,21 @@ svg .fc-node .frame { pointer-events: none; }
 @keyframes ns-out { to { opacity: 0; transform: translateX(24px); } }
 @media (max-width: 600px) { .nstack { right: 8px; left: 8px; width: auto; top: calc(var(--tb, 56px) + 6px); } }
 @media (prefers-reduced-motion: reduce) { .ns-card, .ns-card.out { animation: none; } }
+
+/* ---------- v1.31 links on meetings / events, action items linked to progress ---------- */
+.il-row.locked { opacity: .78; }
+.il-thumb { width: 34px; height: 34px; flex: none; border-radius: 8px; object-fit: cover; background: var(--bg-soft); }
+.il-pct { width: 54px; height: 6px; flex: none; border-radius: 99px; background: var(--bg-soft); overflow: hidden; position: relative; }
+.il-pct > i { position: absolute; inset: 0 auto 0 0; border-radius: 99px; background: var(--c); }
+.il-field .section-title { font-size: 13px; }
+.ai-link { display: inline-flex; align-items: center; gap: 4px; max-width: 46%; flex: none; padding: 2px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 600; color: var(--accent); background: var(--accent-soft); text-decoration: none; }
+.ai-link:hover { text-decoration: none; filter: brightness(.97); }
+.ai-list { display: flex; flex-direction: column; }
+.ai-row { display: flex; align-items: flex-start; gap: 8px; padding: 7px 0; border-bottom: 1px dashed var(--border); }
+.ai-row:last-child { border-bottom: 0; }
+.ai-row.done .ai-title { text-decoration: line-through; opacity: .6; }
+.ai-dot { color: var(--text-3); margin-top: 1px; }
+.ai-row.done .ai-dot { color: var(--success); }
+.ai-title { font-weight: 600; font-size: 13.5px; color: var(--text); }
+.ai-row .overdue { color: var(--danger); }
+.ev-links { border-top: 1px solid var(--border); padding-top: 10px; }

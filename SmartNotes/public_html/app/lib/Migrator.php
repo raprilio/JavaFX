@@ -9,7 +9,7 @@ defined('SN_APP') || exit;
  */
 final class Migrator
 {
-    public const VERSION = 22;
+    public const VERSION = 23;
 
     public static function run(): void
     {
@@ -92,6 +92,20 @@ final class Migrator
                 }
                 self::addColumn('note_shares', 'via_everyone', "TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Added by Share with everyone (v1.29)'");
                 self::addColumn('item_shares', 'via_everyone', "TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Added by Share with everyone (v1.29)'");
+            }
+            if ($current < 23) {
+                // v1.31: link Drive files and progress to meetings / events, action items to progress
+                if (!self::hasTable('item_links')) {
+                    DB::pdo()->exec(self::ITEM_LINKS_SQL);
+                }
+                self::addColumn('tasks', 'progress_id', "INT UNSIGNED NULL COMMENT 'Linked Product progress item (v1.31)'");
+                self::addColumn('tasks', 'ptask_id', "INT UNSIGNED NULL COMMENT 'Linked Team progress task (v1.31)'");
+                if (!self::hasConstraint('tasks', 'fk_tasks_progress')) {
+                    DB::pdo()->exec('ALTER TABLE `tasks` ADD KEY `fk_tasks_progress` (`progress_id`), ADD CONSTRAINT `fk_tasks_progress` FOREIGN KEY (`progress_id`) REFERENCES `progress_items` (`id`) ON DELETE SET NULL');
+                }
+                if (!self::hasConstraint('tasks', 'fk_tasks_ptask')) {
+                    DB::pdo()->exec('ALTER TABLE `tasks` ADD KEY `fk_tasks_ptask` (`ptask_id`), ADD CONSTRAINT `fk_tasks_ptask` FOREIGN KEY (`ptask_id`) REFERENCES `ptasks` (`id`) ON DELETE SET NULL');
+                }
             }
             Settings::set('schema_version', (string) self::VERSION);
         } finally {
@@ -322,6 +336,20 @@ final class Migrator
             DB::pdo()->exec("ALTER TABLE `note_attachments` ADD COLUMN `ptask_id` INT UNSIGNED NULL COMMENT 'Handed in for a progress task (v1.22)', ADD KEY `idx_att_ptask` (`ptask_id`)");
         }
     }
+
+    /** v1.31: files from Drive, Product progress items and Team progress tasks linked to a meeting or a calendar event. */
+    public const ITEM_LINKS_SQL = "CREATE TABLE `item_links` (
+  `item_type`    VARCHAR(20) NOT NULL COMMENT 'meeting or event',
+  `item_id`      INT UNSIGNED NOT NULL,
+  `target_type`  VARCHAR(20) NOT NULL COMMENT 'file, progress or ptask',
+  `target_id`    INT UNSIGNED NOT NULL,
+  `added_by`     INT UNSIGNED NULL,
+  `created_at`   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`item_type`, `item_id`, `target_type`, `target_id`),
+  KEY `idx_item_links_target` (`target_type`, `target_id`),
+  KEY `fk_item_links_by` (`added_by`),
+  CONSTRAINT `fk_item_links_by` FOREIGN KEY (`added_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
 
     /** v1.29: items shared with everyone (every user gets a share row marked via_everyone, new users too). */
     public const EVERYONE_SHARES_SQL = "CREATE TABLE `everyone_shares` (

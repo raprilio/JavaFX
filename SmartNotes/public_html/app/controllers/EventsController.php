@@ -83,6 +83,7 @@ final class EventsController
         $e['all_day'] = (bool) $e['all_day'];
         $e['share_all'] = (bool) $e['share_all'];
         $e['participants'] = DB::all('SELECT id, name, email FROM event_participants WHERE event_id = ? ORDER BY id', [$id]);
+        $e['links'] = ItemLinksController::listFor('event', $id, $userId); // v1.31: Drive files, Product / Team progress
         // The owner's linked note/task stay private to the owner.
         $e['note_title'] = $role === 'owner' && $e['note_id'] ? DB::val('SELECT title FROM notes WHERE id = ?', [$e['note_id']]) : null;
         $e['task_title'] = $role === 'owner' && $e['task_id'] ? DB::val('SELECT title FROM tasks WHERE id = ?', [$e['task_id']]) : null;

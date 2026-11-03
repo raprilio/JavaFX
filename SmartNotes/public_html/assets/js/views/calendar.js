@@ -5,6 +5,7 @@ import { on } from '../core/store.js';
 import { navigate, setQuery } from '../core/router.js';
 import { toast, toastError, menu, modal } from '../core/ui.js';
 import { openEventForm, openMeetingForm, openTaskForm } from '../components/forms.js';
+import { mountItemLinks } from '../components/itemLinks.js';
 
 const COLORS = { event: '#8b5cf6', schedule: '#6366f1', reminder: '#f59e0b', meeting: '#0ea5e9', task: '#10b981' };
 const VIEWS = [['dayGridMonth', 'Month'], ['timeGridWeek', 'Week'], ['timeGridDay', 'Day'], ['listMonth', 'Agenda']];
@@ -172,6 +173,7 @@ export default {
           ${it.tagged?.length ? html`<div class="row small" style="flex-wrap:wrap;gap:6px">${icon('at-sign', 'sm')} ${it.tagged.map((t) => html`<span class="badge">${t.name}</span>`)}</div>` : ''}
           ${it.share_all ? html`<div class="share-banner global" style="margin:0">${icon('globe', 'sm')}<span>${it.shared ? html`Created by <b>${it.owner_name}</b> for all users · view only` : 'In every user\'s calendar (all users)'}</span></div>`
             : it.shared ? html`<div class="share-banner" style="margin:0">${icon('at-sign', 'sm')}<span>${it.type === 'meeting' ? 'Shared' : 'Tagged'} by <b>${it.owner_name}</b> · view only</span></div>` : ''}
+          ${it.type === 'event' ? html`<div class="ev-links" data-ev-links></div>` : ''}
         </div>`,
         actions: [
           ...(it.meeting_url ? [{ label: 'Join', icon: 'video', onClick: () => { window.open(it.meeting_url, '_blank', 'noopener'); return false; } }] : []),
@@ -179,6 +181,9 @@ export default {
           ...(it.shared && it.type === 'event' ? [{ label: 'Close', variant: 'primary' }] : [{ label: 'Open', variant: 'primary', icon: 'square-pen', value: 'open' }]),
         ],
       });
+      // v1.31: files from Drive, Product progress and Team progress linked to the event — also for the people tagged in it
+      const linksEl = m.body.querySelector('[data-ev-links]');
+      if (linksEl) api.get(`item-links/event/${it.id}`).then((list) => mountItemLinks(linksEl, { type: 'event', id: it.id, items: list })).catch(() => linksEl.remove());
       m.result.then(async (v) => {
         if (v !== 'open') return;
         if (it.type === 'meeting') navigate(`/meetings/${it.id}`);

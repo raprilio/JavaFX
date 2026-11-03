@@ -144,7 +144,7 @@ final class MeetingsController
             'SELECT u.id, u.name, u.email FROM meeting_shares s JOIN users u ON u.id = s.user_id WHERE s.meeting_id = ? ORDER BY u.name', [$id]
         ));
         $m['tasks'] = array_map([TasksController::class, 'present'], DB::all(
-            'SELECT id, title, status, priority, due_date, due_time FROM tasks WHERE meeting_id = ? AND user_id = ? AND deleted_at IS NULL ORDER BY sort_order, id',
+            'SELECT id, title, status, priority, due_date, due_time, progress_id, ptask_id FROM tasks WHERE meeting_id = ? AND user_id = ? AND deleted_at IS NULL ORDER BY sort_order, id',
             [$id, $ownerId]
         ));
         // v1.22: everyone in the meeting adds files and notes for the discussion
@@ -153,6 +153,7 @@ final class MeetingsController
             return $f;
         }, FilesController::forItem('meeting_id', $id));
         $m['notes'] = ItemNotesController::listFor('meeting', $id, $userId);
+        $m['links'] = ItemLinksController::listFor('meeting', $id, $userId); // v1.31: Drive files, Product / Team progress
         if ($role === 'owner') {
             $note = $m['note_id'] ? DB::one('SELECT id, title, LEFT(content_text, 200) AS excerpt, is_locked FROM notes WHERE id = ? AND user_id = ? AND deleted_at IS NULL', [$m['note_id'], $userId]) : null;
             if ($note && $note['is_locked'] && !NoteLock::unlocked($userId)) {

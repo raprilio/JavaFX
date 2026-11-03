@@ -9,6 +9,7 @@ import { openMeetingForm, openTaskForm } from '../components/forms.js';
 import { createRTE } from '../components/rte.js';
 import { mountAttachments } from '../components/attachments.js';
 import { mountItemNotes } from '../components/itemNotes.js';
+import { mountItemLinks } from '../components/itemLinks.js';
 import { openMeetingShare } from '../components/meetingShare.js';
 
 const STATUS_BADGE = { scheduled: 'accent', completed: 'success', cancelled: 'danger' };
@@ -99,6 +100,7 @@ async function renderDetail(el, ctx) {
             ${isOwner ? html`<button class="btn sm primary" data-a="save-min">${icon('save', 'sm')} Save</button>` : ''}</div></div>
             <div data-min-toolbar></div><div style="padding:16px 20px 22px" data-min-editor></div></div>
           <div class="card card-pad" data-meet-notes></div>
+          <div class="card card-pad" data-meet-links></div>
           <div class="card card-pad" data-attachments></div>
         </div>
         <div class="col" style="gap:var(--gap)">
@@ -110,7 +112,8 @@ async function renderDetail(el, ctx) {
             ${m.tasks.length ? m.tasks.map((t) => html`<div class="row" style="padding:7px 0;border-bottom:1px dashed var(--border)">
               ${isOwner ? html`<button class="t-check prio-${t.priority} ${t.status === 'completed' ? 'on' : ''}" data-done="${t.id}" data-status="${t.status}">${icon('check')}</button>` : html`<span class="t-check prio-${t.priority} ${t.status === 'completed' ? 'on' : ''}" style="pointer-events:none">${icon('check')}</span>`}
               ${isOwner ? html`<a href="#/tasks/mine?open=${t.id}" class="grow truncate" style="color:inherit;${t.status === 'completed' ? 'text-decoration:line-through;opacity:.6' : ''}">${t.title}</a>` : html`<span class="grow truncate" style="${t.status === 'completed' ? 'text-decoration:line-through;opacity:.6' : ''}">${t.title}</span>`}
-              ${t.due_date ? html`<span class="tiny subtle">${fmtDay(t.due_date)}</span>` : ''}</div>`) : html`<p class="small subtle">${isOwner ? 'Capture follow-ups as tasks so nothing gets lost.' : 'No action items.'}</p>`}</div>
+              ${t.link ? html`<a class="ai-link" href="${t.link.href}" data-tip="${t.link.type === 'progress' ? 'Product progress' : 'Team progress'} · ${t.link.percent}%">${icon(t.link.type === 'progress' ? 'chart-no-axes-gantt' : 'users-round', 'xs')}<span class="truncate">${t.link.title}</span></a>` : ''}
+              ${t.due_date ? html`<span class="tiny subtle">${fmtDay(t.due_date)}</span>` : ''}</div>`) : html`<p class="small subtle">${isOwner ? 'Capture follow-ups as tasks — link each one to Product progress or Team progress.' : 'No action items.'}</p>`}</div>
           ${isOwner ? html`<div class="card card-pad"><div class="section-title">${icon('link', 'sm')} Related note</div>
             ${m.note ? html`<a class="list-item" href="#/notes/${m.note.id}" style="padding:8px"><span class="li-icon">${icon(m.note.is_locked ? 'lock' : 'notebook-pen', 'sm')}</span><div class="li-main"><div class="li-title">${m.note.title || 'Untitled note'}</div><div class="li-sub">${m.note.excerpt || ''}</div></div></a>`
               : html`<p class="small subtle mb-2">No note linked.</p><button class="btn sm" data-a="create-note">${icon('plus', 'sm')} Create linked note</button>`}</div>` : ''}
@@ -126,6 +129,8 @@ async function renderDetail(el, ctx) {
     el.querySelector('[data-min-editor]').appendChild(rte.editor);
     // v1.22: everyone in the meeting brings notes and files for the discussion
     mountItemNotes(el.querySelector('[data-meet-notes]'), { type: 'meeting', id, items: m.notes || [], canAdd: true, title: 'Notes for the discussion', hint: 'Everyone in this meeting can add notes to discuss — they open read-only for the others.', onChange: (list) => (m.notes = list) });
+    // v1.31: files already in Drive, Product progress and Team progress linked to this meeting
+    mountItemLinks(el.querySelector('[data-meet-links]'), { type: 'meeting', id, items: m.links || [], onChange: (list) => (m.links = list) });
     mountAttachments(el.querySelector('[data-attachments]'), {
       parent: 'meeting', parentId: id, items: m.attachments, title: 'Files for the discussion', showUploader: true,
       hint: 'Everyone in this meeting can add files.', onRemove: (f) => api.post(`meetings/${id}/files/${f.id}/remove`), onChange: (list) => (m.attachments = list),

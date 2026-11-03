@@ -8,6 +8,7 @@ import { state } from '../core/store.js';
 import { navigate, setQuery } from '../core/router.js';
 import { toast, toastError, modal, confirm, avatarHtml, empty } from '../core/ui.js';
 import { mountItemNotes, pickNote } from '../components/itemNotes.js';
+import { actionItemsCard } from '../components/actionItems.js';
 import { uploadFile, pickFiles } from '../components/attachments.js';
 import { openFilePreview } from '../components/filePreview.js';
 
@@ -210,6 +211,7 @@ async function renderDetail(el, ctx, id) {
         <aside class="pg-side">
           ${t.description ? html`<div class="card card-pad"><h3>About</h3><p class="small" style="white-space:pre-wrap;margin:0">${t.description}</p></div>` : ''}
           ${t.deleted_at ? '' : html`<div class="card card-pad" data-pt-notes></div>`}
+          ${t.deleted_at ? '' : actionItemsCard(t.action_items)}
           ${t.files.length ? html`<div class="card card-pad"><h3>${icon('paperclip', 'sm')} Handed-in files <span class="subtle small">${t.files.length}</span></h3><div class="col" style="gap:6px">${t.files.map((f) => html`<button type="button" class="file-row pt-file" data-file="${f.id}">${fileBadge(f.name)}<div class="grow" style="min-width:0;text-align:left"><div class="truncate">${f.name}</div><div class="tiny subtle">${f.uploader?.name || ''} · ${timeAgo(f.created_at)}</div></div></button>`)}</div></div>` : ''}
         </aside></div></div>`);
     const notesEl = el.querySelector('[data-pt-notes]');

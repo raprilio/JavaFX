@@ -126,6 +126,11 @@ return [
     // Notes listed on Team progress items, meetings and progress tasks (v1.22)
     ['POST', 'links/{type}/{id}/notes', 'ItemNotesController::add', 'auth'],
     ['POST', 'links/{type}/{id}/notes/{id}/remove', 'ItemNotesController::remove', 'auth'],
+    // Drive files, Product progress and Team progress linked to meetings and calendar events (v1.31)
+    ['GET', 'item-links/{type}/{id}', 'ItemLinksController::index', 'auth'],
+    ['GET', 'item-links/{type}/{id}/candidates', 'ItemLinksController::candidates', 'auth'],
+    ['POST', 'item-links/{type}/{id}', 'ItemLinksController::add', 'auth'],
+    ['POST', 'item-links/{type}/{id}/{type}/{id}/remove', 'ItemLinksController::remove', 'auth'],
     // Progress tasks (v1.22): parts with their own bars, hand-in (setor) and approval
     ['GET', 'ptasks', 'PtasksController::index', 'auth'],
     ['POST', 'ptasks', 'PtasksController::store', 'auth'],

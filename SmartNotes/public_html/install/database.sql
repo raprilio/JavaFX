@@ -276,6 +276,8 @@ CREATE TABLE IF NOT EXISTS `tasks` (
   `created_at`        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at`        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `deleted_at`        DATETIME NULL,
+  `progress_id`       INT UNSIGNED NULL COMMENT 'Linked Product progress item (v1.31)',
+  `ptask_id`          INT UNSIGNED NULL COMMENT 'Linked Team progress task (v1.31)',
   PRIMARY KEY (`id`),
   KEY `idx_tasks_list` (`user_id`, `deleted_at`, `status`, `sort_order`),
   KEY `idx_tasks_due` (`user_id`, `due_date`),
@@ -283,11 +285,15 @@ CREATE TABLE IF NOT EXISTS `tasks` (
   KEY `idx_tasks_note` (`note_id`),
   KEY `idx_tasks_meeting` (`meeting_id`),
   KEY `idx_tasks_assigned_by` (`assigned_by`, `deleted_at`),
+  KEY `fk_tasks_progress` (`progress_id`),
+  KEY `fk_tasks_ptask` (`ptask_id`),
   CONSTRAINT `fk_tasks_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_tasks_assigned_by` FOREIGN KEY (`assigned_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
   CONSTRAINT `fk_tasks_category` FOREIGN KEY (`category_id`) REFERENCES `task_categories` (`id`) ON DELETE SET NULL,
   CONSTRAINT `fk_tasks_note` FOREIGN KEY (`note_id`) REFERENCES `notes` (`id`) ON DELETE SET NULL,
-  CONSTRAINT `fk_tasks_meeting` FOREIGN KEY (`meeting_id`) REFERENCES `meetings` (`id`) ON DELETE SET NULL
+  CONSTRAINT `fk_tasks_meeting` FOREIGN KEY (`meeting_id`) REFERENCES `meetings` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_tasks_progress` FOREIGN KEY (`progress_id`) REFERENCES `progress_items` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_tasks_ptask` FOREIGN KEY (`ptask_id`) REFERENCES `ptasks` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- v1.19 team progress tracker
@@ -396,6 +402,19 @@ CREATE TABLE IF NOT EXISTS `ptask_updates` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- v1.22 notes listed on Team progress items, meetings and progress tasks (opened read-only by everyone there)
+CREATE TABLE IF NOT EXISTS `item_links` (
+  `item_type`    VARCHAR(20) NOT NULL COMMENT 'meeting or event',
+  `item_id`      INT UNSIGNED NOT NULL,
+  `target_type`  VARCHAR(20) NOT NULL COMMENT 'file, progress or ptask',
+  `target_id`    INT UNSIGNED NOT NULL,
+  `added_by`     INT UNSIGNED NULL,
+  `created_at`   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`item_type`, `item_id`, `target_type`, `target_id`),
+  KEY `idx_item_links_target` (`target_type`, `target_id`),
+  KEY `fk_item_links_by` (`added_by`),
+  CONSTRAINT `fk_item_links_by` FOREIGN KEY (`added_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `item_notes` (
   `item_type`   VARCHAR(20) NOT NULL COMMENT 'progress, meeting or ptask',
   `item_id`     INT UNSIGNED NOT NULL,
@@ -1096,7 +1115,7 @@ INSERT IGNORE INTO `settings` (`setting_key`, `setting_value`) VALUES
 ('smtp_encryption', 'tls'),
 ('smtp_from_name', 'SmartNotes'),
 ('smtp_from_email', ''),
-('schema_version', '22'),
+('schema_version', '23'),
 ('allow_note_sharing', '1'),
 ('logo_display', 'logo'),
 ('logo_height', '34'),

@@ -11,6 +11,7 @@ import { toast, toastError, modal, confirm, avatarHtml, empty, menu } from '../c
 import { userPicker } from '../components/userPicker.js';
 import { sortable } from '../components/sortable.js';
 import { mountItemNotes } from '../components/itemNotes.js';
+import { actionItemsCard } from '../components/actionItems.js';
 
 const STATUS = {
   on_track: { label: 'On track', icon: 'circle-check', cls: 'success' },
@@ -312,6 +313,7 @@ async function renderDetail(el, ctx, id) {
         </div>
         <aside class="pg-side">
           ${it.deleted_at ? '' : html`<div class="card card-pad pg-notes" data-pg-notes></div>`}
+          ${it.deleted_at ? '' : actionItemsCard(it.action_items)}
           ${it.description ? html`<div class="card card-pad"><h3>About</h3><p class="small" style="white-space:pre-wrap;margin:0">${it.description}</p></div>` : ''}
           ${it.fields.length ? html`<div class="card card-pad"><h3>Details</h3><dl class="kv small pg-kv">${it.fields.map((f) => html`<dt>${f.label}</dt><dd>${isUrl(f.value) ? html`<a href="${f.value}" target="_blank" rel="noopener noreferrer">${f.value.replace(/^https?:\/\//, '')}</a>` : f.value || '—'}</dd>`)}</dl></div>` : ''}
           ${it.editors?.length ? html`<div class="card card-pad" data-editors-card><h3>Can edit</h3><div class="row pg-person">${icon('crown', 'sm')}<span>${it.creator.name || '—'} <span class="subtle">(creator)</span></span></div>${it.editors.map((u) => html`<div class="row pg-person">${avatarHtml(u, 'sm')}<span>${u.name}${u.id === state.user.id ? html` <span class="subtle">(you)</span>` : ''}</span></div>`)}</div>` : ''}

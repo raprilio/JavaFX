@@ -390,6 +390,7 @@ final class ProgressController
         // v1.22: reference notes of the project (everyone opens them read-only); creator / admin / updaters add them
         $out['notes'] = $it['deleted_at'] ? [] : ItemNotesController::listFor('progress', $id, $uid);
         $out['can_add_notes'] = !$it['deleted_at'] && ($out['can_edit'] || $out['can_update']);
+        $out['action_items'] = TasksController::linkedTo('progress_id', $id); // v1.31: follow-ups from meetings
         return $out;
     }
 

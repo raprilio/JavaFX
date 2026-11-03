@@ -21,8 +21,37 @@ final class TasksController
             $r['due_time'] = substr($r['due_time'], 0, 5);
         }
         $r['assigned'] = !empty($r['assigned_by']);
+        // v1.31: an action item can point at a Product progress item or a Team progress task
+        $r['link'] = null;
+        if (!empty($r['progress_id'])) {
+            $p = DB::one('SELECT id, title, percent FROM progress_items WHERE id = ? AND deleted_at IS NULL', [$r['progress_id']]);
+            $r['link'] = $p ? ['type' => 'progress', 'id' => (int) $p['id'], 'title' => $p['title'], 'percent' => (int) $p['percent'], 'href' => '#/progress/' . $p['id']] : null;
+        } elseif (!empty($r['ptask_id'])) {
+            $p = DB::one('SELECT id, title, percent FROM ptasks WHERE id = ? AND deleted_at IS NULL', [$r['ptask_id']]);
+            $r['link'] = $p ? ['type' => 'ptask', 'id' => (int) $p['id'], 'title' => $p['title'], 'percent' => (int) $p['percent'], 'href' => '#/tasks/progress/' . $p['id']] : null;
+        }
+        foreach (['progress_id', 'ptask_id'] as $k) {
+            if (array_key_exists($k, $r)) {
+                $r[$k] = $r[$k] !== null ? (int) $r[$k] : null;
+            }
+        }
         unset($r['user_id']);
         return $r;
+    }
+
+    /** Action items (tasks) linked to a Product progress item or a Team progress task (v1.31), from any user. */
+    public static function linkedTo(string $col, int $id): array
+    {
+        return array_map(static fn($r) => [
+            'id' => (int) $r['id'], 'title' => $r['title'], 'status' => $r['status'], 'due_date' => $r['due_date'],
+            'owner' => ['id' => (int) $r['user_id'], 'name' => $r['owner']],
+            'meeting' => $r['meeting_id'] ? ['id' => (int) $r['meeting_id'], 'title' => $r['meeting_title']] : null,
+        ], DB::all(
+            "SELECT t.id, t.title, t.status, t.due_date, t.user_id, u.name AS owner, t.meeting_id, m.title AS meeting_title
+             FROM tasks t JOIN users u ON u.id = t.user_id LEFT JOIN meetings m ON m.id = t.meeting_id AND m.deleted_at IS NULL
+             WHERE t.$col = ? AND t.deleted_at IS NULL ORDER BY t.status = 'completed', t.due_date IS NULL, t.due_date, t.id",
+            [$id]
+        ));
     }
 
     /**
@@ -305,6 +334,19 @@ final class TasksController
         }
         if (array_key_exists('category_id', $in)) {
             $data['category_id'] = CategoriesController::ownedId('task', $in['category_id'], $userId);
+        }
+        // v1.31: link to one Product progress item or one Team progress task (the assignee must be on it)
+        if (array_key_exists('progress_id', $in) || array_key_exists('ptask_id', $in)) {
+            $pg = V::id($in['progress_id'] ?? null);
+            $pt = V::id($in['ptask_id'] ?? null);
+            if ($pg && !DB::val('SELECT 1 FROM progress_items WHERE id = ? AND deleted_at IS NULL', [$pg])) {
+                throw new HttpException('Product progress item not found.', 404);
+            }
+            if ($pt && !PtasksController::involved($pt, $userId)) {
+                throw new HttpException('You can only link Team progress tasks you work on.', 403);
+            }
+            $data['progress_id'] = $pg;
+            $data['ptask_id'] = $pg ? null : $pt;
         }
         foreach (['note_id' => 'notes', 'meeting_id' => 'meetings'] as $k => $t) {
             if (array_key_exists($k, $in)) {

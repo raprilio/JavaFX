@@ -134,6 +134,13 @@ final class Trash
         if (isset(Shares::TYPES[$type])) {
             Shares::purge($type, $id);
         }
+        // v1.31: links of / to the item (meeting or event materials, a linked Drive file)
+        if (in_array($type, ItemLinksController::ITEMS, true)) {
+            DB::run('DELETE FROM item_links WHERE item_type = ? AND item_id = ?', [$type, $id]);
+        }
+        if ($type === 'file') {
+            DB::run("DELETE FROM item_links WHERE target_type = 'file' AND target_id = ?", [$id]);
+        }
         DB::run("DELETE FROM `$t` WHERE id = ? AND user_id = ?", [$id, $userId]);
         Uploader::delete(...$files);
     }

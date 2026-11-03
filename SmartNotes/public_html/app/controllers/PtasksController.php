@@ -209,6 +209,7 @@ final class PtasksController
                 'notes' => array_values(array_filter(array_map(static fn($nid) => isset($noteTitles[(int) $nid]) ? ['id' => (int) $nid, 'title' => $noteTitles[(int) $nid] ?: 'Untitled'] : null, json_decode_array($r['notes'])))),
             ], $updates),
             'notes' => $t['deleted_at'] ? [] : ItemNotesController::listFor('ptask', $id, $uid),
+            'action_items' => TasksController::linkedTo('ptask_id', $id), // v1.31: follow-ups from meetings
             'files' => array_values($files),
         ];
     }

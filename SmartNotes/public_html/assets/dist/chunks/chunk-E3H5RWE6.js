@@ -1,0 +1,5 @@
+import{a as i}from"./chunk-UXGBN37F.js";import{d as e,e as t,n,r as c}from"./chunk-AV7Z6QJZ.js";function o(s=[]){return e`<div class="card card-pad" data-action-items><h3>${t("square-check-big","sm")} Action items <span class="subtle">${s.length||""}</span></h3>
+    ${s.length?e`<div class="ai-list">${s.map(a=>e`<div class="ai-row ${a.status==="completed"?"done":""}">
+        <span class="ai-dot">${t(a.status==="completed"?"circle-check":"circle","sm")}</span>
+        <div class="grow" style="min-width:0">${a.owner.id===i.user.id?e`<a class="ai-title truncate block" href="#/tasks/mine?open=${a.id}">${a.title}</a>`:e`<span class="ai-title truncate block">${a.title}</span>`}
+          <span class="tiny subtle block">${a.owner.name}${a.meeting?e` · from <a href="#/meetings/${a.meeting.id}">${a.meeting.title}</a>`:""}${a.due_date?e` · <span class="${a.due_date<n()&&a.status!=="completed"?"overdue":""}">${c(a.due_date)}</span>`:""}</span></div></div>`)}</div>`:e`<p class="small subtle" style="margin:0">Link a task (e.g. an action item of a meeting) to this item and it shows up here.</p>`}</div>`}export{o as a};

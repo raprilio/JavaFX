@@ -100,6 +100,10 @@ final class FilesController
             && DB::val('SELECT m.id FROM meetings m WHERE m.id = ? AND m.deleted_at IS NULL AND ' . MeetingsController::visibleSql('m'), [$r['meeting_id'], $userId, $userId])) {
             return $r;
         }
+        // Files linked from Drive to a meeting / calendar event this user can see (v1.31).
+        if ($r && !$r['deleted_at'] && ItemLinksController::grantsFile($id, $userId)) {
+            return $r;
+        }
         // Files handed in for a progress task this user owns or works on (v1.22).
         if ($r && !$r['deleted_at'] && !empty($r['ptask_id']) && PtasksController::involved((int) $r['ptask_id'], $userId)) {
             return $r;

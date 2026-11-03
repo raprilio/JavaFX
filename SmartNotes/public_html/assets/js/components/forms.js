@@ -6,6 +6,7 @@ import { modal, toast, toastError, formData, showFieldErrors, PALETTE, confirm }
 import { tagInput, normalizeTag, parseParticipant, formatParticipant } from './tagInput.js';
 import { mountAttachments } from './attachments.js';
 import { userPicker } from './userPicker.js';
+import { mountItemLinks } from './itemLinks.js';
 
 export const REMINDERS = [
   ['', 'No reminder'], ['0', 'At time of event'], ['5', '5 minutes before'], ['10', '10 minutes before'], ['15', '15 minutes before'],
@@ -31,6 +32,16 @@ export async function noteOptions(selected) {
     } catch { notesCache = []; }
   }
   return html`<option value="">— None —</option>${notesCache.map((n) => html`<option value="${n.id}" ${+selected === n.id ? 'selected' : ''}>${n.title || '(Untitled note)'}</option>`)}`;
+}
+
+/** v1.31: Product progress items and my Team progress tasks an action item can be linked to ("progress:12" / "ptask:5"). */
+async function progressOptions(t) {
+  const cur = t.progress_id ? `progress:${t.progress_id}` : t.ptask_id ? `ptask:${t.ptask_id}` : '';
+  let pg = [], pt = [];
+  try { [pg, pt] = await Promise.all([api.get('progress').then((r) => r.items), api.get('ptasks').then((r) => r.items)]); } catch { /* keep the "none" option */ }
+  return html`<option value="">— Not linked —</option>
+    ${pg.length ? html`<optgroup label="Product progress">${pg.map((x) => html`<option value="progress:${x.id}" ${cur === `progress:${x.id}` ? 'selected' : ''}>${x.title} · ${x.percent}%</option>`)}</optgroup>` : ''}
+    ${pt.length ? html`<optgroup label="Team progress">${pt.map((x) => html`<option value="ptask:${x.id}" ${cur === `ptask:${x.id}` ? 'selected' : ''}>${x.title} · ${x.percent}%</option>`)}</optgroup>` : ''}`;
 }
 
 function colorRow(name, cur) {
@@ -80,12 +91,14 @@ export async function openTaskForm(task = null, defaults = {}) {
       <div class="field"><label>Reminder</label><select class="select" name="reminder_minutes">${reminderOptions(t.reminder_minutes)}</select><span class="hint">Needs a due date. Sent by e-mail & in-app.</span></div>
       <div class="field span-2" data-own><label>Tags</label><div data-slot="tags"></div></div>
       <div class="field span-2" data-own><label>Related note</label><select class="select" name="note_id"><option>Loading…</option></select></div>
+      <div class="field span-2" data-own><label>${icon('chart-no-axes-gantt', 'sm')} Linked progress <span class="subtle small">— the action item shows up on that Product progress / Team progress page</span></label><select class="select" name="progress_link"><option>Loading…</option></select></div>
     </div>
     ${t.meeting_id ? html`<input type="hidden" name="meeting_id" value="${t.meeting_id}"><p class="small muted">${icon('users', 'sm')} Linked to meeting${t.meeting_title ? html`: <b>${t.meeting_title}</b>` : ''}</p>` : ''}
     ${editing ? html`<div data-slot="attachments" class="mt-2"></div>` : html`<p class="hint small subtle">${icon('paperclip', 'sm')} You can attach files after creating the task.</p>`}
   </form>`));
   form.querySelector('[data-slot="tags"]').appendChild(tags.el);
   noteOptions(t.note_id).then((o) => (form.querySelector('[name="note_id"]').innerHTML = String(o)));
+  progressOptions(t).then((o) => (form.querySelector('[name="progress_link"]').innerHTML = String(o)));
   // Category, tags and the related note are the assignee's own: hidden while the task is for someone else.
   const syncOwn = () => {
     const other = asAssigner || (canAssign && +form.querySelector('[name="assign_to"]').value !== me);
@@ -116,7 +129,14 @@ export async function openTaskForm(task = null, defaults = {}) {
           const d = formData(form);
           if (!locked.has('title') && !d.title.trim()) { showFieldErrors(form, { title: 1 }); return false; }
           if (!form.querySelector('[data-own]').classList.contains('hidden')) d.tags = tags.get();
-          else { delete d.category_id; delete d.note_id; }
+          else { delete d.category_id; delete d.note_id; delete d.progress_link; }
+          if (d.progress_link === 'Loading…') delete d.progress_link; // the list was not loaded yet: keep the current link
+          if ('progress_link' in d) { // v1.31: "progress:12" | "ptask:5" | ""
+            const [kind, pid] = String(d.progress_link).split(':');
+            d.progress_id = kind === 'progress' ? +pid : null;
+            d.ptask_id = kind === 'ptask' ? +pid : null;
+            delete d.progress_link;
+          }
           d.reminder_minutes = d.reminder_minutes === '' ? null : +d.reminder_minutes;
           try {
             const saved = editing ? await api.post(`tasks/${t.id}`, d) : await api.post('tasks', d);
@@ -188,9 +208,12 @@ export async function openEventForm(ev = null, defaults = {}) {
       <div class="field span-2"><label>Color</label>${colorRow('color', e0.color)}</div>
       <div class="field span-2"><label>Description</label><textarea class="textarea" name="description" rows="3">${e0.description || ''}</textarea></div>
       <div class="field span-2"><label>Related note</label><select class="select" name="note_id"><option>Loading…</option></select></div>
+      <div class="field span-2 il-field" data-slot="links">${editing ? '' : html`<label>${icon('link-2', 'sm')} Linked from Drive & progress</label><p class="small subtle" style="margin:0">Save the event first, then link files from Drive, Product progress or Team progress.</p>`}</div>
     </div></form>`));
   form.querySelector('[data-slot="people"]').appendChild(people.el);
   form.querySelector('[data-slot="tagged"]').appendChild(tagged.el);
+  // v1.31: files already in Drive, Product progress and Team progress linked to this event
+  if (editing) mountItemLinks(form.querySelector('[data-slot="links"]'), { type: 'event', id: e0.id, items: e0.links || [] });
   bindAllUsers(form);
   bindColorRow(form, 'color');
   noteOptions(e0.note_id).then((o) => (form.querySelector('[name="note_id"]').innerHTML = String(o)));
